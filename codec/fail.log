@@ -1,0 +1,13 @@
+--- FAIL: TestReader (0.42s)
+	reader_test.go:31: Stream(false) EndErr(false) Type(JSON) Len(23) Req(0)
+		"[\"event\",{\"okay\":true}]"
+	reader_test.go:31: Stream(false) EndErr(false) Type(String) Len(8) Req(1)
+		"whatever"
+	reader_test.go:31: Stream(true) EndErr(false) Type(Buffer) Len(5) Req(2)
+		"hello"
+	reader_test.go:31: Stream(true) EndErr(false) Type(Buffer) Len(7) Req(-272646673)
+		"\xbf\xbd�\xef\xbf"
+	reader_test.go:28: pkt-codec: read body failed: unexpected EOF
+FAIL
+exit status 1
+FAIL	github.com/cryptix/go-muxrpc/codec	0.427s
