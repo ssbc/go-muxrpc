@@ -18,7 +18,7 @@ func TestReader(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	r := NewReader(debug.NewReadLogger("dbg:", stdout))
+	r := NewReader(debug.NewReadHexLogger("dbg:", stdout))
 
 	var pkts []*Packet
 	n := 0

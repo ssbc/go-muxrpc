@@ -20,7 +20,11 @@ type Packet struct {
 func (p Packet) String() string {
 	s := fmt.Sprintf("Stream(%v) EndErr(%v) ", p.Stream, p.EndErr)
 	s += fmt.Sprintf("Type(%s) Len(%d) Req(%d)\n", p.Type, p.Len, p.Req)
-	s += fmt.Sprintf("%q", p.Body)
+	if len(p.Body) > 50 {
+		s += fmt.Sprintf("(n:%d) %q...", len(p.Body), p.Body[:50])
+	} else {
+		s += fmt.Sprintf("(n:%d) %q", len(p.Body), p.Body)
+	}
 	return s
 }
 
