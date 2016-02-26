@@ -74,7 +74,9 @@ higgsArchOne~/go/src/github.com/cryptix/go-muxrpc/codec(master|✚4…) % go tes
 		(n:5) "hello"
 	reader_test.go:31: Stream(true) EndErr(false) Type(Buffer) Len(7) Req(-272646673)
 		(n:7) "\xbf\xbd�\xef\xbf"
-	reader_test.go:28: pkt-codec: read body failed: unexpected EOF
+  reader_test.go:28: pkt-codec: read body failed. Packet:Stream(true) EndErr(true) Type(String) Len(1735356260) Req(1652122886)
+        (n:1735356260) "\x00\x00\x01�����{\"message\":\"intentional\",\"name\":"...: unexpected EOF
+
 FAIL
 exit status 1
 FAIL	github.com/cryptix/go-muxrpc/codec	0.257s

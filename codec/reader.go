@@ -59,7 +59,7 @@ func (r *Reader) ReadPacket() (*Packet, error) {
 	p.Body = make([]byte, hdr.Len)
 	_, err = io.ReadFull(r.r, p.Body)
 	if err != nil {
-		return nil, errgo.Notef(err, "pkt-codec: read body failed")
+		return nil, errgo.Notef(err, "pkt-codec: read body failed. Packet:%s", p)
 	}
 
 	return &p, nil
