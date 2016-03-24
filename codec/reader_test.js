@@ -1,3 +1,4 @@
+// writes some packets to stdout to test the reader implementation
 var pull = require('pull-stream')
 var psc = require('packet-stream-codec')
 var toPull = require('stream-to-pull-stream')
@@ -7,7 +8,7 @@ function flat (err) {
   return {
     message: err.message,
     name: err.name,
-    stack: err.stack
+   // stack: err.stack // TODO: comparing stacks is annoying across systems
   }
 }
 
