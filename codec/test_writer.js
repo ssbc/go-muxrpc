@@ -1,7 +1,7 @@
 var pull = require('pull-stream')
 var psc = require('packet-stream-codec')
 var toPull = require('stream-to-pull-stream')
-// var split = require('pull-randomly-split')
+var split = require('pull-randomly-split')
 
 function flat (err) {
   return {
@@ -25,6 +25,7 @@ var examples = [
 pull(
   pull.values(examples),
   psc.encode(),
+  split(),
   toPull.sink(process.stdout)
 )
 

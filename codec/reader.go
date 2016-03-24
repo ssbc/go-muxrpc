@@ -1,6 +1,8 @@
+// Package codec implements https://github.com/dominictarr/packet-stream-codec
 package codec
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -42,9 +44,15 @@ func (r *Reader) ReadPacket() (*Packet, error) {
 		Len  uint32
 		Req  int32
 	}
-	err := binary.Read(r.r, binary.BigEndian, &hdr)
+	var buf bytes.Buffer // TOOD: might want a buffer pool for this
+	err := binary.Read(io.TeeReader(r.r, &buf), binary.BigEndian, &hdr)
 	if err != nil {
 		return nil, errgo.Notef(err, "pkt-codec: header read failed")
+	}
+
+	// detect EOF pkt. TODO: not sure how to do this nicer
+	if buf.Len() == 9 && bytes.Compare(buf.Bytes(), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0}) == 0 {
+		return nil, io.EOF
 	}
 
 	// copy header info
