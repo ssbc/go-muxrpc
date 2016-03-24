@@ -1,49 +1,19 @@
-// Package codec implements https://github.com/dominictarr/packet-stream-codec
 package codec
 
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"io"
 
 	"gopkg.in/errgo.v1"
 )
 
-type Packet struct {
-	Stream bool
-	EndErr bool
-	Type   PacketType
-	Len    uint32
-	Req    int32
-	Body   []byte
-}
+type Reader struct{ r io.Reader }
 
-func (p Packet) String() string {
-	s := fmt.Sprintf("Stream(%v) EndErr(%v) ", p.Stream, p.EndErr)
-	s += fmt.Sprintf("Type(%s) Len(%d) Req(%d)\n", p.Type, p.Len, p.Req)
-	if len(p.Body) > 50 {
-		s += fmt.Sprintf("(n:%d) %q...", len(p.Body), p.Body[:50])
-	} else {
-		s += fmt.Sprintf("(n:%d) %q", len(p.Body), p.Body)
-	}
-	return s
-}
-
-type Reader struct {
-	r io.Reader
-}
-
-func NewReader(r io.Reader) *Reader {
-	return &Reader{r}
-}
+func NewReader(r io.Reader) *Reader { return &Reader{r} }
 
 func (r *Reader) ReadPacket() (*Packet, error) {
-	var hdr struct {
-		Flag Flag
-		Len  uint32
-		Req  int32
-	}
+	var hdr Header
 	var buf bytes.Buffer // TOOD: might want a buffer pool for this
 	err := binary.Read(io.TeeReader(r.r, &buf), binary.BigEndian, &hdr)
 	if err != nil {

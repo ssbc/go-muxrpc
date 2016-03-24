@@ -1,5 +1,5 @@
 /*
-go impl of https://github.com/dominictarr/packet-stream-codec
+Package codec implements readers and writers for https://github.com/dominictarr/packet-stream-codec
 
 pkg structure:
 
@@ -15,6 +15,28 @@ flags:
 	type = {0 => Buffer, 1 => String, 2 => JSON}
 */
 package codec
+
+import "fmt"
+
+type Packet struct {
+	Stream bool
+	EndErr bool
+	Type   PacketType
+	Len    uint32
+	Req    int32
+	Body   []byte
+}
+
+func (p Packet) String() string {
+	s := fmt.Sprintf("Stream(%v) EndErr(%v) ", p.Stream, p.EndErr)
+	s += fmt.Sprintf("Type(%s) Len(%d) Req(%d)\n", p.Type, p.Len, p.Req)
+	if len(p.Body) > 50 {
+		s += fmt.Sprintf("(n:%d) %q...", len(p.Body), p.Body[:50])
+	} else {
+		s += fmt.Sprintf("(n:%d) %q", len(p.Body), p.Body)
+	}
+	return s
+}
 
 type Flag byte
 
@@ -32,3 +54,9 @@ const (
 	String
 	JSON
 )
+
+type Header struct {
+	Flag Flag
+	Len  uint32
+	Req  int32
+}
