@@ -16,7 +16,10 @@ flags:
 */
 package codec
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 type Packet struct {
 	Stream bool
@@ -30,10 +33,19 @@ type Packet struct {
 func (p Packet) String() string {
 	s := fmt.Sprintf("Stream(%v) EndErr(%v) ", p.Stream, p.EndErr)
 	s += fmt.Sprintf("Type(%s) Len(%d) Req(%d)\n", p.Type, p.Len, p.Req)
-	if len(p.Body) > 50 {
-		s += fmt.Sprintf("(n:%d) %q...", len(p.Body), p.Body[:50])
+	if p.Type == JSON {
+		var i interface{}
+		if err := json.Unmarshal(p.Body, &i); err != nil {
+			s += fmt.Sprintf("json.Unmarshal error: %s", err)
+			return s
+		}
+		s += fmt.Sprintf("Body: %+v", i)
 	} else {
-		s += fmt.Sprintf("(n:%d) %q", len(p.Body), p.Body)
+		if len(p.Body) > 50 {
+			s += fmt.Sprintf("%q...", p.Body[:50])
+		} else {
+			s += fmt.Sprintf("%q", p.Body)
+		}
 	}
 	return s
 }
