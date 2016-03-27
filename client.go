@@ -75,12 +75,18 @@ func (client *Client) send(call *Call) {
 
 	// Encode and send the request.
 	client.request.Req = seq
-	client.request.Type = codec.JSON
+	client.request.Type = call.Type // TODO: non JSON request
 
 	var req Request
-	req.Name = []string{call.Method}
-	req.Args = []interface{}{call.Args}
-
+	req.Name = []string{call.Method} // TODO: nested methods
+	req.Args = []interface{}{}
+	if call.Args != nil {
+		req.Args = []interface{}{call.Args} // TODO: multiple arguments
+	}
+	if call.stream {
+		req.Type = "source"
+		client.request.Stream = true
+	}
 	var err error
 	if client.request.Body, err = json.Marshal(req); err != nil {
 		client.mutex.Lock()
@@ -114,57 +120,74 @@ func (client *Client) read() {
 	for err == nil {
 		pkt, err = client.r.ReadPacket()
 		if err != nil {
+			xlog.Error("ReadPacket error:", err)
 			break
 		}
 		seq := -pkt.Req
 		client.mutex.Lock()
 		call := client.pending[seq]
-		if !call.stream {
+		if !call.stream || (pkt.Stream && pkt.EndErr) {
 			delete(client.pending, seq)
 		}
 		client.mutex.Unlock()
 
 		switch {
 		case call == nil:
-			// We've got no pending call. That usually means that
-			// WriteRequest partially failed, and call was already
-			// removed; response is a server telling us about an
-			// error reading request body. We should still attempt
-			// to read error body, but there's no one to give it to.
+			// TODO: check above will panic anyway in this case...
+
 			xlog.Warn("could not handle incomming pkt: %s", pkt)
 		case pkt.EndErr:
-			// We've got an error response. Give this to the request;
-			// any subsequent requests will get the ReadResponseBody
-			// error if there is one.
-			call.Error = ServerError(string(pkt.Body))
-			call.done()
-		default:
-			xlog.Infof("Normal response: %s", pkt)
-
-			// demux reponse
-			if call.stream {
-				call.data <- pkt.Body
-				xlog.Info("stream data send on channel")
+			// TODO: difference between End and Error?
+			if pkt.Stream {
 			} else {
-				switch pkt.Type {
-				case codec.String:
+				// We've got an error response. Give this to the request;
+				// any subsequent requests will get the ReadResponseBody
+				// error if there is one.
+				call.Error = ServerError(string(pkt.Body))
+			}
+			call.done()
+
+		default:
+			switch pkt.Type {
+			case codec.JSON:
+				var um interface{}
+				if err := json.Unmarshal(pkt.Body, &um); err != nil {
+					call.Error = errgo.Notef(err, "muxrpc: unmarshall error")
+					call.done()
+					break
+				}
+				if call.stream {
+					call.data <- um
+				} else {
+					call.Reply = um
+					call.done()
+				}
+
+			case codec.String:
+				if call.stream {
+					// TODO
+					call.Error = errgo.New("muxrpc: unhandeld encoding (string stream)")
+					call.done()
+					break
+				} else {
 					sptr, ok := call.Reply.(*string)
 					if !ok {
 						call.Error = errgo.New("muxrpc: illegal reply argument. wanted (*string)")
 						call.done()
-						return
+						break
 					}
 					*sptr = string(pkt.Body)
-
-				default:
-					call.Error = errgo.Newf("muxrpc: unhandled pkt.Type %s", pkt)
 					call.done()
 				}
-			}
-			call.done()
-		}
 
+			default:
+				call.Error = errgo.Newf("muxrpc: unhandled pkt.Type %s", pkt)
+				call.done()
+				break
+			}
+		}
 	}
+	xlog.Error("input() loop broken. Err:", err)
 	// Terminate pending calls.
 	client.reqMutex.Lock()
 	client.mutex.Lock()
@@ -189,6 +212,8 @@ func (client *Client) read() {
 
 }
 
+// Request is the Body value for rpc calls
+// TODO: might fit into Call cleaner
 type Request struct {
 	Name []string      `json:"name"`
 	Args []interface{} `json:"args"`
@@ -196,22 +221,24 @@ type Request struct {
 }
 
 type Call struct {
-	Method string      // The name of the service and method to call.
+	Method string // The name of the service and method to call.
+	Type   codec.PacketType
 	Args   interface{} // The argument to the function (*struct).
 	Reply  interface{} // The reply from the function (*struct).
 	Error  error       // After completion, the error status.
 	Done   chan *Call  // Strobes when call is complete.
 
-	data   chan<- interface{}
+	data   chan interface{}
 	stream bool
 }
 
 func (call *Call) done() {
 	select {
 	case call.Done <- call:
-		// ok
+		if call.stream {
+			close(call.data)
+		}
 	default:
-
 		xlog.Debug("muxrpc: discarding Call reply due to insufficient Done chan capacity")
 	}
 }
@@ -220,11 +247,7 @@ func (call *Call) done() {
 // the invocation.  The done channel will signal when the call is complete by returning
 // the same Call object.  If done is nil, Go will allocate a new channel.
 // If non-nil, done must be buffered or Go will deliberately crash.
-func (client *Client) Go(method string, args interface{}, reply interface{}, done chan *Call) *Call {
-	call := new(Call)
-	call.Method = method
-	call.Args = args
-	call.Reply = reply
+func (client *Client) Go(call *Call, done chan *Call) *Call {
 	if done == nil {
 		done = make(chan *Call, 10) // buffered.
 	} else {
@@ -242,8 +265,40 @@ func (client *Client) Go(method string, args interface{}, reply interface{}, don
 }
 
 // Call invokes the named function, waits for it to complete, and returns its error status.
-func (client *Client) Call(serviceMethod string, args interface{}, reply interface{}) error {
-	call := <-client.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done
+func (client *Client) Call(method string, args interface{}, reply interface{}) error {
+	var c Call
+	c.Method = method
+	c.Args = args
+	c.Reply = reply
+	c.Type = codec.JSON // TODO: find other example
+	call := <-client.Go(&c, make(chan *Call, 1)).Done
+	return call.Error
+}
+
+func (client *Client) SyncSource(method string, args interface{}, reply interface{}) error {
+	var c Call
+	c.Method = method
+	c.Args = args
+	c.Reply = reply // TODO: useless
+	c.Type = codec.JSON
+	data := make(chan interface{})
+	c.data = data
+	c.stream = true
+	client.Go(&c, make(chan *Call, 1))
+	arr, ok := reply.(*[]int)
+	if !ok {
+		return errgo.Newf("reply not usable: %T", reply)
+	}
+	for d := range c.data {
+		// xlog.Infof("Data: %+v", d)
+		i, ok := d.(float64)
+		if !ok {
+			return errgo.Newf("data not usable: %T", d)
+		}
+		*arr = append(*arr, int(i))
+	}
+	xlog.Infof("Arr: %v", arr)
+	call := <-c.Done
 	return call.Error
 }
 
