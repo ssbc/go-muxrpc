@@ -19,5 +19,9 @@ func main() {
 	logging.CheckFatal(err)
 	l.Info("Response:", resp)
 
+	// TODO
+	// var data []int
+	// err = c.SyncSource("stuff", nil, &data)
+	// logging.CheckFatal(err)
 	logging.CheckFatal(c.Close())
 }
