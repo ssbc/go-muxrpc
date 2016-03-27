@@ -42,6 +42,7 @@ type Client struct {
 }
 
 func NewClient(rwc io.ReadWriteCloser) *Client {
+	// TODO: pass in ctx
 	c := Client{
 		r:       codec.NewReader(rwc),
 		w:       codec.NewWriter(rwc),
@@ -110,7 +111,6 @@ func (client *Client) read() {
 	for err == nil {
 		pkt, err = client.r.ReadPacket()
 		if err != nil {
-			xlog.Error("ReadPacket error:", err)
 			break
 		}
 		seq := -pkt.Req
@@ -175,7 +175,6 @@ func (client *Client) read() {
 			}
 		}
 	}
-	xlog.Error("input() loop broken. Err:", err)
 	// Terminate pending calls.
 	client.mutex.Lock()
 	client.shutdown = true
@@ -287,5 +286,6 @@ func (client *Client) SyncSource(method string, args interface{}, reply interfac
 }
 
 func (c *Client) Close() error {
+	c.closing = true
 	return c.w.Close() // also closes the underlying con
 }
