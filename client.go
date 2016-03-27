@@ -34,9 +34,6 @@ type Client struct {
 	w *codec.Writer
 	c io.ReadWriteCloser
 
-	reqMutex sync.Mutex // protects following
-	request  codec.Packet
-
 	mutex    sync.Mutex // protects following
 	seq      int32
 	pending  map[int32]*Call
@@ -57,8 +54,6 @@ func NewClient(rwc io.ReadWriteCloser) *Client {
 }
 
 func (client *Client) send(call *Call) {
-	client.reqMutex.Lock()
-	defer client.reqMutex.Unlock()
 
 	// Register this call.
 	client.mutex.Lock()
@@ -74,8 +69,9 @@ func (client *Client) send(call *Call) {
 	client.mutex.Unlock()
 
 	// Encode and send the request.
-	client.request.Req = seq
-	client.request.Type = call.Type // TODO: non JSON request
+	var pkt codec.Packet
+	pkt.Req = seq
+	pkt.Type = call.Type // TODO: non JSON request
 
 	var req Request
 	req.Name = []string{call.Method} // TODO: nested methods
@@ -85,32 +81,26 @@ func (client *Client) send(call *Call) {
 	}
 	if call.stream {
 		req.Type = "source"
-		client.request.Stream = true
+		pkt.Stream = true
 	}
+
 	var err error
-	if client.request.Body, err = json.Marshal(req); err != nil {
+	if pkt.Body, err = json.Marshal(req); err != nil {
 		client.mutex.Lock()
-		call = client.pending[seq]
 		delete(client.pending, seq)
 		client.mutex.Unlock()
-		if call != nil {
-			call.Error = errgo.Notef(err, "muxrpc/call: body json.Marshal() failed")
-			call.done()
-		}
+		call.Error = errgo.Notef(err, "muxrpc/call: body json.Marshal() failed")
+		call.done()
 		return
 	}
+	pkt.Len = uint32(len(pkt.Body))
 
-	client.request.Len = uint32(len(client.request.Body))
-
-	if err := client.w.WritePacket(&client.request); err != nil {
+	if err := client.w.WritePacket(&pkt); err != nil {
 		client.mutex.Lock()
-		call = client.pending[seq]
 		delete(client.pending, seq)
 		client.mutex.Unlock()
-		if call != nil {
-			call.Error = err
-			call.done()
-		}
+		call.Error = errgo.Notef(err, "muxrpc/call: WritePacket() failed")
+		call.done()
 	}
 }
 
@@ -132,9 +122,8 @@ func (client *Client) read() {
 		client.mutex.Unlock()
 
 		switch {
-		case call == nil:
+		case call == nil: // no call with this ID
 			// TODO: check above will panic anyway in this case...
-
 			xlog.Warn("could not handle incomming pkt: %s", pkt)
 		case pkt.EndErr:
 			// TODO: difference between End and Error?
@@ -146,7 +135,6 @@ func (client *Client) read() {
 				call.Error = ServerError(string(pkt.Body))
 			}
 			call.done()
-
 		default:
 			switch pkt.Type {
 			case codec.JSON:
@@ -189,7 +177,6 @@ func (client *Client) read() {
 	}
 	xlog.Error("input() loop broken. Err:", err)
 	// Terminate pending calls.
-	client.reqMutex.Lock()
 	client.mutex.Lock()
 	client.shutdown = true
 	closing := client.closing
@@ -205,7 +192,6 @@ func (client *Client) read() {
 		call.done()
 	}
 	client.mutex.Unlock()
-	client.reqMutex.Unlock()
 	if err != io.EOF && !closing {
 		xlog.Warn("rpc: client protocol error:", err)
 	}
@@ -290,14 +276,12 @@ func (client *Client) SyncSource(method string, args interface{}, reply interfac
 		return errgo.Newf("reply not usable: %T", reply)
 	}
 	for d := range c.data {
-		// xlog.Infof("Data: %+v", d)
 		i, ok := d.(float64)
 		if !ok {
 			return errgo.Newf("data not usable: %T", d)
 		}
 		*arr = append(*arr, int(i))
 	}
-	xlog.Infof("Arr: %v", arr)
 	call := <-c.Done
 	return call.Error
 }
