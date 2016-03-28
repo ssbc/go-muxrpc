@@ -1,4 +1,3 @@
-// Package codec implements https://github.com/dominictarr/packet-stream-codec
 package codec
 
 import (
@@ -11,10 +10,10 @@ import (
 
 type Writer struct{ w io.Writer }
 
-// TODO: make io.WriteCloser to send 9 zeros
-
+// NewWriter creates a new packet-stream writer
 func NewWriter(w io.Writer) *Writer { return &Writer{w} }
 
+// WritePacket creates an header for the Packet and writes it and the body to the underlying writer
 func (w *Writer) WritePacket(r *Packet) error {
 	if int(r.Len) != len(r.Body) {
 		return errgo.Newf("pkt-codec: header(%d) length missmatched body(%d) length", r.Len, len(r.Body))
@@ -43,6 +42,7 @@ func (w *Writer) WritePacket(r *Packet) error {
 	return nil
 }
 
+// Close sends 9 zero bytes and also closes it's underlying writer if it is also an io.Closer
 func (w *Writer) Close() error {
 	_, err := w.w.Write([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0})
 	if err != nil {

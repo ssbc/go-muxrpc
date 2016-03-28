@@ -12,6 +12,8 @@ type Reader struct{ r io.Reader }
 
 func NewReader(r io.Reader) *Reader { return &Reader{r} }
 
+// ReadPacket decodes the header from the underlying writer, and reads as many bytes as specified in it
+// TODO: pass in packet pointer as arg to reduce allocations
 func (r *Reader) ReadPacket() (*Packet, error) {
 	var hdr Header
 	var buf bytes.Buffer // TOOD: might want a buffer pool for this

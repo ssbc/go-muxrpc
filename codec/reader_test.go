@@ -2,10 +2,11 @@ package codec
 
 import (
 	"io"
-	"os"
 	"os/exec"
 	"reflect"
 	"testing"
+
+	"github.com/cryptix/go/logging/logtest"
 )
 
 var testPkts = []Packet{
@@ -19,15 +20,12 @@ var testPkts = []Packet{
 }
 
 func TestReader(t *testing.T) {
-
 	cmd := exec.Command("node", "reader_test.js")
-	cmd.Stderr = os.Stderr
-
+	cmd.Stderr = logtest.Logger("reader_test.js", t)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	//out = ioutil.NopCloser(debug.NewReadHexLogger("dbg:", out))
 
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

@@ -4,11 +4,12 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/cryptix/go/logging/logtest"
 	"github.com/cryptix/go/proc"
 )
 
 func TestCall(t *testing.T) {
-	serv, err := proc.StartStdioProcess("node", "client_test.js")
+	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +28,7 @@ func TestCall(t *testing.T) {
 }
 
 func TestSyncSource(t *testing.T) {
-	serv, err := proc.StartStdioProcess("node", "client_test.js")
+	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"github.com/rs/xlog"
 )
 
+// Wrap decodes every packet that passes through it and logs it
 func Wrap(rwc io.ReadWriteCloser) io.ReadWriteCloser {
 	prout, pwout := io.Pipe()
 	go func() {
@@ -20,11 +21,11 @@ func Wrap(rwc io.ReadWriteCloser) io.ReadWriteCloser {
 			xlog.Info("From:", pkt)
 		}
 	}()
+
 	prin, pwin := io.Pipe()
 	w := NewWriter(rwc)
 	go func() {
 		r := NewReader(prin)
-
 		for {
 			pkt, err := r.ReadPacket()
 			if err != nil {
