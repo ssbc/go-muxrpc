@@ -113,9 +113,17 @@ func (client *Client) read() {
 		if err != nil {
 			break
 		}
+		xlog.Info("muxrpc got pkt:", pkt)
 		seq := -pkt.Req
 		client.mutex.Lock()
-		call := client.pending[seq]
+		// TODO: this is... p2p! no srsly we might get called
+		call, ok := client.pending[seq]
+		if !ok {
+			xlog.Warn("non-pending pkt: ", pkt)
+			client.mutex.Unlock()
+			continue
+
+		}
 		if !call.stream || (pkt.Stream && pkt.EndErr) {
 			delete(client.pending, seq)
 		}
