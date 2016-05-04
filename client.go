@@ -113,7 +113,6 @@ func (client *Client) read() {
 		if err != nil {
 			break
 		}
-		xlog.Info("muxrpc got pkt:", pkt)
 		seq := -pkt.Req
 		client.mutex.Lock()
 		// TODO: this is... p2p! no srsly we might get called
@@ -278,16 +277,16 @@ func (client *Client) SyncSource(method string, args interface{}, reply interfac
 	c.data = data
 	c.stream = true
 	client.Go(&c, make(chan *Call, 1))
-	arr, ok := reply.(*[]int)
+	arr, ok := reply.(*[]map[string]interface{})
 	if !ok {
 		return errgo.Newf("reply not usable: %T", reply)
 	}
 	for d := range c.data {
-		i, ok := d.(float64)
+		i, ok := d.(map[string]interface{})
 		if !ok {
 			return errgo.Newf("data not usable: %T", d)
 		}
-		*arr = append(*arr, int(i))
+		*arr = append(*arr, i)
 	}
 	call := <-c.Done
 	return call.Error
