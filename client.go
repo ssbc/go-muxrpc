@@ -129,9 +129,6 @@ func (client *Client) read() {
 		client.mutex.Unlock()
 
 		switch {
-		case call == nil: // no call with this ID
-			// TODO: check above will panic anyway in this case...
-			xlog.Warn("could not handle incomming pkt: %s", pkt)
 		case pkt.EndErr:
 			// TODO: difference between End and Error?
 			if pkt.Stream {
@@ -145,16 +142,21 @@ func (client *Client) read() {
 		default:
 			switch pkt.Type {
 			case codec.JSON:
-				var um interface{}
-				if err := json.Unmarshal(pkt.Body, &um); err != nil {
-					call.Error = errgo.Notef(err, "muxrpc: unmarshall error")
-					call.done()
-					break
-				}
+				// todo there sure is a nicer way to structure this
 				if call.stream {
+					var um interface{}
+					if err := json.Unmarshal(pkt.Body, &um); err != nil {
+						call.Error = errgo.Notef(err, "muxrpc: unmarshall error")
+						call.done()
+						break
+					}
 					call.data <- um
 				} else {
-					call.Reply = um
+					if err := json.Unmarshal(pkt.Body, call.Reply); err != nil {
+						call.Error = errgo.Notef(err, "muxrpc: unmarshall error")
+						call.done()
+						break
+					}
 					call.done()
 				}
 
