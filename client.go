@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/rs/xlog"
@@ -75,10 +76,25 @@ func (client *Client) send(call *Call) {
 	pkt.Type = call.Type // TODO: non JSON request
 
 	var req Request
-	req.Name = []string{call.Method} // TODO: nested methods
+
+	if methods := strings.Split(call.Method, "."); len(methods) > 1 {
+		req.Name = methods
+	} else {
+		req.Name = []string{call.Method}
+	}
 	req.Args = []interface{}{}
 	if call.Args != nil {
-		req.Args = []interface{}{call.Args} // TODO: multiple arguments
+		req.Args = []interface{}{call.Args}
+		/* TODO(cryptix): hacked this to test multiple arguments
+
+		Maybe change the Call() signature to Call(method string, reply interface{}, args ...interface{})?
+		*/
+		if call.Method == "private.publish" {
+			a := call.Args.(map[string]interface{})
+			req.Args = make([]interface{}, 2)
+			req.Args[0] = a["content"]
+			req.Args[1] = a["rcps"]
+		}
 	}
 	if call.stream {
 		req.Type = "source"
