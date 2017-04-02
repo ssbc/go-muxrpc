@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"os"
 
 	"github.com/cryptix/go-muxrpc/codec"
 	"github.com/cryptix/go/logging"
@@ -11,10 +12,10 @@ import (
 func main() {
 	logging.SetupLogging(nil)
 
-	serverConn, err := proc.StartStdioProcess("node", "server.js")
+	serverConn, err := proc.StartStdioProcess("node", os.Stderr, "server.js")
 	logging.CheckFatal(err)
 
-	clientConn, err := proc.StartStdioProcess("node", "client.js")
+	clientConn, err := proc.StartStdioProcess("node", os.Stderr, "client.js")
 	logging.CheckFatal(err)
 
 	server2client := io.TeeReader(serverConn, clientConn)
@@ -30,7 +31,7 @@ func consume(prefix string, r io.Reader) {
 	for {
 		pkt, err := pr.ReadPacket()
 		logging.CheckFatal(err)
-		l.Infof("[%d] %s", i, pkt)
+		l.Log("i", i, "pkt", pkt)
 		i++
 	}
 }

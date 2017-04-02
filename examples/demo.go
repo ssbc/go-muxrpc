@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/cryptix/go-muxrpc"
 	"github.com/cryptix/go/logging"
 	"github.com/cryptix/go/proc"
@@ -10,14 +12,14 @@ func main() {
 	logging.SetupLogging(nil)
 	l := logging.Logger("clientDemo")
 
-	serv, err := proc.StartStdioProcess("node", "server.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "server.js")
 	logging.CheckFatal(err)
 
-	c := muxrpc.NewClient(serv) // debug.WrapRWC(serv)
+	c := muxrpc.NewClient(l, serv) // debug.WrapRWC(serv)
 	var resp string
 	err = c.Call("hello", "world", &resp)
 	logging.CheckFatal(err)
-	l.Info("Response:", resp)
+	l.Log("response", resp)
 
 	// TODO
 	// var data []int

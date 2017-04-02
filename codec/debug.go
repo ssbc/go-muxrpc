@@ -3,44 +3,46 @@ package codec
 import (
 	"io"
 
-	"github.com/rs/xlog"
+	"github.com/go-kit/kit/log"
 )
 
 // Wrap decodes every packet that passes through it and logs it
-func Wrap(rwc io.ReadWriteCloser) io.ReadWriteCloser {
+func Wrap(l log.Logger, rwc io.ReadWriteCloser) io.ReadWriteCloser {
 	prout, pwout := io.Pipe()
 	go func() {
+		lout := log.With(l, "unit", "pipeFrom")
 		r := NewReader(io.TeeReader(rwc, pwout))
 		for {
 			pkt, err := r.ReadPacket()
 			if err != nil {
-				xlog.Error("From error:", err)
+				lout.Log("error", err)
 				pwout.CloseWithError(err)
 				return
 			}
-			xlog.Info("From:", pkt)
+			lout.Log("pkt", pkt)
 		}
 	}()
 
 	prin, pwin := io.Pipe()
 	w := NewWriter(rwc)
 	go func() {
+		lin := log.With(l, "unit", "pipeFrom")
 		r := NewReader(prin)
 		for {
 			pkt, err := r.ReadPacket()
 			if err != nil {
 				if err != io.EOF {
-					xlog.Error("To error:", err)
+					lin.Log("action", "ReadPacket", "error", err)
 					prin.CloseWithError(err)
 				}
 				return
 			}
 			if err := w.WritePacket(pkt); err != nil {
-				xlog.Error("To error:", err)
+				lin.Log("action", "WritePacket", "error", err)
 				prin.CloseWithError(err)
 				return
 			}
-			xlog.Info("To:", pkt)
+			lin.Log("pkt", pkt)
 		}
 	}()
 	return struct {

@@ -8,16 +8,14 @@ package muxrpc
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
-	"log"
 	"strings"
 	"sync"
 
-	"github.com/rs/xlog"
-	"gopkg.in/errgo.v1"
-
 	"github.com/cryptix/go-muxrpc/codec"
+	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
 )
 
 // ServerError represents an error that has been returned from
@@ -40,9 +38,11 @@ type Client struct {
 	pending  map[int32]*Call
 	closing  bool // user has called Close
 	shutdown bool // server has told us to stop
+
+	log log.Logger // logging utility for unhandled calls etc
 }
 
-func NewClient(rwc io.ReadWriteCloser) *Client {
+func NewClient(l log.Logger, rwc io.ReadWriteCloser) *Client {
 	// TODO: pass in ctx
 	c := Client{
 		r:       codec.NewReader(rwc),
@@ -50,6 +50,8 @@ func NewClient(rwc io.ReadWriteCloser) *Client {
 		c:       rwc,
 		seq:     1,
 		pending: make(map[int32]*Call),
+
+		log: log.With(l, "unit", "muxrpc"),
 	}
 	go c.read()
 	return &c
@@ -106,7 +108,7 @@ func (client *Client) send(call *Call) {
 		client.mutex.Lock()
 		delete(client.pending, seq)
 		client.mutex.Unlock()
-		call.Error = errgo.Notef(err, "muxrpc/call: body json.Marshal() failed")
+		call.Error = errors.Wrap(err, "muxrpc/call: body json.Marshal() failed")
 		call.done()
 		return
 	}
@@ -116,7 +118,7 @@ func (client *Client) send(call *Call) {
 		client.mutex.Lock()
 		delete(client.pending, seq)
 		client.mutex.Unlock()
-		call.Error = errgo.Notef(err, "muxrpc/call: WritePacket() failed")
+		call.Error = errors.Wrap(err, "muxrpc/call: WritePacket() failed")
 		call.done()
 	}
 }
@@ -134,7 +136,7 @@ func (client *Client) read() {
 		// TODO: this is... p2p! no srsly we might get called
 		call, ok := client.pending[seq]
 		if !ok {
-			xlog.Warn("non-pending pkt: ", pkt)
+			client.log.Log("warning", fmt.Sprintf("non-pending pkt: %s", pkt))
 			client.mutex.Unlock()
 			continue
 
@@ -162,14 +164,14 @@ func (client *Client) read() {
 				if call.stream {
 					var um interface{}
 					if err := json.Unmarshal(pkt.Body, &um); err != nil {
-						call.Error = errgo.Notef(err, "muxrpc: unmarshall error")
+						call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
 						call.done()
 						break
 					}
 					call.data <- um
 				} else {
 					if err := json.Unmarshal(pkt.Body, call.Reply); err != nil {
-						call.Error = errgo.Notef(err, "muxrpc: unmarshall error")
+						call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
 						call.done()
 						break
 					}
@@ -179,13 +181,13 @@ func (client *Client) read() {
 			case codec.String:
 				if call.stream {
 					// TODO
-					call.Error = errgo.New("muxrpc: unhandeld encoding (string stream)")
+					call.Error = errors.New("muxrpc: unhandeld encoding (string stream)")
 					call.done()
 					break
 				} else {
 					sptr, ok := call.Reply.(*string)
 					if !ok {
-						call.Error = errgo.New("muxrpc: illegal reply argument. wanted (*string)")
+						call.Error = errors.New("muxrpc: illegal reply argument. wanted (*string)")
 						call.done()
 						break
 					}
@@ -194,7 +196,7 @@ func (client *Client) read() {
 				}
 
 			default:
-				call.Error = errgo.Newf("muxrpc: unhandled pkt.Type %s", pkt)
+				call.Error = errors.Errorf("muxrpc: unhandled pkt.Type %s", pkt)
 				call.done()
 				break
 			}
@@ -217,7 +219,7 @@ func (client *Client) read() {
 	}
 	client.mutex.Unlock()
 	if err != io.EOF && !closing {
-		xlog.Warn("rpc: client protocol error:", err)
+		client.log.Log("error", errors.Wrap(err, "rpc: client protocol error."))
 	}
 
 }
@@ -240,6 +242,8 @@ type Call struct {
 
 	data   chan interface{}
 	stream bool
+
+	log log.Logger
 }
 
 func (call *Call) done() {
@@ -249,7 +253,7 @@ func (call *Call) done() {
 			close(call.data)
 		}
 	default:
-		xlog.Debug("muxrpc: discarding Call reply due to insufficient Done chan capacity")
+		call.log.Log("debug/todo", "discarding Call reply due to insufficient Done chan capacity")
 	}
 }
 
@@ -266,7 +270,9 @@ func (client *Client) Go(call *Call, done chan *Call) *Call {
 		// RPCs that will be using that channel.  If the channel
 		// is totally unbuffered, it's best not to run at all.
 		if cap(done) == 0 {
-			log.Panic("muxrpc: done channel is unbuffered")
+			msg := "done channel is unbuffered"
+			client.log.Log("error", msg)
+			panic(msg)
 		}
 	}
 	call.Done = done
@@ -277,6 +283,7 @@ func (client *Client) Go(call *Call, done chan *Call) *Call {
 // Call invokes the named function, waits for it to complete, and returns its error status.
 func (client *Client) Call(method string, args interface{}, reply interface{}) error {
 	var c Call
+	c.log = log.With(client.log, "unit", "muxrpc/call", "method", method)
 	c.Method = method
 	c.Args = args
 	c.Reply = reply
@@ -287,6 +294,7 @@ func (client *Client) Call(method string, args interface{}, reply interface{}) e
 
 func (client *Client) SyncSource(method string, args interface{}, reply interface{}) error {
 	var c Call
+	c.log = log.With(client.log, "unit", "muxrpc/sync", "method", method)
 	c.Method = method
 	c.Args = args
 	c.Reply = reply // TODO: useless
@@ -297,12 +305,12 @@ func (client *Client) SyncSource(method string, args interface{}, reply interfac
 	client.Go(&c, make(chan *Call, 1))
 	arr, ok := reply.(*[]map[string]interface{})
 	if !ok {
-		return errgo.Newf("reply not usable: %T", reply)
+		return errors.Errorf("reply not usable: %T", reply)
 	}
 	for d := range c.data {
 		i, ok := d.(map[string]interface{})
 		if !ok {
-			return errgo.Newf("data not usable: %T", d)
+			return errors.Errorf("data not usable: %T", d)
 		}
 		*arr = append(*arr, i)
 	}
