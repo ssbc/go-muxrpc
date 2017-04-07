@@ -1,7 +1,6 @@
 package codec
 
 import (
-	"bytes"
 	"encoding/binary"
 	"io"
 
@@ -16,14 +15,13 @@ func NewReader(r io.Reader) *Reader { return &Reader{r} }
 // TODO: pass in packet pointer as arg to reduce allocations
 func (r *Reader) ReadPacket() (*Packet, error) {
 	var hdr Header
-	var buf bytes.Buffer // TOOD: might want a buffer pool for this
-	err := binary.Read(io.TeeReader(r.r, &buf), binary.BigEndian, &hdr)
+	err := binary.Read(r.r, binary.BigEndian, &hdr)
 	if err != nil {
 		return nil, errgo.Notef(err, "pkt-codec: header read failed")
 	}
 
 	// detect EOF pkt. TODO: not sure how to do this nicer
-	if buf.Len() == 9 && bytes.Compare(buf.Bytes(), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0}) == 0 {
+	if hdr.Flag == 0 && hdr.Len == 0 && hdr.Req == 0 {
 		return nil, io.EOF
 	}
 
