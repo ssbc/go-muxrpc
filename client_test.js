@@ -15,7 +15,7 @@ var server = MRPC(null, api)({
   },
   stuff: function () {
     console.error('stuff called')
-    return pull.values([{"ohai":1}, {"omg":2}, {"wtf":3}, {"obj":4}])
+    return pull.values([{"a":1}, {"a":2}, {"a":3}, {"a":4}])
   }
 })
 

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -153,13 +154,22 @@ func (client *Client) read() {
 			case codec.JSON:
 				// todo there sure is a nicer way to structure this
 				if call.stream {
-					var um interface{}
-					if err := json.Unmarshal(pkt.Body, &um); err != nil {
+					replyVal := reflect.ValueOf(call.Reply)
+					if replyVal.Kind() != reflect.Chan {
 						call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
 						call.done()
 						break
 					}
-					call.data <- um
+					elemVal := reflect.New(replyVal.Type().Elem())
+					elem := elemVal.Interface()
+
+					if err := json.Unmarshal(pkt.Body, elem); err != nil {
+						call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
+						call.done()
+						break
+					}
+
+					replyVal.Send(elemVal.Elem())
 				} else {
 					if err := json.Unmarshal(pkt.Body, call.Reply); err != nil {
 						call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
@@ -231,7 +241,6 @@ type Call struct {
 	Error  error         // After completion, the error status.
 	Done   chan *Call    // Strobes when call is complete.
 
-	data   chan interface{}
 	stream bool
 
 	log log.Logger
@@ -240,7 +249,10 @@ type Call struct {
 func (call *Call) done() {
 	call.Done <- call
 	if call.stream {
-		close(call.data)
+		replyVal := reflect.ValueOf(call.Reply)
+		if replyVal.Kind() == reflect.Chan {
+			replyVal.Close()
+		}
 	}
 }
 
@@ -264,32 +276,23 @@ func (client *Client) Call(method string, reply interface{}, args ...interface{}
 	c.Args = args
 	c.Reply = reply
 	c.Type = codec.JSON // TODO: find other example
-	call := <-client.Go(&c, make(chan *Call, 1)).Done
+	call := <-client.Go(&c, nil).Done
 	return call.Error
 }
 
-func (client *Client) SyncSource(method string, reply interface{}, args ...interface{}) error {
+func (client *Client) Source(method string, reply interface{}, args ...interface{}) error {
 	var c Call
 	c.log = log.With(client.log, "unit", "muxrpc/sync", "method", method)
 	c.Method = method
 	c.Args = args
-	c.Reply = reply // TODO: useless
+	replyVal := reflect.ValueOf(reply)
+	if replyVal.Kind() != reflect.Chan {
+		return errors.Errorf("reply not a channel: %T", reply)
+	}
+	c.Reply = reply
 	c.Type = codec.JSON
-	data := make(chan interface{})
-	c.data = data
 	c.stream = true
-	client.Go(&c, make(chan *Call, 1))
-	arr, ok := reply.(*[]map[string]interface{})
-	if !ok {
-		return errors.Errorf("reply not usable: %T", reply)
-	}
-	for d := range c.data {
-		i, ok := d.(map[string]interface{})
-		if !ok {
-			return errors.Errorf("data not usable: %T", d)
-		}
-		*arr = append(*arr, i)
-	}
+	client.Go(&c, nil)
 	call := <-c.Done
 	return call.Error
 }

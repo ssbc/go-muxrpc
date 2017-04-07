@@ -1,6 +1,7 @@
 package muxrpc
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/cryptix/go/logging/logtest"
@@ -30,15 +31,20 @@ func TestCall(t *testing.T) {
 	}
 }
 
-func TestSyncSource(t *testing.T) {
+func TestSource(t *testing.T) {
 	logger := log.NewLogfmtLogger(logtest.Logger("TestSyncSource()", t))
 	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := NewClient(logger, serv) //codec.Wrap(logger,serv))
-	var resp []map[string]interface{}
-	err = c.SyncSource("stuff", &resp)
+	resp := make(chan struct{ A int })
+	go func() {
+		for val := range resp {
+			fmt.Printf("%#v\n", val)
+		}
+	}()
+	err = c.Source("stuff", resp)
 	if err != nil {
 		t.Fatal(err)
 	}
