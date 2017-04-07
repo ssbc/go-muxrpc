@@ -15,9 +15,6 @@ func NewWriter(w io.Writer) *Writer { return &Writer{w} }
 
 // WritePacket creates an header for the Packet and writes it and the body to the underlying writer
 func (w *Writer) WritePacket(r *Packet) error {
-	if int(r.Len) != len(r.Body) {
-		return errgo.Newf("pkt-codec: header(%d) length missmatched body(%d) length", r.Len, len(r.Body))
-	}
 	var hdr Header
 	if r.Stream {
 		hdr.Flag |= FlagStream
@@ -25,13 +22,8 @@ func (w *Writer) WritePacket(r *Packet) error {
 	if r.EndErr {
 		hdr.Flag |= FlagEndErr
 	}
-	switch r.Type {
-	case String:
-		hdr.Flag |= 1
-	case JSON:
-		hdr.Flag |= 2
-	}
-	hdr.Len = r.Len
+	hdr.Flag |= r.Type.Flag()
+	hdr.Len = uint32(len(r.Body))
 	hdr.Req = r.Req
 	if err := binary.Write(w.w, binary.BigEndian, hdr); err != nil {
 		return errgo.Notef(err, "pkt-codec: header write failed")

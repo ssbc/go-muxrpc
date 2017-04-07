@@ -112,7 +112,6 @@ func (client *Client) send(call *Call) {
 		call.done()
 		return
 	}
-	pkt.Len = uint32(len(pkt.Body))
 
 	if err := client.w.WritePacket(&pkt); err != nil {
 		client.mutex.Lock()

@@ -31,8 +31,7 @@ func (r *Reader) ReadPacket() (*Packet, error) {
 	var p = Packet{
 		Stream: (hdr.Flag & FlagStream) != 0,
 		EndErr: (hdr.Flag & FlagEndErr) != 0,
-		Type:   PacketType((byte(hdr.Flag) & 3)),
-		Len:    hdr.Len,
+		Type:   hdr.Flag.PacketType(),
 		Req:    hdr.Req,
 	}
 
