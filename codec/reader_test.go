@@ -10,13 +10,13 @@ import (
 )
 
 var testPkts = []Packet{
-	{Stream: false, EndErr: false, Type: JSON, Len: 23, Req: 0, Body: []byte(`["event",{"okay":true}]`)},
-	{Stream: false, EndErr: false, Type: String, Len: 8, Req: 1, Body: []byte(`whatever`)},
-	{Stream: true, EndErr: false, Type: Buffer, Len: 5, Req: 2, Body: []byte(`hello`)},
-	{Stream: true, EndErr: false, Type: Buffer, Len: 7, Req: -2, Body: []byte(`goodbye`)},
-	{Stream: false, EndErr: true, Type: JSON, Len: 40, Req: -3, Body: []byte(`{"message":"intentional","name":"Error"}`)},
-	{Stream: true, EndErr: true, Type: JSON, Len: 4, Req: 2, Body: []byte(`true`)},
-	{Stream: true, EndErr: true, Type: JSON, Len: 4, Req: -2, Body: []byte(`true`)},
+	{Stream: false, EndErr: false, Type: JSON, Req: 0, Body: []byte(`["event",{"okay":true}]`)},
+	{Stream: false, EndErr: false, Type: String, Req: 1, Body: []byte(`whatever`)},
+	{Stream: true, EndErr: false, Type: Buffer, Req: 2, Body: []byte(`hello`)},
+	{Stream: true, EndErr: false, Type: Buffer, Req: -2, Body: []byte(`goodbye`)},
+	{Stream: false, EndErr: true, Type: JSON, Req: -3, Body: []byte(`{"message":"intentional","name":"Error"}`)},
+	{Stream: true, EndErr: true, Type: JSON, Req: 2, Body: []byte(`true`)},
+	{Stream: true, EndErr: true, Type: JSON, Req: -2, Body: []byte(`true`)},
 }
 
 func TestReader(t *testing.T) {
