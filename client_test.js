@@ -9,9 +9,9 @@ var api = {
 }
 
 var server = MRPC(null, api)({
-  hello: function (name, cb) {
+  hello: function (name, name2, cb) {
     console.error('hello:ok')
-    cb(null, 'hello, ' + name + '!')
+    cb(null, 'hello, ' + name + ' and ' + name2 + '!')
   },
   stuff: function () {
     console.error('stuff called')

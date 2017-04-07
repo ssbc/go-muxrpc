@@ -15,13 +15,14 @@ func TestCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	c := NewClient(logger, serv) //codec.Wrap(serv)) // debug.WrapRWC(serv)
 	var resp string
-	err = c.Call("hello", "world", &resp)
+	err = c.Call("hello", &resp, "world", "bob")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp != "hello, world!" {
+	if resp != "hello, world and bob!" {
 		t.Fatal("wrong response:", resp)
 	}
 	if err := c.Close(); err != nil {
@@ -37,7 +38,7 @@ func TestSyncSource(t *testing.T) {
 	}
 	c := NewClient(logger, serv) //codec.Wrap(logger,serv))
 	var resp []map[string]interface{}
-	err = c.SyncSource("stuff", nil, &resp)
+	err = c.SyncSource("stuff", &resp)
 	if err != nil {
 		t.Fatal(err)
 	}

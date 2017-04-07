@@ -33,6 +33,8 @@ type Client struct {
 	w *codec.Writer
 	c io.ReadWriteCloser
 
+	sendqueue chan *Call
+
 	mutex    sync.Mutex // protects following
 	seq      int32
 	pending  map[int32]*Call
@@ -45,80 +47,70 @@ type Client struct {
 func NewClient(l log.Logger, rwc io.ReadWriteCloser) *Client {
 	// TODO: pass in ctx
 	c := Client{
-		r:       codec.NewReader(rwc),
-		w:       codec.NewWriter(rwc),
-		c:       rwc,
-		seq:     1,
-		pending: make(map[int32]*Call),
+		r:         codec.NewReader(rwc),
+		w:         codec.NewWriter(rwc),
+		c:         rwc,
+		sendqueue: make(chan *Call, 100),
+		seq:       1,
+		pending:   make(map[int32]*Call),
 
 		log: log.With(l, "unit", "muxrpc"),
 	}
 	go c.read()
+	go c.send()
 	return &c
 }
 
-func (client *Client) send(call *Call) {
-
-	// Register this call.
-	client.mutex.Lock()
-	if client.shutdown || client.closing {
-		call.Error = ErrShutdown
-		client.mutex.Unlock()
-		call.done()
-		return
-	}
-	seq := client.seq
-	client.seq++
-	client.pending[seq] = call
-	client.mutex.Unlock()
-
-	// Encode and send the request.
-	var pkt codec.Packet
-	pkt.Req = seq
-	pkt.Type = call.Type // TODO: non JSON request
-
-	var req Request
-
-	if methods := strings.Split(call.Method, "."); len(methods) > 1 {
-		req.Name = methods
-	} else {
-		req.Name = []string{call.Method}
-	}
-	req.Args = []interface{}{}
-	if call.Args != nil {
-		req.Args = []interface{}{call.Args}
-		/* TODO(cryptix): hacked this to test multiple arguments
-
-		Maybe change the Call() signature to Call(method string, reply interface{}, args ...interface{})?
-		*/
-		if call.Method == "private.publish" {
-			a := call.Args.(map[string]interface{})
-			req.Args = make([]interface{}, 2)
-			req.Args[0] = a["content"]
-			req.Args[1] = a["rcps"]
+func (client *Client) send() {
+	for call := range client.sendqueue {
+		// Register this call.
+		client.mutex.Lock()
+		if client.shutdown || client.closing {
+			call.Error = ErrShutdown
+			client.mutex.Unlock()
+			call.done()
+			return
 		}
-	}
-	if call.stream {
-		req.Type = "source"
-		pkt.Stream = true
-	}
-
-	var err error
-	if pkt.Body, err = json.Marshal(req); err != nil {
-		client.mutex.Lock()
-		delete(client.pending, seq)
+		seq := client.seq
+		client.seq++
+		client.pending[seq] = call
 		client.mutex.Unlock()
-		call.Error = errors.Wrap(err, "muxrpc/call: body json.Marshal() failed")
-		call.done()
-		return
-	}
 
-	if err := client.w.WritePacket(&pkt); err != nil {
-		client.mutex.Lock()
-		delete(client.pending, seq)
-		client.mutex.Unlock()
-		call.Error = errors.Wrap(err, "muxrpc/call: WritePacket() failed")
-		call.done()
+		// Encode and send the request.
+		var pkt codec.Packet
+		pkt.Req = seq
+		pkt.Type = call.Type // TODO: non JSON request
+
+		var req Request
+
+		if methods := strings.Split(call.Method, "."); len(methods) > 1 {
+			req.Name = methods
+		} else {
+			req.Name = []string{call.Method}
+		}
+		req.Args = call.Args
+		if call.stream {
+			req.Type = "source"
+			pkt.Stream = true
+		}
+
+		var err error
+		if pkt.Body, err = json.Marshal(req); err != nil {
+			client.mutex.Lock()
+			delete(client.pending, seq)
+			client.mutex.Unlock()
+			call.Error = errors.Wrap(err, "muxrpc/call: body json.Marshal() failed")
+			call.done()
+			continue
+		}
+
+		if err := client.w.WritePacket(&pkt); err != nil {
+			client.mutex.Lock()
+			delete(client.pending, seq)
+			client.mutex.Unlock()
+			call.Error = errors.Wrap(err, "muxrpc/call: WritePacket() failed")
+			call.done()
+		}
 	}
 }
 
@@ -234,10 +226,10 @@ type Request struct {
 type Call struct {
 	Method string // The name of the service and method to call.
 	Type   codec.PacketType
-	Args   interface{} // The argument to the function (*struct).
-	Reply  interface{} // The reply from the function (*struct).
-	Error  error       // After completion, the error status.
-	Done   chan *Call  // Strobes when call is complete.
+	Args   []interface{} // The argument to the function (*struct).
+	Reply  interface{}   // The reply from the function (*struct).
+	Error  error         // After completion, the error status.
+	Done   chan *Call    // Strobes when call is complete.
 
 	data   chan interface{}
 	stream bool
@@ -246,41 +238,26 @@ type Call struct {
 }
 
 func (call *Call) done() {
-	select {
-	case call.Done <- call:
-		if call.stream {
-			close(call.data)
-		}
-	default:
-		call.log.Log("debug/todo", "discarding Call reply due to insufficient Done chan capacity")
+	call.Done <- call
+	if call.stream {
+		close(call.data)
 	}
 }
 
 // Go invokes the function asynchronously.  It returns the Call structure representing
 // the invocation.  The done channel will signal when the call is complete by returning
 // the same Call object.  If done is nil, Go will allocate a new channel.
-// If non-nil, done must be buffered or Go will deliberately crash.
 func (client *Client) Go(call *Call, done chan *Call) *Call {
 	if done == nil {
-		done = make(chan *Call, 10) // buffered.
-	} else {
-		// If caller passes done != nil, it must arrange that
-		// done has enough buffer for the number of simultaneous
-		// RPCs that will be using that channel.  If the channel
-		// is totally unbuffered, it's best not to run at all.
-		if cap(done) == 0 {
-			msg := "done channel is unbuffered"
-			client.log.Log("error", msg)
-			panic(msg)
-		}
+		done = make(chan *Call, 0) // unbuffered.
 	}
 	call.Done = done
-	client.send(call)
+	client.sendqueue <- call
 	return call
 }
 
 // Call invokes the named function, waits for it to complete, and returns its error status.
-func (client *Client) Call(method string, args interface{}, reply interface{}) error {
+func (client *Client) Call(method string, reply interface{}, args ...interface{}) error {
 	var c Call
 	c.log = log.With(client.log, "unit", "muxrpc/call", "method", method)
 	c.Method = method
@@ -291,7 +268,7 @@ func (client *Client) Call(method string, args interface{}, reply interface{}) e
 	return call.Error
 }
 
-func (client *Client) SyncSource(method string, args interface{}, reply interface{}) error {
+func (client *Client) SyncSource(method string, reply interface{}, args ...interface{}) error {
 	var c Call
 	c.log = log.With(client.log, "unit", "muxrpc/sync", "method", method)
 	c.Method = method
