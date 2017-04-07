@@ -1,7 +1,6 @@
 package muxrpc
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/cryptix/go/logging/logtest"
@@ -39,17 +38,18 @@ func TestSource(t *testing.T) {
 	}
 	c := NewClient(logger, serv) //codec.Wrap(logger,serv))
 	resp := make(chan struct{ A int })
-	go func() {
-		for val := range resp {
-			fmt.Printf("%#v\n", val)
-		}
-	}()
-	err = c.Source("stuff", resp)
+
+	go c.Source("stuff", resp)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp) != 4 {
-		t.Fatal("short response:", resp)
+	count := 0
+	for range resp {
+		//fmt.Printf("%#v\n", val)
+		count++
+	}
+	if count != 4 {
+		t.Fatal("Incorrect number of elements")
 	}
 	/*
 		 // TODO: test values again
