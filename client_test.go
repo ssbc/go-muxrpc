@@ -45,9 +45,6 @@ func TestSource(t *testing.T) {
 		c.Source("stuff", resp)
 		close(resp)
 	}()
-	if err != nil {
-		t.Fatal(err)
-	}
 	count := 0
 	for range resp {
 		//fmt.Printf("%#v\n", val)
@@ -70,7 +67,7 @@ func TestSource(t *testing.T) {
 	}
 }
 
-func TestFullCircle(t *testing.T) {
+func TestFullCall(t *testing.T) {
 	p1, p2 := net.Pipe()
 	logger := log.NewLogfmtLogger(logtest.Logger("TestFull()", t))
 
@@ -87,5 +84,42 @@ func TestFullCircle(t *testing.T) {
 
 	if resp != "test" {
 		t.Fatal("wrong response: ", resp)
+	}
+}
+
+func TestFullSource(t *testing.T) {
+	p1, p2 := net.Pipe()
+	logger := log.NewLogfmtLogger(logtest.Logger("TestFull()", t))
+
+	server := NewClient(logger, p1)
+
+	client := NewClient(logger, p2)
+
+	server.HandleSource("test", func(args json.RawMessage) chan interface{} {
+		stream := make(chan interface{}, 4)
+		stream <- "a"
+		stream <- "b"
+		stream <- "c"
+		stream <- "d"
+		close(stream)
+		return stream
+	})
+
+	resp := make(chan string)
+	go func() {
+		err := client.Source("test", resp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		close(resp)
+	}()
+
+	count := 0
+	for range resp {
+		//fmt.Printf("%#v\n", val)
+		count++
+	}
+	if count != 4 {
+		t.Fatal("Incorrect number of elements")
 	}
 }

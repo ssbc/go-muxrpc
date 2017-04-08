@@ -112,12 +112,13 @@ func (client *Client) handleCall(pkt *codec.Packet) {
 	json.Unmarshal(pkt.Body, &req)
 	method := strings.Join(req.Name, ".")
 	handlers := client.handlers.Load().(map[string]interface{})
-	var retPacket codec.Packet
-	retPacket.Req = -pkt.Req
 
 	if handler, ok := handlers[method]; ok {
 		switch h := handler.(type) {
 		case CallHandler:
+			var retPacket codec.Packet
+			retPacket.Req = -pkt.Req
+
 			ret := h(req.Args)
 			switch ret := ret.(type) {
 			case string:
@@ -144,7 +145,35 @@ func (client *Client) handleCall(pkt *codec.Packet) {
 			}
 			client.sendqueue <- &queuePacket{p: &retPacket}
 		case SourceHandler:
+			ret := h(req.Args)
+		sourceOut:
+			for val := range ret {
+				var retPacket codec.Packet
+				retPacket.Req = -pkt.Req
+				retPacket.Stream = true
 
+				switch val := val.(type) {
+				case string:
+					retPacket.Body = []byte(val)
+					retPacket.Type = codec.String
+				case []byte:
+					retPacket.Body = val
+					retPacket.Type = codec.Buffer
+				default:
+					var err error
+					retPacket.Body, err = json.Marshal(val)
+					retPacket.Type = codec.JSON
+					if err != nil {
+						break sourceOut
+					}
+				}
+				client.sendqueue <- &queuePacket{p: &retPacket}
+			}
+			var retPacket codec.Packet
+			retPacket.Req = -pkt.Req
+			retPacket.EndErr = true
+			retPacket.Stream = true
+			client.sendqueue <- &queuePacket{p: &retPacket}
 		}
 	}
 
@@ -269,10 +298,13 @@ func (call *Call) handleResp(pkt *codec.Packet) (seqDone bool) {
 
 		case codec.String:
 			if call.stream {
-				// TODO
-				call.Error = errors.New("muxrpc: unhandeld encoding (string stream)")
-				call.done()
-				break
+				strChan, ok := call.Reply.(chan string)
+				if !ok {
+					call.Error = errors.New("muxrpc: illegal reply argument. wanted (chan string)")
+					call.done()
+					break
+				}
+				strChan <- string(pkt.Body)
 			} else {
 				sptr, ok := call.Reply.(*string)
 				if !ok {
@@ -361,6 +393,10 @@ func (client *Client) addHandler(method string, handler interface{}) {
 }
 
 func (client *Client) HandleCall(method string, handler CallHandler) {
+	client.addHandler(method, handler)
+}
+
+func (client *Client) HandleSource(method string, handler SourceHandler) {
 	client.addHandler(method, handler)
 }
 
