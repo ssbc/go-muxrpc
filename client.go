@@ -52,13 +52,9 @@ type queuePacket struct {
 	sent chan error
 }
 
-type CallHandler interface {
-	HandleCall(json.RawMessage) interface{}
-}
+type CallHandler func(json.RawMessage) interface{}
 
-type SourceHandler interface {
-	HandleSource(json.RawMessage) chan interface{}
-}
+type SourceHandler func(json.RawMessage) chan interface{}
 
 func NewClient(l log.Logger, rwc io.ReadWriteCloser) *Client {
 	// TODO: pass in ctx
@@ -122,7 +118,7 @@ func (client *Client) handleCall(pkt *codec.Packet) {
 	if handler, ok := handlers[method]; ok {
 		switch h := handler.(type) {
 		case CallHandler:
-			ret := h.HandleCall(req.Args)
+			ret := h(req.Args)
 			switch ret := ret.(type) {
 			case string:
 				retPacket.Body = []byte(ret)

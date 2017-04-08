@@ -70,12 +70,6 @@ func TestSource(t *testing.T) {
 	}
 }
 
-type CallTest struct{}
-
-func (ct CallTest) HandleCall(args json.RawMessage) interface{} {
-	return "test"
-}
-
 func TestFullCircle(t *testing.T) {
 	p1, p2 := net.Pipe()
 	logger := log.NewLogfmtLogger(logtest.Logger("TestFull()", t))
@@ -84,7 +78,9 @@ func TestFullCircle(t *testing.T) {
 
 	client := NewClient(logger, p2)
 
-	server.HandleCall("test", &CallTest{})
+	server.HandleCall("test", func(args json.RawMessage) interface{} {
+		return "test"
+	})
 
 	var resp string
 	client.Call("test", &resp)
