@@ -1,6 +1,8 @@
 package muxrpc
 
 import (
+	"encoding/json"
+	"net"
 	"testing"
 
 	"github.com/cryptix/go/logging/logtest"
@@ -39,7 +41,10 @@ func TestSource(t *testing.T) {
 	c := NewClient(logger, serv) //codec.Wrap(logger,serv))
 	resp := make(chan struct{ A int })
 
-	go c.Source("stuff", resp)
+	go func() {
+		c.Source("stuff", resp)
+		close(resp)
+	}()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,5 +67,29 @@ func TestSource(t *testing.T) {
 	*/
 	if err := c.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type CallTest struct{}
+
+func (ct CallTest) HandleCall(args json.RawMessage) interface{} {
+	return "test"
+}
+
+func TestFullCircle(t *testing.T) {
+	p1, p2 := net.Pipe()
+	logger := log.NewLogfmtLogger(logtest.Logger("TestFull()", t))
+
+	server := NewClient(logger, p1)
+
+	client := NewClient(logger, p2)
+
+	server.HandleCall("test", &CallTest{})
+
+	var resp string
+	client.Call("test", &resp)
+
+	if resp != "test" {
+		t.Fatal("wrong response: ", resp)
 	}
 }

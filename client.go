@@ -8,11 +8,11 @@ package muxrpc
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/cryptix/go-muxrpc/codec"
 	"github.com/go-kit/kit/log"
@@ -34,7 +34,7 @@ type Client struct {
 	w *codec.Writer
 	c io.ReadWriteCloser
 
-	sendqueue chan *Call
+	sendqueue chan *queuePacket
 
 	mutex    sync.Mutex // protects following
 	seq      int32
@@ -43,6 +43,21 @@ type Client struct {
 	shutdown bool // server has told us to stop
 
 	log log.Logger // logging utility for unhandled calls etc
+
+	handlers atomic.Value
+}
+
+type queuePacket struct {
+	p    *codec.Packet
+	sent chan error
+}
+
+type CallHandler interface {
+	HandleCall(json.RawMessage) interface{}
+}
+
+type SourceHandler interface {
+	HandleSource(json.RawMessage) chan interface{}
 }
 
 func NewClient(l log.Logger, rwc io.ReadWriteCloser) *Client {
@@ -51,68 +66,92 @@ func NewClient(l log.Logger, rwc io.ReadWriteCloser) *Client {
 		r:         codec.NewReader(rwc),
 		w:         codec.NewWriter(rwc),
 		c:         rwc,
-		sendqueue: make(chan *Call, 100),
+		sendqueue: make(chan *queuePacket, 100),
 		seq:       1,
 		pending:   make(map[int32]*Call),
 
 		log: log.With(l, "unit", "muxrpc"),
 	}
+	c.handlers.Store(map[string]interface{}{})
+
 	go c.read()
 	go c.send()
 	return &c
 }
 
 func (client *Client) send() {
-	for call := range client.sendqueue {
-		// Register this call.
+	for pktQ := range client.sendqueue {
 		client.mutex.Lock()
 		if client.shutdown || client.closing {
-			call.Error = ErrShutdown
 			client.mutex.Unlock()
-			call.done()
+			if pktQ.sent != nil {
+				pktQ.sent <- ErrShutdown
+			}
 			return
 		}
-		seq := client.seq
-		client.seq++
-		client.pending[seq] = call
 		client.mutex.Unlock()
 
-		// Encode and send the request.
-		var pkt codec.Packet
-		pkt.Req = seq
-		pkt.Type = call.Type // TODO: non JSON request
-
-		var req Request
-
-		if methods := strings.Split(call.Method, "."); len(methods) > 1 {
-			req.Name = methods
+		if err := client.w.WritePacket(pktQ.p); err != nil {
+			if pktQ.sent != nil {
+				pktQ.sent <- errors.Wrap(err, "muxrpc/call: WritePacket() failed")
+			}
 		} else {
-			req.Name = []string{call.Method}
-		}
-		req.Args = call.Args
-		if call.stream {
-			req.Type = "source"
-			pkt.Stream = true
-		}
-
-		var err error
-		if pkt.Body, err = json.Marshal(req); err != nil {
-			client.mutex.Lock()
-			delete(client.pending, seq)
-			client.mutex.Unlock()
-			call.Error = errors.Wrap(err, "muxrpc/call: body json.Marshal() failed")
-			call.done()
-			continue
-		}
-
-		if err := client.w.WritePacket(&pkt); err != nil {
-			client.mutex.Lock()
-			delete(client.pending, seq)
-			client.mutex.Unlock()
-			call.Error = errors.Wrap(err, "muxrpc/call: WritePacket() failed")
-			call.done()
+			if pktQ.sent != nil {
+				pktQ.sent <- nil
+			}
 		}
 	}
+}
+
+func (client *Client) handleCall(pkt *codec.Packet) {
+	var req struct {
+		Name []string        `json:"name"`
+		Args json.RawMessage `json:"args"`
+		Type string          `json:"type,omitempty"`
+	}
+	if pkt.Type != codec.JSON {
+		client.log.Log("Non JSON call request!")
+		return
+	}
+	json.Unmarshal(pkt.Body, &req)
+	method := strings.Join(req.Name, ".")
+	handlers := client.handlers.Load().(map[string]interface{})
+	var retPacket codec.Packet
+	retPacket.Req = -pkt.Req
+
+	if handler, ok := handlers[method]; ok {
+		switch h := handler.(type) {
+		case CallHandler:
+			ret := h.HandleCall(req.Args)
+			switch ret := ret.(type) {
+			case string:
+				retPacket.Body = []byte(ret)
+				retPacket.Type = codec.String
+			case []byte:
+				retPacket.Body = ret
+				retPacket.Type = codec.Buffer
+			case error:
+				if ret != nil {
+					retPacket.Body = []byte(ret.Error())
+					retPacket.EndErr = true
+					retPacket.Type = codec.String
+				}
+			default:
+				var err error
+				retPacket.Body, err = json.Marshal(ret)
+				retPacket.Type = codec.JSON
+				if err != nil {
+					retPacket.Body = []byte(err.Error())
+					retPacket.EndErr = true
+					retPacket.Type = codec.String
+				}
+			}
+			client.sendqueue <- &queuePacket{p: &retPacket}
+		case SourceHandler:
+
+		}
+	}
+
 }
 
 func (client *Client) read() {
@@ -127,80 +166,15 @@ func (client *Client) read() {
 		client.mutex.Lock()
 		// TODO: this is... p2p! no srsly we might get called
 		call, ok := client.pending[seq]
-		if !ok {
-			client.log.Log("warning", fmt.Sprintf("non-pending pkt: %s", pkt))
-			client.mutex.Unlock()
-			continue
-
-		}
-		if !call.stream || (pkt.Stream && pkt.EndErr) {
-			delete(client.pending, seq)
-		}
 		client.mutex.Unlock()
-
-		switch {
-		case pkt.EndErr:
-			// TODO: difference between End and Error?
-			if pkt.Stream {
-			} else {
-				// We've got an error response. Give this to the request;
-				// any subsequent requests will get the ReadResponseBody
-				// error if there is one.
-				call.Error = ServerError(string(pkt.Body))
+		if ok {
+			if call.handleResp(pkt) {
+				client.mutex.Lock()
+				delete(client.pending, seq)
+				client.mutex.Unlock()
 			}
-			call.done()
-		default:
-			switch pkt.Type {
-			case codec.JSON:
-				// todo there sure is a nicer way to structure this
-				if call.stream {
-					replyVal := reflect.ValueOf(call.Reply)
-					if replyVal.Kind() != reflect.Chan {
-						call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
-						call.done()
-						break
-					}
-					elemVal := reflect.New(replyVal.Type().Elem())
-					elem := elemVal.Interface()
-
-					if err := json.Unmarshal(pkt.Body, elem); err != nil {
-						call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
-						call.done()
-						break
-					}
-
-					replyVal.Send(elemVal.Elem())
-				} else {
-					if err := json.Unmarshal(pkt.Body, call.Reply); err != nil {
-						call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
-						call.done()
-						break
-					}
-					call.done()
-				}
-
-			case codec.String:
-				if call.stream {
-					// TODO
-					call.Error = errors.New("muxrpc: unhandeld encoding (string stream)")
-					call.done()
-					break
-				} else {
-					sptr, ok := call.Reply.(*string)
-					if !ok {
-						call.Error = errors.New("muxrpc: illegal reply argument. wanted (*string)")
-						call.done()
-						break
-					}
-					*sptr = string(pkt.Body)
-					call.done()
-				}
-
-			default:
-				call.Error = errors.Errorf("muxrpc: unhandled pkt.Type %s", pkt)
-				call.done()
-				break
-			}
+		} else {
+			go client.handleCall(pkt)
 		}
 	}
 	// Terminate pending calls.
@@ -239,7 +213,7 @@ type Call struct {
 	Args   []interface{} // The argument to the function (*struct).
 	Reply  interface{}   // The reply from the function (*struct).
 	Error  error         // After completion, the error status.
-	Done   chan *Call    // Strobes when call is complete.
+	Done   chan struct{} // Closes when call is complete.
 
 	stream bool
 
@@ -247,25 +221,151 @@ type Call struct {
 }
 
 func (call *Call) done() {
-	call.Done <- call
-	if call.stream {
-		replyVal := reflect.ValueOf(call.Reply)
-		if replyVal.Kind() == reflect.Chan {
-			replyVal.Close()
+	close(call.Done)
+}
+
+func (call *Call) handleResp(pkt *codec.Packet) (seqDone bool) {
+	var err error
+	if !call.stream || (pkt.Stream && pkt.EndErr) {
+		seqDone = true
+	}
+
+	switch {
+	case pkt.EndErr:
+		// TODO: difference between End and Error?
+		if pkt.Stream {
+		} else {
+			// We've got an error response. Give this to the request;
+			// any subsequent requests will get the ReadResponseBody
+			// error if there is one.
+			call.Error = ServerError(string(pkt.Body))
+		}
+		call.done()
+	default:
+		switch pkt.Type {
+		case codec.JSON:
+			// todo there sure is a nicer way to structure this
+			if call.stream {
+				replyVal := reflect.ValueOf(call.Reply)
+				if replyVal.Kind() != reflect.Chan {
+					call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
+					call.done()
+					break
+				}
+				elemVal := reflect.New(replyVal.Type().Elem())
+				elem := elemVal.Interface()
+
+				if err := json.Unmarshal(pkt.Body, elem); err != nil {
+					call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
+					call.done()
+					break
+				}
+
+				replyVal.Send(elemVal.Elem())
+			} else {
+				if err := json.Unmarshal(pkt.Body, call.Reply); err != nil {
+					call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
+					call.done()
+					break
+				}
+				call.done()
+			}
+
+		case codec.String:
+			if call.stream {
+				// TODO
+				call.Error = errors.New("muxrpc: unhandeld encoding (string stream)")
+				call.done()
+				break
+			} else {
+				sptr, ok := call.Reply.(*string)
+				if !ok {
+					call.Error = errors.New("muxrpc: illegal reply argument. wanted (*string)")
+					call.done()
+					break
+				}
+				*sptr = string(pkt.Body)
+				call.done()
+			}
+
+		default:
+			call.Error = errors.Errorf("muxrpc: unhandled pkt.Type %s", pkt)
+			call.done()
+			break
 		}
 	}
+	return
 }
 
 // Go invokes the function asynchronously.  It returns the Call structure representing
 // the invocation.  The done channel will signal when the call is complete by returning
 // the same Call object.  If done is nil, Go will allocate a new channel.
-func (client *Client) Go(call *Call, done chan *Call) *Call {
+func (client *Client) Go(call *Call, done chan struct{}) *Call {
 	if done == nil {
-		done = make(chan *Call, 0) // unbuffered.
+		done = make(chan struct{}, 0) // unbuffered.
 	}
 	call.Done = done
-	client.sendqueue <- call
+
+	client.mutex.Lock()
+	if client.shutdown || client.closing {
+		call.Error = ErrShutdown
+		client.mutex.Unlock()
+		call.done()
+		return call
+	}
+	seq := client.seq
+	client.seq++
+	client.pending[seq] = call
+	client.mutex.Unlock()
+
+	// Encode and send the request.
+	var pkt codec.Packet
+	pkt.Req = seq
+	pkt.Type = call.Type // TODO: non JSON request
+
+	var req Request
+
+	req.Name = strings.Split(call.Method, ".")
+
+	req.Args = call.Args
+	if call.stream {
+		req.Type = "source"
+		pkt.Stream = true
+	}
+
+	var err error
+	if pkt.Body, err = json.Marshal(req); err != nil {
+		client.mutex.Lock()
+		delete(client.pending, seq)
+		client.mutex.Unlock()
+		call.Error = errors.Wrap(err, "muxrpc/call: body json.Marshal() failed")
+		call.done()
+		return call
+	}
+	sent := make(chan error)
+	go func() {
+		err := <-sent
+		if err != nil {
+			call.Error = err
+			call.done()
+		}
+	}()
+	client.sendqueue <- &queuePacket{p: &pkt, sent: sent}
 	return call
+}
+
+func (client *Client) addHandler(method string, handler interface{}) {
+	handlers := client.handlers.Load().(map[string]interface{})
+	newHandlers := map[string]interface{}{}
+	for k, v := range handlers {
+		newHandlers[k] = v
+	}
+	newHandlers[method] = handler
+	client.handlers.Store(newHandlers)
+}
+
+func (client *Client) HandleCall(method string, handler CallHandler) {
+	client.addHandler(method, handler)
 }
 
 // Call invokes the named function, waits for it to complete, and returns its error status.
@@ -276,8 +376,9 @@ func (client *Client) Call(method string, reply interface{}, args ...interface{}
 	c.Args = args
 	c.Reply = reply
 	c.Type = codec.JSON // TODO: find other example
-	call := <-client.Go(&c, nil).Done
-	return call.Error
+	client.Go(&c, nil)
+	<-c.Done
+	return c.Error
 }
 
 func (client *Client) Source(method string, reply interface{}, args ...interface{}) error {
@@ -293,8 +394,8 @@ func (client *Client) Source(method string, reply interface{}, args ...interface
 	c.Type = codec.JSON
 	c.stream = true
 	client.Go(&c, nil)
-	call := <-c.Done
-	return call.Error
+	<-c.Done
+	return c.Error
 }
 
 func (c *Client) Close() error {
