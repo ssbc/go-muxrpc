@@ -259,6 +259,9 @@ func (call *Call) handleResp(pkt *codec.Packet) (seqDone bool) {
 	case pkt.EndErr:
 		// TODO: difference between End and Error?
 		if pkt.Stream {
+			if len(pkt.Body) > 0 {
+				call.Error = ServerError(string(pkt.Body))
+			}
 		} else {
 			// We've got an error response. Give this to the request;
 			// any subsequent requests will get the ReadResponseBody
@@ -275,7 +278,7 @@ func (call *Call) handleResp(pkt *codec.Packet) (seqDone bool) {
 				if replyVal.Kind() != reflect.Chan {
 					call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
 					call.done()
-					break
+					return true
 				}
 				elemVal := reflect.New(replyVal.Type().Elem())
 				elem := elemVal.Interface()
@@ -283,7 +286,7 @@ func (call *Call) handleResp(pkt *codec.Packet) (seqDone bool) {
 				if err := json.Unmarshal(pkt.Body, elem); err != nil {
 					call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
 					call.done()
-					break
+					return true
 				}
 
 				replyVal.Send(elemVal.Elem())
@@ -291,9 +294,10 @@ func (call *Call) handleResp(pkt *codec.Packet) (seqDone bool) {
 				if err := json.Unmarshal(pkt.Body, call.Reply); err != nil {
 					call.Error = errors.Wrap(err, "muxrpc: unmarshall error")
 					call.done()
-					break
+					return true
 				}
 				call.done()
+				return true
 			}
 
 		case codec.String:
@@ -302,7 +306,7 @@ func (call *Call) handleResp(pkt *codec.Packet) (seqDone bool) {
 				if !ok {
 					call.Error = errors.New("muxrpc: illegal reply argument. wanted (chan string)")
 					call.done()
-					break
+					return true
 				}
 				strChan <- string(pkt.Body)
 			} else {
@@ -310,16 +314,17 @@ func (call *Call) handleResp(pkt *codec.Packet) (seqDone bool) {
 				if !ok {
 					call.Error = errors.New("muxrpc: illegal reply argument. wanted (*string)")
 					call.done()
-					break
+					return true
 				}
 				*sptr = string(pkt.Body)
 				call.done()
+				return true
 			}
 
 		default:
 			call.Error = errors.Errorf("muxrpc: unhandled pkt.Type %s", pkt)
 			call.done()
-			break
+			return true
 		}
 	}
 	return
