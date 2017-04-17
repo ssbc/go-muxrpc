@@ -21,7 +21,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/cryptix/go-muxrpc/codec"
+	"scuttlebot.io/go/muxrpc/codec"
 	"github.com/cryptix/go/logging"
 	"github.com/cryptix/go/proc"
 )

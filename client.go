@@ -31,7 +31,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cryptix/go-muxrpc/codec"
+	"scuttlebot.io/go/muxrpc/codec"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 )

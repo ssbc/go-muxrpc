@@ -20,7 +20,7 @@ package main
 import (
 	"os"
 
-	"github.com/cryptix/go-muxrpc"
+	"scuttlebot.io/go/muxrpc"
 	"github.com/cryptix/go/logging"
 	"github.com/cryptix/go/proc"
 )
