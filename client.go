@@ -70,9 +70,12 @@ func NewClient(l log.Logger, rwc io.ReadWriteCloser) *Client {
 	}
 	c.handlers.Store(map[string]interface{}{})
 
-	go c.read()
-	go c.send()
 	return &c
+}
+
+func (c *Client) Handle() {
+	go c.send()
+	c.read()
 }
 
 func (client *Client) send() {
@@ -146,7 +149,6 @@ func (client *Client) handleCall(pkt *codec.Packet) {
 			client.sendqueue <- &queuePacket{p: &retPacket}
 		case SourceHandler:
 			ret := h(req.Args)
-		sourceOut:
 			for val := range ret {
 				var retPacket codec.Packet
 				retPacket.Req = -pkt.Req
@@ -160,12 +162,14 @@ func (client *Client) handleCall(pkt *codec.Packet) {
 					retPacket.Body = val
 					retPacket.Type = codec.Buffer
 				default:
-					var err error
-					retPacket.Body, err = json.Marshal(val)
-					retPacket.Type = codec.JSON
-					if err != nil {
-						break sourceOut
+					if encoder, ok := val.(interface {
+						Encode() []byte
+					}); ok {
+						retPacket.Body = encoder.Encode()
+					} else {
+						retPacket.Body, _ = json.Marshal(val)
 					}
+					retPacket.Type = codec.JSON
 				}
 				client.sendqueue <- &queuePacket{p: &retPacket}
 			}
@@ -175,6 +179,15 @@ func (client *Client) handleCall(pkt *codec.Packet) {
 			retPacket.Stream = true
 			client.sendqueue <- &queuePacket{p: &retPacket}
 		}
+	} else {
+		var retPacket codec.Packet
+		retPacket.Req = -pkt.Req
+		retPacket.EndErr = true
+		retPacket.Stream = false
+		retPacket.Body = []byte("Unimplemented rpc call")
+		retPacket.Type = codec.String
+		client.sendqueue <- &queuePacket{p: &retPacket}
+		client.log.Log("Unimplemented rpc call", method)
 	}
 
 }
