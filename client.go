@@ -31,9 +31,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"scuttlebot.io/go/muxrpc/codec"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
+	"scuttlebot.io/go/muxrpc/codec"
 )
 
 // ServerError represents an error that has been returned from
@@ -450,7 +450,7 @@ func (client *Client) Call(method string, reply interface{}, args ...interface{}
 
 func (client *Client) Source(method string, reply interface{}, args ...interface{}) error {
 	var c Call
-	c.log = log.With(client.log, "unit", "muxrpc/sync", "method", method)
+	c.log = log.With(client.log, "unit", "muxrpc/source", "method", method)
 	c.Method = method
 	c.Args = args
 	replyVal := reflect.ValueOf(reply)

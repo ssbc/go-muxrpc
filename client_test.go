@@ -36,6 +36,7 @@ func TestCall(t *testing.T) {
 	}
 
 	c := NewClient(logger, serv) //codec.Wrap(serv)) // debug.WrapRWC(serv)
+	go c.Handle()
 	var resp string
 	err = c.Call("hello", &resp, "world", "bob")
 	if err != nil {
@@ -56,6 +57,7 @@ func TestSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := NewClient(logger, serv) //codec.Wrap(logger,serv))
+	go c.Handle()
 	resp := make(chan struct{ A int })
 
 	go func() {
@@ -89,8 +91,10 @@ func TestFullCall(t *testing.T) {
 	logger := log.NewLogfmtLogger(logtest.Logger("TestFull()", t))
 
 	server := NewClient(logger, p1)
+	go server.Handle()
 
 	client := NewClient(logger, p2)
+	go client.Handle()
 
 	server.HandleCall("test", func(args json.RawMessage) interface{} {
 		return "test"
@@ -109,8 +113,10 @@ func TestFullSource(t *testing.T) {
 	logger := log.NewLogfmtLogger(logtest.Logger("TestFull()", t))
 
 	server := NewClient(logger, p1)
+	go server.Handle()
 
 	client := NewClient(logger, p2)
+	go client.Handle()
 
 	server.HandleSource("test", func(args json.RawMessage) chan interface{} {
 		stream := make(chan interface{}, 4)
