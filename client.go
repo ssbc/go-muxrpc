@@ -31,9 +31,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/cryptix/go-muxrpc/codec"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	"scuttlebot.io/go/muxrpc/codec"
 )
 
 // ServerError represents an error that has been returned from
@@ -126,7 +126,7 @@ func (client *Client) handleCall(pkt *codec.Packet) {
 		Type string          `json:"type,omitempty"`
 	}
 	if pkt.Type != codec.JSON {
-		client.log.Log("Non JSON call request!")
+		client.log.Log("event", "warning", "msg", "Non JSON call request!", "pkt", pkt)
 		return
 	}
 	json.Unmarshal(pkt.Body, &req)
@@ -204,7 +204,7 @@ func (client *Client) handleCall(pkt *codec.Packet) {
 		retPacket.Body = []byte("Unimplemented rpc call")
 		retPacket.Type = codec.String
 		client.sendqueue <- &queuePacket{p: &retPacket}
-		client.log.Log("Unimplemented rpc call", method)
+		client.log.Log("event", "warning", "msg", "Unimplemented rpc call", "method", method)
 	}
 
 }
