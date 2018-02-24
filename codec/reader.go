@@ -21,7 +21,7 @@ import (
 	"encoding/binary"
 	"io"
 
-	"gopkg.in/errgo.v1"
+	"github.com/pkg/errors"
 )
 
 type Reader struct{ r io.Reader }
@@ -34,7 +34,7 @@ func (r *Reader) ReadPacket() (*Packet, error) {
 	var hdr Header
 	err := binary.Read(r.r, binary.BigEndian, &hdr)
 	if err != nil {
-		return nil, errgo.Notef(err, "pkt-codec: header read failed")
+		return nil, errors.Wrapf(err, "pkt-codec: header read failed")
 	}
 
 	// detect EOF pkt. TODO: not sure how to do this nicer
@@ -53,7 +53,7 @@ func (r *Reader) ReadPacket() (*Packet, error) {
 	p.Body = make([]byte, hdr.Len)
 	_, err = io.ReadFull(r.r, p.Body)
 	if err != nil {
-		return nil, errgo.Notef(err, "pkt-codec: read body failed. Packet:%s", p)
+		return nil, errors.Wrapf(err, "pkt-codec: read body failed. Packet:%s", p)
 	}
 
 	return &p, nil
