@@ -44,9 +44,7 @@ func (r *Reader) ReadPacket() (*Packet, error) {
 
 	// copy header info
 	var p = Packet{
-		Stream: (hdr.Flag & FlagStream) != 0,
-		EndErr: (hdr.Flag & FlagEndErr) != 0,
-		Type:   hdr.Flag.PacketType(),
+		Flag:   hdr.Flag,
 		Req:    hdr.Req,
 	}
 

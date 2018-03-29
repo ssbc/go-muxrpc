@@ -18,41 +18,56 @@ along with go-muxrpc.  If not, see <http://www.gnu.org/licenses/>.
 package codec
 
 import (
-	"encoding/json"
 	"fmt"
+  "strings"
 )
+
+type Body []byte
+
+func (b Body) String() string {
+  return fmt.Sprintf("%s", []byte(b))
+}
 
 // Packet is the decoded high-level representation
 type Packet struct {
-	Stream bool
-	EndErr bool
-	Type   PacketType
+  Flag Flag
 	Req    int32
-	Body   []byte
-}
-
-func (p Packet) String() string {
-	s := fmt.Sprintf("Stream(%v) EndErr(%v) ", p.Stream, p.EndErr)
-	s += fmt.Sprintf("Type(%s) Len(%d) Req(%d)\n", p.Type.String(), len(p.Body), p.Req)
-	if p.Type == JSON {
-		var i interface{}
-		if err := json.Unmarshal(p.Body, &i); err != nil {
-			s += fmt.Sprintf("json.Unmarshal error: %s", err)
-			return s
-		}
-		s += fmt.Sprintf("Body: %+v", i)
-	} else {
-		if len(p.Body) > 50 {
-			s += fmt.Sprintf("%q...", p.Body[:50])
-		} else {
-			s += fmt.Sprintf("%q", p.Body)
-		}
-	}
-	return s
+	Body   Body
 }
 
 // Flag is the first byte of the Header
 type Flag byte
+
+func (f Flag) Set(g Flag) Flag {
+  return f | g
+}
+
+func (f Flag) Clear(g Flag) Flag {
+  return f & ^g
+}
+
+func (f Flag) Get(g Flag) bool {
+  return f & g == g
+}
+
+func (f Flag) String() string {
+  var flags []string
+
+  if f.Get(FlagString) {
+    flags = append(flags, "FlagString")
+  }
+  if f.Get(FlagJSON) {
+    flags = append(flags, "FlagJSON")
+  }
+  if f.Get(FlagStream) {
+    flags = append(flags, "FlagStream")
+  }
+  if f.Get(FlagEndErr) {
+    flags = append(flags, "FlagEndErr")
+  }
+
+  return "{" + strings.Join(flags, ", ") + "}"
+}
 
 // Flag bitmasks
 const (
@@ -62,6 +77,7 @@ const (
 	FlagStream
 )
 
+/*
 // PacketType are the 2 bits of type in the packet header
 type PacketType uint
 
@@ -74,17 +90,20 @@ func (pt PacketType) Flag() Flag {
 	}
 	return 0
 }
+*/
 
-func (f Flag) PacketType() PacketType {
-	return PacketType((byte(f) & 3))
-}
-
+/*
 // Enumeration of the possible body types of a packet
 const (
 	Buffer PacketType = iota
 	String
 	JSON
 )
+
+func (f Flag) PacketType() PacketType {
+	return PacketType((byte(f) & 3))
+}
+*/
 
 // Header is the wire representation of a packet header
 type Header struct {

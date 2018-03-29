@@ -33,13 +33,7 @@ func NewWriter(w io.Writer) *Writer { return &Writer{w} }
 // WritePacket creates an header for the Packet and writes it and the body to the underlying writer
 func (w *Writer) WritePacket(r *Packet) error {
 	var hdr Header
-	if r.Stream {
-		hdr.Flag |= FlagStream
-	}
-	if r.EndErr {
-		hdr.Flag |= FlagEndErr
-	}
-	hdr.Flag |= r.Type.Flag()
+	hdr.Flag = r.Flag
 	hdr.Len = uint32(len(r.Body))
 	hdr.Req = r.Req
 	if err := binary.Write(w.w, binary.BigEndian, hdr); err != nil {

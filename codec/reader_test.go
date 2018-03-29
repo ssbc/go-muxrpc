@@ -27,13 +27,17 @@ import (
 )
 
 var testPkts = []Packet{
-	{Stream: false, EndErr: false, Type: JSON, Req: 0, Body: []byte(`["event",{"okay":true}]`)},
-	{Stream: false, EndErr: false, Type: String, Req: 1, Body: []byte(`whatever`)},
-	{Stream: true, EndErr: false, Type: Buffer, Req: 2, Body: []byte(`hello`)},
-	{Stream: true, EndErr: false, Type: Buffer, Req: -2, Body: []byte(`goodbye`)},
-	{Stream: false, EndErr: true, Type: JSON, Req: -3, Body: []byte(`{"message":"intentional","name":"Error"}`)},
-	{Stream: true, EndErr: true, Type: JSON, Req: 2, Body: []byte(`true`)},
-	{Stream: true, EndErr: true, Type: JSON, Req: -2, Body: []byte(`true`)},
+	{Flag: FlagJSON, Req: 0, Body: []byte(`["event",{"okay":true}]`)},
+
+	{Flag: FlagString, Req: 1, Body: []byte(`whatever`)},
+
+	{Flag: FlagStream, Req: 2, Body: []byte(`hello`)},
+	{Flag: FlagStream, Req: -2, Body: []byte(`goodbye`)},
+
+	{Flag: FlagJSON|FlagEndErr, Req: -3, Body: []byte(`{"message":"intentional","name":"Error"}`)},
+
+	{Flag: FlagJSON|FlagEndErr|FlagStream, Req: 2, Body: []byte(`true`)},
+	{Flag: FlagJSON|FlagEndErr|FlagStream, Req: -2, Body: []byte(`true`)},
 }
 
 func TestReader(t *testing.T) {
