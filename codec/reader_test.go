@@ -34,10 +34,10 @@ var testPkts = []Packet{
 	{Flag: FlagStream, Req: 2, Body: []byte(`hello`)},
 	{Flag: FlagStream, Req: -2, Body: []byte(`goodbye`)},
 
-	{Flag: FlagJSON|FlagEndErr, Req: -3, Body: []byte(`{"message":"intentional","name":"Error"}`)},
+	{Flag: FlagJSON | FlagEndErr, Req: -3, Body: []byte(`{"message":"intentional","name":"Error"}`)},
 
-	{Flag: FlagJSON|FlagEndErr|FlagStream, Req: 2, Body: []byte(`true`)},
-	{Flag: FlagJSON|FlagEndErr|FlagStream, Req: -2, Body: []byte(`true`)},
+	{Flag: FlagJSON | FlagEndErr | FlagStream, Req: 2, Body: []byte(`true`)},
+	{Flag: FlagJSON | FlagEndErr | FlagStream, Req: -2, Body: []byte(`true`)},
 }
 
 func TestReader(t *testing.T) {

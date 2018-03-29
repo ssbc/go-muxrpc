@@ -44,8 +44,8 @@ func (r *Reader) ReadPacket() (*Packet, error) {
 
 	// copy header info
 	var p = Packet{
-		Flag:   hdr.Flag,
-		Req:    hdr.Req,
+		Flag: hdr.Flag,
+		Req:  hdr.Req,
 	}
 
 	p.Body = make([]byte, hdr.Len)
