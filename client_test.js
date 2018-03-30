@@ -22,6 +22,7 @@ var toPull = require('stream-to-pull-stream')
 
 var api = {
   hello: 'async',
+  object: 'async',
   stuff: 'source'
 }
 
@@ -29,6 +30,10 @@ var server = MRPC(null, api)({
   hello: function (name, name2, cb) {
     console.error('hello:ok')
     cb(null, 'hello, ' + name + ' and ' + name2 + '!')
+  },
+  object: function (cb) {
+    console.error('object:ok')
+    cb(null, {with:'fields!'})
   },
   stuff: function () {
     console.error('stuff called')
