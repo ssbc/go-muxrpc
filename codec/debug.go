@@ -18,6 +18,7 @@ along with go-muxrpc.  If not, see <http://www.gnu.org/licenses/>.
 package codec
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/go-kit/kit/log"
@@ -36,7 +37,7 @@ func Wrap(l log.Logger, rwc io.ReadWriteCloser) io.ReadWriteCloser {
 				//pwout.CloseWithError(err)
 				return
 			}
-			lout.Log("pkt", pkt)
+			lout.Log("pkt", fmt.Sprintf("%+v", pkt))
 		}
 	}()
 
@@ -59,7 +60,7 @@ func Wrap(l log.Logger, rwc io.ReadWriteCloser) io.ReadWriteCloser {
 				prin.CloseWithError(err)
 				return
 			}
-			lin.Log("pkt", pkt)
+			lin.Log("pkt", fmt.Sprintf("%+v", pkt))
 		}
 	}()
 	return struct {
