@@ -20,6 +20,7 @@ package codec
 import (
 	"encoding/binary"
 	"io"
+	"os"
 
 	"github.com/pkg/errors"
 )
@@ -33,7 +34,9 @@ func NewReader(r io.Reader) *Reader { return &Reader{r} }
 func (r *Reader) ReadPacket() (*Packet, error) {
 	var hdr Header
 	err := binary.Read(r.r, binary.BigEndian, &hdr)
-	if err != nil {
+	if errors.Cause(err) == os.ErrClosed {
+		return nil, io.EOF
+	} else if err != nil {
 		return nil, errors.Wrapf(err, "pkt-codec: header read failed")
 	}
 

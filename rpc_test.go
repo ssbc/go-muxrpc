@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	"cryptoscope.co/go/luigi"
 )
@@ -27,6 +28,8 @@ func TestAsync(t *testing.T) {
 
 	conn1 := make(chan struct{})
 	conn2 := make(chan struct{})
+	serve1 := make(chan struct{})
+	serve2 := make(chan struct{})
 
 	h1 := &testHandler{
 		call: func(ctx context.Context, req *Request) {
@@ -67,6 +70,7 @@ func TestAsync(t *testing.T) {
 			fmt.Printf("rpc1: %+v\n", err)
 			t.Error(err)
 		}
+		close(serve1)
 	}()
 
 	go func() {
@@ -75,10 +79,10 @@ func TestAsync(t *testing.T) {
 			fmt.Printf("rpc2: %+v\n", err)
 			t.Error(err)
 		}
+		close(serve2)
 	}()
 
-	var v string
-	err := rpc1.Async(ctx, &v, []string{"whoami"})
+	v, err := rpc1.Async(ctx, "string", []string{"whoami"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,6 +92,27 @@ func TestAsync(t *testing.T) {
 	}
 
 	t.Log(v)
+
+	time.Sleep(time.Millisecond)
+	rpc1.Terminate()
+	fmt.Println("waiting for closes")
+	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
+		select {
+		case <-conn1:
+			fmt.Println("conn1 closed")
+			conn1 = nil
+		case <-conn2:
+			fmt.Println("conn2 closed")
+			conn2 = nil
+		case <-serve1:
+			fmt.Println("serve1 closed")
+			serve1 = nil
+		case <-serve2:
+			fmt.Println("serve2 closed")
+			serve2 = nil
+		}
+	}
+	t.Log("done")
 }
 
 func TestSource(t *testing.T) {
@@ -103,6 +128,8 @@ func TestSource(t *testing.T) {
 
 	conn1 := make(chan struct{})
 	conn2 := make(chan struct{})
+	serve1 := make(chan struct{})
+	serve2 := make(chan struct{})
 
 	h1 := &testHandler{
 		call: func(ctx context.Context, req *Request) {
@@ -120,14 +147,14 @@ func TestSource(t *testing.T) {
 			fmt.Printf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for _, v := range expRx {
-					err := req.Out.Pour(ctx, v)
+					err := req.Stream.Pour(ctx, v)
 					if err != nil {
 						fmt.Printf("pour errored with %+v\n", err)
 						t.Error(err)
 					}
 				}
 
-				err := req.Out.Close()
+				err := req.Stream.Close()
 				if err != nil {
 					fmt.Printf("end pour errored with %+v\n", err)
 					t.Error(err)
@@ -152,6 +179,7 @@ func TestSource(t *testing.T) {
 			fmt.Printf("rpc1: %+v\n", err)
 			t.Error(err)
 		}
+		close(serve1)
 	}()
 
 	go func() {
@@ -160,14 +188,13 @@ func TestSource(t *testing.T) {
 			fmt.Printf("rpc2: %+v\n", err)
 			t.Error(err)
 		}
+		close(serve2)
 	}()
 
-	src, err := rpc1.Source(ctx, []string{"whoami"})
+	src, err := rpc1.Source(ctx, "strings", []string{"whoami"})
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	src = NewDecoder(src, "string")
 
 	for _, exp := range expRx {
 		v, err := src.Next(ctx)
@@ -184,6 +211,26 @@ func TestSource(t *testing.T) {
 	if !luigi.IsEOS(err) {
 		t.Errorf("expected end of stream, got value %v and error %+v", val, err)
 	}
+
+	time.Sleep(time.Millisecond)
+	rpc1.Terminate()
+	fmt.Println("waiting for everything to shut down")
+	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
+		select {
+		case <-conn1:
+			fmt.Println("conn1 closed")
+			conn1 = nil
+		case <-conn2:
+			fmt.Println("conn2 closed")
+			conn2 = nil
+		case <-serve1:
+			fmt.Println("serve1 closed")
+			serve1 = nil
+		case <-serve2:
+			fmt.Println("serve2 closed")
+			serve2 = nil
+		}
+	}
 }
 
 func TestSink(t *testing.T) {
@@ -199,6 +246,8 @@ func TestSink(t *testing.T) {
 
 	conn1 := make(chan struct{})
 	conn2 := make(chan struct{})
+	serve1 := make(chan struct{})
+	serve2 := make(chan struct{})
 	wait := make(chan struct{})
 
 	h1 := &testHandler{
@@ -216,13 +265,14 @@ func TestSink(t *testing.T) {
 		call: func(ctx context.Context, req *Request) {
 			fmt.Printf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
-				for _, exp := range expRx {
-					src := NewDecoder(req.In, "string")
-					v, err := src.Next(ctx)
+				for i, exp := range expRx {
+					fmt.Println("calling Next()", i)
+					v, err := req.Stream.Next(ctx)
 					if err != nil {
-						fmt.Printf("pour errored with %+v\n", err)
+						fmt.Printf("next errored with %+v\n", err)
 						t.Error(err)
 					}
+					fmt.Println("Next()", i, "returned", v)
 
 					if v != exp {
 						t.Errorf("expected value %v, got %v", exp, v)
@@ -231,7 +281,7 @@ func TestSink(t *testing.T) {
 
 				close(wait)
 
-				err := req.Out.Close()
+				err := req.Stream.Close()
 				if err != nil {
 					fmt.Printf("end pour errored with %+v\n", err)
 					t.Error(err)
@@ -256,6 +306,8 @@ func TestSink(t *testing.T) {
 			fmt.Printf("rpc1: %+v\n", err)
 			t.Error(err)
 		}
+
+		close(serve1)
 	}()
 
 	go func() {
@@ -264,6 +316,7 @@ func TestSink(t *testing.T) {
 			fmt.Printf("rpc2: %+v\n", err)
 			t.Error(err)
 		}
+		close(serve2)
 	}()
 
 	sink, err := rpc1.Sink(ctx, []string{"whoami"})
@@ -277,10 +330,32 @@ func TestSink(t *testing.T) {
 			t.Error(err)
 		}
 	}
+	fmt.Println("waiting for wait...")
 	<-wait
+	fmt.Println("got wait!")
 	err = sink.Close()
 	if err != nil {
 		t.Errorf("error closing stream: %+v", err)
+	}
+
+	time.Sleep(time.Millisecond)
+	rpc1.Terminate()
+	fmt.Println("waiting for everything to shut down")
+	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
+		select {
+		case <-conn1:
+			fmt.Println("conn1 closed")
+			conn1 = nil
+		case <-conn2:
+			fmt.Println("conn2 closed")
+			conn2 = nil
+		case <-serve1:
+			fmt.Println("serve1 closed")
+			serve1 = nil
+		case <-serve2:
+			fmt.Println("serve2 closed")
+			serve2 = nil
+		}
 	}
 }
 
@@ -322,8 +397,7 @@ func TestDuplex(t *testing.T) {
 			fmt.Printf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for _, exp := range expRx {
-					src := NewDecoder(req.In, "string")
-					v, err := src.Next(ctx)
+					v, err := req.Stream.Next(ctx)
 					if err != nil {
 						fmt.Printf("pour errored with %+v\n", err)
 						t.Error(err)
@@ -335,14 +409,14 @@ func TestDuplex(t *testing.T) {
 				}
 
 				for _, v := range expTx {
-					err := req.Out.Pour(ctx, v)
+					err := req.Stream.Pour(ctx, v)
 					if err != nil {
 						fmt.Printf("pour errored with %+v\n", err)
 						t.Error(err)
 					}
 				}
 
-				err := req.Out.Close()
+				err := req.Stream.Close()
 				if err != nil {
 					fmt.Printf("end pour errored with %+v\n", err)
 					t.Error(err)
@@ -389,7 +463,6 @@ func TestDuplex(t *testing.T) {
 		}
 	}
 
-	src = NewDecoder(src, "string")
 	for _, exp := range expTx {
 		v, err := src.Next(ctx)
 		if err != nil {

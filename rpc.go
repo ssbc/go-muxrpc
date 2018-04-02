@@ -24,6 +24,9 @@ type rpc struct {
 	highest int32
 
 	root Handler
+
+	// terminated indicates that the rpc session is being terminated
+	terminated bool
 }
 
 type Handler interface {
@@ -46,46 +49,18 @@ func Handle(pkr Packer, handler Handler) Endpoint {
 }
 
 // Async does an aync call to the endpoint.
-func (r *rpc) Async(ctx context.Context, dst interface{}, method []string, args ...interface{}) error {
+func (r *rpc) Async(ctx context.Context, tipe interface{}, method []string, args ...interface{}) (interface{}, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
 	req := &Request{
-		Type: "async",
-		In:   inSrc,
-		in:   inSink,
+		Type:   "async",
+		Stream: NewStream(inSrc, r.pkr, 0),
+		in:     inSink,
 
 		Method: method,
 		Args:   args,
-	}
 
-	err := r.Do(ctx, req)
-	if err != nil {
-		return errors.Wrap(err, "error sending request")
-	}
-
-	v, err := req.In.Next(ctx)
-	if err != nil {
-		return errors.Wrap(err, "error reading response from request source")
-	}
-
-	data := v.([]byte)
-
-	if err := json.Unmarshal(data, dst); err != nil {
-		return errors.Wrapf(err, "async: Unmarshalling for method %v failed.", method)
-	}
-	return nil
-}
-
-func (r *rpc) Source(ctx context.Context, method []string, args ...interface{}) (luigi.Source, error) {
-	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
-
-	req := &Request{
-		Type: "source",
-		In:   inSrc,
-		in:   inSink,
-
-		Method: method,
-		Args:   args,
+		tipe: tipe,
 	}
 
 	err := r.Do(ctx, req)
@@ -93,16 +68,39 @@ func (r *rpc) Source(ctx context.Context, method []string, args ...interface{}) 
 		return nil, errors.Wrap(err, "error sending request")
 	}
 
-	return req.In, nil
+	v, err := req.Stream.Next(ctx)
+	return v, errors.Wrap(err, "error reading response from request source")
+}
+
+func (r *rpc) Source(ctx context.Context, tipe interface{}, method []string, args ...interface{}) (luigi.Source, error) {
+	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
+
+	req := &Request{
+		Type:   "source",
+		Stream: NewStream(inSrc, r.pkr, 0),
+		in:     inSink,
+
+		Method: method,
+		Args:   args,
+
+		tipe: tipe,
+	}
+
+	err := r.Do(ctx, req)
+	if err != nil {
+		return nil, errors.Wrap(err, "error sending request")
+	}
+
+	return req.Stream, nil
 }
 
 func (r *rpc) Sink(ctx context.Context, method []string, args ...interface{}) (luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
 	req := &Request{
-		Type: "sink",
-		In:   inSrc,
-		in:   inSink,
+		Type:   "sink",
+		Stream: NewStream(inSrc, r.pkr, 0),
+		in:     inSink,
 
 		Method: method,
 		Args:   args,
@@ -113,16 +111,16 @@ func (r *rpc) Sink(ctx context.Context, method []string, args ...interface{}) (l
 		return nil, errors.Wrap(err, "error sending request")
 	}
 
-	return req.Out, nil
+	return req.Stream, nil
 }
 
 func (r *rpc) Duplex(ctx context.Context, method []string, args ...interface{}) (luigi.Source, luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
 	req := &Request{
-		Type: "duplex",
-		In:   inSrc,
-		in:   inSink,
+		Type:   "duplex",
+		Stream: NewStream(inSrc, r.pkr, 0),
+		in:     inSink,
 
 		Method: method,
 		Args:   args,
@@ -133,7 +131,15 @@ func (r *rpc) Duplex(ctx context.Context, method []string, args ...interface{}) 
 		return nil, nil, errors.Wrap(err, "error sending request")
 	}
 
-	return req.In, req.Out, nil
+	return req.Stream, req.Stream, nil
+}
+
+func (r *rpc) Terminate() error {
+	r.l.Lock()
+	defer r.l.Unlock()
+
+	r.terminated = true
+	return r.pkr.Close()
 }
 
 var trueBytes = []byte{'t', 'r', 'u', 'e'}
@@ -171,10 +177,7 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 		pkt.Req = r.highest + 1
 		r.highest = pkt.Req
 		r.reqs[pkt.Req] = req
-
-		if req.Type == "sink" || req.Type == "duplex" {
-			req.Out = NewBytesPacker(r.pkr, pkt.Flag, pkt.Req)
-		}
+		req.Stream.WithReq(pkt.Req)
 
 		req.pkt = &pkt
 	}()
@@ -197,19 +200,16 @@ func (r *rpc) ParseRequest(pkt *codec.Packet) (*Request, error) {
 		return nil, errors.New("expected negative request id")
 	}
 
-	req.pkt = pkt
-
 	err := json.Unmarshal(pkt.Body, &req)
 	if err != nil {
 		return nil, errors.Wrap(err, "error decoding packet")
 	}
 
-	if req.Type == "source" || req.Type == "sink" || req.Type == "duplex" {
-		inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
-		req.In = inSrc
-		req.in = inSink
-	}
-	req.Out = NewBytesPacker(r.pkr, pkt.Flag, pkt.Req)
+	req.pkt = pkt
+
+	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
+	req.Stream = NewStream(inSrc, r.pkr, pkt.Req)
+	req.in = inSink
 
 	return &req, nil
 }
@@ -222,53 +222,88 @@ func isTrue(data []byte) bool {
 		data[3] == 'e'
 }
 
-func (r *rpc) Serve(ctx context.Context) (err error) {
-	defer func() {
-		fmt.Printf("Serve returns with err=%q\n", err)
+func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bool, error) {
+	var err error
 
-		fmt.Println("finishing all connections - taking lock")
-		r.l.Lock()
-		defer r.l.Unlock()
-		fmt.Println("got lock")
-
-		for req := range r.reqs {
-			r.finish(ctx, req)
+	// get request from map, otherwise make new one
+	req, ok := r.reqs[pkt.Req]
+	if !ok {
+		req, err = r.ParseRequest(pkt)
+		fmt.Printf("ParseRequest returned %+v, %+v\n", req, err)
+		if err != nil {
+			return nil, false, errors.Wrap(err, "error parsing request")
 		}
+		r.reqs[pkt.Req] = req
 
-		fmt.Println("closing")
-		r.pkr.Close()
-	}()
+		go r.root.OnCall(ctx, req)
+	}
+
+	return req, !ok, nil
+}
+
+func (r *rpc) Serve(ctx context.Context) (err error) {
+	/*
+		defer func() {
+			fmt.Printf("Serve returns with err=%q\n", err)
+
+			fmt.Println("finishing all connections - taking lock")
+			r.l.Lock()
+			defer r.l.Unlock()
+			fmt.Println("got lock")
+
+			for req := range r.reqs {
+				r.finish(ctx, req)
+			}
+
+			//fmt.Println("closing")
+			//r.pkr.Close()
+		}()
+	*/
 
 	for {
-		var v interface{}
+		var vpkt interface{}
 		// read next packet from connection
-		v, err = r.pkr.Next(ctx)
-		fmt.Printf("pkr.Next returned %+v, %+v\n", v, err)
-		if luigi.IsEOS(err) {
-			return nil
-		}
-		if err != nil {
-			return errors.Wrap(err, "error reading from packer source")
-		}
+		doRet := func() bool {
+			vpkt, err = r.pkr.Next(ctx)
 
-		pkt := v.(*codec.Packet)
+			r.l.Lock()
+			defer r.l.Unlock()
 
-		// get request from map, otherwise make new one
-		req, ok := r.reqs[pkt.Req]
-		if !ok {
-			if pkt.Flag.Get(codec.FlagEndErr) {
-				continue
+			if luigi.IsEOS(err) {
+				err = nil
+				return true
 			}
-
-			req, err = r.ParseRequest(pkt)
-			fmt.Printf("ParseRequest returned %+v, %+v\n", req, err)
 			if err != nil {
-				return errors.Wrap(err, "error parsing request")
+				if r.terminated {
+					err = nil
+					return true
+				}
+				err = errors.Wrap(err, "error reading from packer source")
+				return true
 			}
-			r.reqs[pkt.Req] = req
 
-			go r.root.OnCall(ctx, req)
+			return false
+		}()
+		if doRet {
+			return err
+		}
 
+		pkt := vpkt.(*codec.Packet)
+
+		if pkt.Flag.Get(codec.FlagEndErr) {
+			if req, ok := r.reqs[pkt.Req]; ok {
+				req.Stream.Close()
+				delete(r.reqs, pkt.Req)
+			}
+
+			continue
+		}
+
+		req, isNew, err := r.fetchRequest(ctx, pkt)
+		if err != nil {
+			return errors.Wrap(err, "error getting request")
+		}
+		if isNew {
 			continue
 		}
 
@@ -276,6 +311,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		if pkt.Flag.Get(codec.FlagEndErr) {
 			delete(r.reqs, pkt.Req)
 
+			// TODO make type RPCError and return it as error
 			if !isTrue(pkt.Body) {
 				fmt.Printf("not true: %q\n", pkt.Body)
 				err = req.in.Pour(ctx, []byte(pkt.Body))
@@ -291,15 +327,49 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 				}
 			}
 
-			pkt.Body = []byte{'t', 'r', 'u', 'e'}
-			pkt.Req = -pkt.Req
-			err = r.pkr.Pour(ctx, pkt)
-			if err != nil {
-				return errors.Wrap(err, "error pouring end reply to packer")
+			select {
+			case <-req.Stream.(*stream).closeCh:
+			default:
+				//pkt.Body = []byte{'t', 'r', 'u', 'e'}
+				//pkt.Req = -pkt.Req
+				err = r.pkr.Pour(ctx, buildEndPacket(pkt.Req))
+				if err != nil {
+					return errors.Wrap(err, "error pouring end reply to packer")
+				}
 			}
 
 			continue
 		}
+
+		/*
+		   var v interface{}
+
+		   if pkt.Flag.Get(codec.FlagJSON) {
+		     if req.tipe != nil {
+		       var isPtr bool
+
+		       t := reflect.TypeOf(req.tipe)
+		       if t.Kind() == reflect.Ptr {
+		         isPtr = true
+		         t = t.Elem()
+		       }
+
+		       v = reflect.New(t).Interface()
+		       err := json.Unmarshal(pkt.Body, &v)
+		       if err != nil {
+		         return errors.Wrap(err, "error unmarshaling json")
+		       }
+
+		       if !isPtr {
+		         v = reflect.ValueOf(v).Elem().Interface()
+		       }
+		     }
+		   } else if pkt.Flag.Get(codec.FlagString) {
+		     v = string(pkt.Body)
+		   } else {
+		     v = pkt.Body
+		   }
+		*/
 
 		// localize defer
 		err = func() error {
@@ -308,7 +378,9 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			ctx, cancel := context.WithTimeout(ctx, rxTimeout)
 			defer cancel()
 
-			err := req.in.Pour(ctx, []byte(pkt.Body))
+			//err := req.in.Pour(ctx, v)
+			err := req.in.Pour(ctx, pkt)
+			fmt.Println("poured", pkt, "- err:", err)
 			return errors.Wrap(err, "error pouring data to handler")
 		}()
 		if err != nil {

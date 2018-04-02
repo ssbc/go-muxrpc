@@ -33,7 +33,7 @@ func Wrap(l log.Logger, rwc io.ReadWriteCloser) io.ReadWriteCloser {
 			pkt, err := r.ReadPacket()
 			if err != nil {
 				lout.Log("error", err)
-				pwout.CloseWithError(err)
+				//pwout.CloseWithError(err)
 				return
 			}
 			lout.Log("pkt", pkt)

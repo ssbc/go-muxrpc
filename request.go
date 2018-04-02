@@ -10,8 +10,7 @@ import (
 )
 
 type Request struct {
-	In  luigi.Source `json:"-"`
-	Out luigi.Sink   `json:"-"`
+	Stream Stream `json:"-"`
 
 	Args   []interface{} `json:"args"`
 	Method []string      `json:"name"`
@@ -21,6 +20,8 @@ type Request struct {
 
 	in  luigi.Sink
 	pkt *codec.Packet
+
+	tipe interface{}
 }
 
 func (req *Request) Return(ctx context.Context, v interface{}) error {
@@ -28,12 +29,12 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 		return errors.Errorf("cannot return value on %v stream", req.Type)
 	}
 
-	err := req.Out.Pour(ctx, v)
+	err := req.Stream.Pour(ctx, v)
 	if err != nil {
 		return errors.Wrap(err, "error pouring return value")
 	}
 
-	err = req.Out.Close()
+	err = req.Stream.Close()
 	if err != nil {
 		return errors.Wrap(err, "error closing sink after return")
 	}
@@ -42,34 +43,6 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 }
 
 type CallType string
-
-func guessFromArgs(args []interface{}) CallType {
-	var ct CallType = "async"
-
-L:
-	for _, arg := range args {
-		switch arg.(type) {
-		case luigi.Sink:
-			switch ct {
-			case "async":
-				ct = "sink"
-			case "source":
-				ct = "duplex"
-			}
-		case luigi.Source:
-			switch ct {
-			case "async":
-				ct = "source"
-			case "sink":
-				ct = "duplex"
-			}
-		default:
-			break L
-		}
-	}
-
-	return ct
-}
 
 func (t CallType) Flags() codec.Flag {
 	switch t {

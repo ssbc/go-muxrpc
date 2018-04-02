@@ -60,13 +60,13 @@ func TestOldCall(t *testing.T) {
 		}
 	}()
 
-	var v string
-	if err := rpc1.Async(ctx, &v, []string{"hello"}, "world", "bob"); err != nil {
+	v, err := rpc1.Async(ctx, "string", []string{"hello"}, "world", "bob")
+	if err != nil {
 		t.Fatalf("%+v", err)
 	}
 
 	if v != "hello, world and bob!" {
-		t.Fatal("wrong response:", v)
+		t.Fatalf("wrong response: %q(%T)", v, v)
 	}
 
 	if err := packer.Close(); err != nil {

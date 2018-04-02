@@ -20,9 +20,9 @@ package main
 import (
 	"os"
 
-	"scuttlebot.io/go/muxrpc"
 	"github.com/cryptix/go/logging"
 	"github.com/cryptix/go/proc"
+	"scuttlebot.io/go/muxrpc"
 )
 
 func main() {
