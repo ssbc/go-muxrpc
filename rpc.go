@@ -14,19 +14,22 @@ import (
 
 // rpc implements an Endpoint, but has some more methods like Serve
 type rpc struct {
-	l sync.Mutex
 
 	// pkr is the Sink and Source of the network connection
 	pkr Packer
 
 	// reqs is the map we keep, tracking all requests
-	reqs    map[int32]*Request
+	reqs  map[int32]*Request
+	rLock sync.Mutex
+
+	// highest is the highest request id we already allocated
 	highest int32
 
 	root Handler
 
 	// terminated indicates that the rpc session is being terminated
 	terminated bool
+	tLock      sync.Mutex
 }
 
 // Handler allows handling connections.
@@ -143,8 +146,8 @@ func (r *rpc) Duplex(ctx context.Context, method []string, args ...interface{}) 
 
 // Terminate ends the RPC session
 func (r *rpc) Terminate() error {
-	r.l.Lock()
-	defer r.l.Unlock()
+	r.tLock.Lock()
+	defer r.tLock.Unlock()
 
 	r.terminated = true
 	return r.pkr.Close()
@@ -179,8 +182,8 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 	}
 
 	func() {
-		r.l.Lock()
-		defer r.l.Unlock()
+		r.rLock.Lock()
+		defer r.rLock.Unlock()
 
 		pkt.Flag = pkt.Flag.Set(codec.FlagJSON)
 		pkt.Flag = pkt.Flag.Set(req.Type.Flags())
@@ -241,6 +244,9 @@ func isTrue(data []byte) bool {
 func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bool, error) {
 	var err error
 
+	r.rLock.Lock()
+	defer r.rLock.Unlock()
+
 	// get request from map, otherwise make new one
 	req, ok := r.reqs[pkt.Req]
 	if !ok {
@@ -265,8 +271,8 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		doRet := func() bool {
 			vpkt, err = r.pkr.Next(ctx)
 
-			r.l.Lock()
-			defer r.l.Unlock()
+			r.tLock.Lock()
+			defer r.tLock.Unlock()
 
 			if luigi.IsEOS(err) {
 				err = nil
@@ -291,25 +297,35 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 		if pkt.Flag.Get(codec.FlagEndErr) {
 			if req, ok := r.reqs[pkt.Req]; ok {
-				if isTrue(pkt.Body) {
-					err = req.in.Close()
-					if err != nil {
-						return errors.Wrap(err, "error closing pipe sink")
-					}
-				} else {
-					// TODO make type RPCError and return it as error
-					err = req.in.Pour(ctx, []byte(pkt.Body))
-					if err != nil {
-						return errors.Wrap(err, "error writing to pipe sink")
-					}
-				}
+				err := func() error {
+					r.rLock.Lock()
+					defer r.rLock.Unlock()
 
-				err = req.Stream.Close()
+					if isTrue(pkt.Body) {
+						err = req.in.Close()
+						if err != nil {
+							return errors.Wrap(err, "error closing pipe sink")
+						}
+					} else {
+						// TODO make type RPCError and return it as error
+						err = req.in.Pour(ctx, []byte(pkt.Body))
+						if err != nil {
+							return errors.Wrap(err, "error writing to pipe sink")
+						}
+					}
+
+					err = req.Stream.Close()
+					if err != nil {
+						return errors.Wrap(err, "error closing stream")
+					}
+
+					delete(r.reqs, pkt.Req)
+					return nil
+				}()
 				if err != nil {
-					return errors.Wrap(err, "error closing stream")
+					return err
 				}
 
-				delete(r.reqs, pkt.Req)
 				continue
 			}
 		}

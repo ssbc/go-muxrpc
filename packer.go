@@ -24,6 +24,8 @@ func NewPacker(rwc io.ReadWriteCloser) Packer {
 		r: codec.NewReader(rwc),
 		w: codec.NewWriter(rwc),
 		c: rwc,
+
+		closing: make(chan struct{}),
 	}
 }
 
@@ -36,7 +38,7 @@ type packer struct {
 	w *codec.Writer
 	c io.Closer
 
-	closing bool
+	closing chan struct{}
 }
 
 // Next returns the next packet from the underlying stream.
@@ -45,9 +47,15 @@ func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 	defer pkr.rl.Unlock()
 
 	pkt, err := pkr.r.ReadPacket()
+	select {
+	case <-pkr.closing:
+		if err != nil {
+			return nil, luigi.EOS{}
+		}
+	default:
+	}
+
 	if errors.Cause(err) == io.EOF {
-		return nil, luigi.EOS{}
-	} else if pkr.closing && err != nil {
 		return nil, luigi.EOS{}
 	} else if err != nil {
 		return nil, errors.Wrap(err, "ReadPacket failed.")
@@ -69,16 +77,18 @@ func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
 	}
 
 	err := pkr.w.WritePacket(pkt)
-	if pkr.closing {
+	select {
+	case <-pkr.closing:
 		return nil
+	default:
+		return err
 	}
 
-	return err
 }
 
 // Close closes the packer.
 func (pkr *packer) Close() error {
-	pkr.closing = true
+	close(pkr.closing)
 
 	return pkr.c.Close()
 }

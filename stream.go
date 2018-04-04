@@ -155,7 +155,12 @@ func (str *stream) Close() error {
 		pkt := buildEndPacket(str.req)
 		close(str.closeCh)
 
-		str.pktSink.Pour(context.TODO(), pkt)
+		// call in goroutine because we get called from the Serve-loop and
+		// this causes trouble when used with net.Pipe(), because the stream is
+		// unbuffered.  This shouldn't block too long and returns (a) when the
+		// packet is sent, (b) if the connection is closed or some other error
+		// occurs, which at some point will happen.
+		go str.pktSink.Pour(context.TODO(), pkt)
 	})
 
 	return nil
