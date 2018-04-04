@@ -222,7 +222,6 @@ func (r *rpc) ParseRequest(pkt *codec.Packet) (*Request, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "error decoding packet")
 	}
-
 	req.pkt = pkt
 
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
@@ -260,6 +259,10 @@ func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bo
 	}
 
 	return req, !ok, nil
+}
+
+type Server interface {
+	Serve(context.Context) error
 }
 
 // Serve handles the RPC session
