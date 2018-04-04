@@ -151,16 +151,14 @@ func (str *stream) Pour(ctx context.Context, v interface{}) error {
 
 // Close closes the stream and sends the EndErr message.
 func (str *stream) Close() error {
-	var err error
-
 	str.closeOnce.Do(func() {
 		pkt := buildEndPacket(str.req)
 		close(str.closeCh)
 
-		err = str.pktSink.Pour(context.TODO(), pkt)
+		str.pktSink.Pour(context.TODO(), pkt)
 	})
 
-	return err
+	return nil
 }
 
 // newRawPacket crafts a packet with a byte slice as payload
@@ -178,11 +176,10 @@ func newRawPacket(stream bool, req int32, body []byte) *codec.Packet {
 	}
 }
 
-
 // newStringPacket crafts a new packet with string payload
 func newStringPacket(stream bool, req int32, body string) *codec.Packet {
 	var flag codec.Flag
- 
+
 	if stream {
 		flag = codec.FlagStream
 	}
@@ -217,4 +214,3 @@ func newJSONPacket(stream bool, req int32, v interface{}) (*codec.Packet, error)
 		Body: codec.Body(body),
 	}, nil
 }
-

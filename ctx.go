@@ -62,17 +62,10 @@ func (ctx *closeCtx) Done() <-chan struct{} {
 func (ctx *closeCtx) Err() error {
 	select {
 	case <-ctx.ch:
+		return luigi.EOS{}
 	case <-ctx.Context.Done():
+		return ctx.Context.Err()
 	default:
 		return nil
 	}
-
-	ctx.l.Lock()
-	defer ctx.l.Unlock()
-
-	if ctx.closed {
-		return luigi.EOS{}
-	}
-
-	return ctx.Context.Err()
 }

@@ -11,25 +11,25 @@ import (
 
 // Request assembles the state of an RPC call
 type Request struct {
-  // Stream allows sending and receiving packets
+	// Stream allows sending and receiving packets
 	Stream Stream `json:"-"`
 
-  // Method is the name of the called function
-	Method []string      `json:"name"`
-  // Args contains the call arguments
-	Args   []interface{} `json:"args"`
-  // Type is the type of the call, i.e. async, sink, source or duplex
-	Type   CallType      `json:"type"`
+	// Method is the name of the called function
+	Method []string `json:"name"`
+	// Args contains the call arguments
+	Args []interface{} `json:"args"`
+	// Type is the type of the call, i.e. async, sink, source or duplex
+	Type CallType `json:"type"`
 
-  // in is the sink that incoming packets are passed to
-	in  luigi.Sink
+	// in is the sink that incoming packets are passed to
+	in luigi.Sink
 
-  // pkt is the packet that initiated the connection.
-  // Allows quick access to data like request ID.
+	// pkt is the packet that initiated the connection.
+	// Allows quick access to data like request ID.
 	pkt *codec.Packet
 
-  // tipe is a value that has the type of data we expect to receive.
-  // This is needed for unmarshaling JSON.
+	// tipe is a value that has the type of data we expect to receive.
+	// This is needed for unmarshaling JSON.
 	tipe interface{}
 }
 
@@ -47,6 +47,11 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 	err = req.Stream.Close()
 	if err != nil {
 		return errors.Wrap(err, "error closing sink after return")
+	}
+
+	_, err = req.Stream.Next(ctx)
+	if !luigi.IsEOS(err) {
+		return err
 	}
 
 	return nil
