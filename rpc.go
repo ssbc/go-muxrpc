@@ -153,20 +153,10 @@ func (r *rpc) Terminate() error {
 	return r.pkr.Close()
 }
 
-var trueBytes = []byte{'t', 'r', 'u', 'e'}
-
-func buildEndPacket(req int32) *codec.Packet {
-	return &codec.Packet{
-		Req:  req,
-		Flag: codec.FlagJSON | codec.FlagEndErr | codec.FlagStream,
-		Body: trueBytes,
-	}
-}
-
 func (r *rpc) finish(ctx context.Context, req int32) error {
 	delete(r.reqs, req)
 
-	err := r.pkr.Pour(ctx, buildEndPacket(req))
+	err := r.pkr.Pour(ctx, newEndOkayPacket(req))
 	return errors.Wrap(err, "error pouring done message")
 }
 
@@ -325,9 +315,14 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 						}
 					} else {
 						// TODO make type RPCError and return it as error
-						err = req.in.Pour(ctx, pkt)
+						e, err := parseError(pkt.Body)
 						if err != nil {
-							return errors.Wrap(err, "error writing to pipe sink")
+							return errors.Wrap(err, "error parsing error packet")
+						}
+
+						err = req.in.(luigi.ErrorCloser).CloseWithError(e)
+						if err != nil {
+							return errors.Wrap(err, "error closing pipe sink with error")
 						}
 					}
 
@@ -371,4 +366,29 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			return err
 		}
 	}
+}
+
+type CallError struct {
+	Name    string `json:"name"`
+	Message string `json:"message"`
+	Stack   string `json:"stack"`
+}
+
+func (e *CallError) Error() string {
+	return e.Message
+}
+
+func parseError(data []byte) (*CallError, error) {
+	var e CallError
+
+	err := json.Unmarshal(data, &e)
+	if err != nil {
+		return nil, errors.Wrap(err, "error unmarshaling error packet")
+	}
+
+	if e.Name != "Error" {
+		return nil, errors.New(`name is not "Error"`)
+	}
+
+	return &e, nil
 }

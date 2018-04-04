@@ -16,6 +16,7 @@ import (
 type Stream interface {
 	luigi.Source
 	luigi.Sink
+	luigi.ErrorCloser
 
 	// WithType tells the stream in what type JSON data should be unmarshalled into
 	WithType(tipe interface{})
@@ -154,7 +155,28 @@ func (str *stream) Pour(ctx context.Context, v interface{}) error {
 // Close closes the stream and sends the EndErr message.
 func (str *stream) Close() error {
 	str.closeOnce.Do(func() {
-		pkt := buildEndPacket(str.req)
+		pkt := newEndOkayPacket(str.req)
+		close(str.closeCh)
+
+		// call in goroutine because we get called from the Serve-loop and
+		// this causes trouble when used with net.Pipe(), because the stream is
+		// unbuffered.  This shouldn't block too long and returns (a) when the
+		// packet is sent, (b) if the connection is closed or some other error
+		// occurs, which at some point will happen.
+		go str.pktSink.Pour(context.TODO(), pkt)
+	})
+
+	return nil
+}
+
+// Close closes the stream and sends the EndErr message.
+func (str *stream) CloseWithError(closeErr error) error {
+	pkt, err := newEndErrPacket(str.req, closeErr)
+	if err != nil {
+		return errors.Wrap(err, "error building error packet")
+	}
+
+	str.closeOnce.Do(func() {
 		close(str.closeCh)
 
 		// call in goroutine because we get called from the Serve-loop and
@@ -219,5 +241,31 @@ func newJSONPacket(stream bool, req int32, v interface{}) (*codec.Packet, error)
 		Flag: flag,
 		Req:  req,
 		Body: codec.Body(body),
+	}, nil
+}
+
+var trueBytes = []byte{'t', 'r', 'u', 'e'}
+
+func newEndOkayPacket(req int32) *codec.Packet {
+	return &codec.Packet{
+		Req:  req,
+		Flag: codec.FlagJSON | codec.FlagEndErr | codec.FlagStream,
+		Body: trueBytes,
+	}
+}
+
+func newEndErrPacket(req int32, err error) (*codec.Packet, error) {
+	body, err := json.Marshal(CallError{
+		Message: err.Error(),
+		Name:    "Error",
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshaling value")
+	}
+
+	return &codec.Packet{
+		Req:  req,
+		Flag: codec.FlagJSON | codec.FlagEndErr | codec.FlagStream,
+		Body: body,
 	}, nil
 }

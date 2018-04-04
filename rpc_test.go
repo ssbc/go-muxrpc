@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"cryptoscope.co/go/luigi"
+
+	"github.com/pkg/errors"
 )
 
 type testHandler struct {
@@ -478,4 +480,108 @@ func TestDuplex(t *testing.T) {
 	if err != nil {
 		t.Errorf("error closing stream: %+v", err)
 	}
+}
+func TestErrorAsync(t *testing.T) {
+	c1, c2 := net.Pipe()
+
+	conn1 := make(chan struct{})
+	conn2 := make(chan struct{})
+	serve1 := make(chan struct{})
+	serve2 := make(chan struct{})
+
+	h1 := &testHandler{
+		call: func(ctx context.Context, req *Request) {
+			fmt.Println("h1 called")
+			t.Errorf("unexpected call to rpc1: %#v", req)
+		},
+		connect: func(ctx context.Context, e Endpoint) {
+			fmt.Println("h1 connected")
+			close(conn1)
+		},
+	}
+
+	h2 := &testHandler{
+		call: func(ctx context.Context, req *Request) {
+			fmt.Printf("h2 called %+v\n", req)
+			if len(req.Method) == 1 && req.Method[0] == "whoami" {
+				err := req.Stream.CloseWithError(errors.New("omg an error!"))
+				if err != nil {
+					fmt.Printf("return errored with %+v\n", err)
+					t.Error(err)
+				}
+			}
+		},
+		connect: func(ctx context.Context, e Endpoint) {
+			fmt.Println("h2 connected")
+			close(conn2)
+		},
+	}
+
+	rpc1 := Handle(NewPacker(c1), h1)
+	rpc2 := Handle(NewPacker(c2), h2)
+
+	ctx := context.Background()
+
+	go func() {
+		err := rpc1.(*rpc).Serve(ctx)
+		if err != nil {
+			fmt.Printf("rpc1: %+v\n", err)
+			t.Error(err)
+		}
+		close(serve1)
+	}()
+
+	go func() {
+		err := rpc2.(*rpc).Serve(ctx)
+		if err != nil {
+			fmt.Printf("rpc2: %+v\n", err)
+			t.Error(err)
+		}
+		close(serve2)
+	}()
+
+	v, err := rpc1.Async(ctx, "string", []string{"whoami"})
+	if err == nil {
+		t.Error("expected an error")
+	} else if errors.Cause(err).Error() != "omg an error!" {
+		t.Errorf("expected error %q, got %q", "omg an error!", errors.Cause(err))
+	}
+
+	e, ok := errors.Cause(err).(*CallError)
+	if !ok {
+		t.Errorf("not a callerror!")
+	}
+
+	if e.Message != "omg an error!" {
+		t.Error("unexpected error message")
+	}
+
+	if e.Name != "Error" {
+		t.Error("expected field name to have %q, got %q", "Error", e.Name)
+	}
+
+	if v != nil {
+		t.Errorf("unexpected response message %q, expected nil", v)
+	}
+
+	time.Sleep(time.Millisecond)
+	rpc1.Terminate()
+	fmt.Println("waiting for closes")
+	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
+		select {
+		case <-conn1:
+			fmt.Println("conn1 closed")
+			conn1 = nil
+		case <-conn2:
+			fmt.Println("conn2 closed")
+			conn2 = nil
+		case <-serve1:
+			fmt.Println("serve1 closed")
+			serve1 = nil
+		case <-serve2:
+			fmt.Println("serve2 closed")
+			serve2 = nil
+		}
+	}
+	t.Log("done")
 }
