@@ -311,7 +311,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 						}
 					} else {
 						// TODO make type RPCError and return it as error
-						err = req.in.Pour(ctx, []byte(pkt.Body))
+						err = req.in.Pour(ctx, pkt)
 						if err != nil {
 							return errors.Wrap(err, "error writing to pipe sink")
 						}
