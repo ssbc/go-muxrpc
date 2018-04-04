@@ -61,7 +61,7 @@ func (r *rpc) Async(ctx context.Context, tipe interface{}, method []string, args
 
 	req := &Request{
 		Type:   "async",
-		Stream: NewStream(inSrc, r.pkr, 0),
+		Stream: NewStream(inSrc, r.pkr, 0, false, false),
 		in:     inSink,
 
 		Method: method,
@@ -85,7 +85,7 @@ func (r *rpc) Source(ctx context.Context, tipe interface{}, method []string, arg
 
 	req := &Request{
 		Type:   "source",
-		Stream: NewStream(inSrc, r.pkr, 0),
+		Stream: NewStream(inSrc, r.pkr, 0, true, false),
 		in:     inSink,
 
 		Method: method,
@@ -108,7 +108,7 @@ func (r *rpc) Sink(ctx context.Context, method []string, args ...interface{}) (l
 
 	req := &Request{
 		Type:   "sink",
-		Stream: NewStream(inSrc, r.pkr, 0),
+		Stream: NewStream(inSrc, r.pkr, 0, false, true),
 		in:     inSink,
 
 		Method: method,
@@ -129,7 +129,7 @@ func (r *rpc) Duplex(ctx context.Context, method []string, args ...interface{}) 
 
 	req := &Request{
 		Type:   "duplex",
-		Stream: NewStream(inSrc, r.pkr, 0),
+		Stream: NewStream(inSrc, r.pkr, 0, true, true),
 		in:     inSink,
 
 		Method: method,
@@ -225,7 +225,21 @@ func (r *rpc) ParseRequest(pkt *codec.Packet) (*Request, error) {
 	req.pkt = pkt
 
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
-	req.Stream = NewStream(inSrc, r.pkr, pkt.Req)
+
+	var inStream, outStream bool
+	if pkt.Flag.Get(codec.FlagStream) {
+		switch req.Type {
+		case "duplex":
+			inStream, outStream = true, true
+		case "source":
+			inStream, outStream = false, true
+		case "sink":
+			inStream, outStream = true, false
+		default:
+			return nil, errors.Errorf("unhandled request type: %q", req.Type)
+		}
+	}
+	req.Stream = NewStream(inSrc, r.pkr, pkt.Req, inStream, outStream)
 	req.in = inSink
 
 	return &req, nil

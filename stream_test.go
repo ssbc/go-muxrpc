@@ -18,7 +18,7 @@ func TestStream(t *testing.T) {
 	iSrc, iSink := luigi.NewPipe(luigi.WithBuffer(2))
 	oSrc, oSink := luigi.NewPipe(luigi.WithBuffer(4))
 
-	str := NewStream(iSrc, oSink, req)
+	str := NewStream(iSrc, oSink, req, false, false)
 
 	ctx := context.Background()
 

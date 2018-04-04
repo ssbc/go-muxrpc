@@ -31,7 +31,74 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestJSGettingCalled(t *testing.T) {
+func TestJSGettingCalledSource(t *testing.T) {
+	r := require.New(t)
+	logOut := logtest.Logger("js", t)
+	logger := log.NewLogfmtLogger(logOut)
+
+	serv, err := proc.StartStdioProcess("node", logOut, "client_test.js")
+	r.NoError(err, "nodejs startup")
+
+	var hasConnected bool
+	gotCall := make(chan struct{})
+	callServed := make(chan struct{})
+	h1 := &testHandler{
+		call: func(ctx context.Context, req *Request) {
+			t.Logf("got call: %+v", req)
+			close(gotCall)
+			if len(req.Method) != 1 || req.Method[0] != "stuff" {
+				t.Fatal("unexpected method name:", req.Method)
+			}
+			if req.Type != "source" {
+				t.Fatal("request type:", req.Type)
+			}
+			for i := 0; i < 25; i++ {
+				var v = struct {
+					A int `json:"a"`
+				}{i}
+				if err := req.Stream.Pour(ctx, v); err != nil {
+					t.Errorf("stream pour(%d) error:%s", i, err)
+				}
+			}
+			if err := req.Stream.Close(); err != nil {
+				t.Error("stream close err:", err)
+			}
+			close(callServed)
+		},
+		connect: func(ctx context.Context, e Endpoint) {
+			hasConnected = true
+		},
+	}
+	packer := NewPacker(codec.Wrap(logger, serv))
+	rpc1 := Handle(packer, h1)
+
+	ctx := context.Background()
+
+	go func() {
+		err := rpc1.(*rpc).Serve(ctx)
+		r.NoError(err, "rcp serve")
+	}()
+
+	v, err := rpc1.Async(ctx, "string", []string{"callme", "source"})
+	r.NoError(err, "rcp Async call")
+
+	r.Equal(v, "call done", "expected call result")
+	r.True(hasConnected, "peer did not call 'connect'")
+
+	for gotCall != nil || callServed != nil {
+		select {
+		case <-gotCall:
+			t.Log("gotCall closed")
+			gotCall = nil
+		case <-callServed:
+			t.Log("callServed closed")
+			callServed = nil
+		}
+	}
+	r.NoError(packer.Close())
+}
+
+func TestJSGettingCalledAsync(t *testing.T) {
 	r := require.New(t)
 	logOut := logtest.Logger("js", t)
 	//logOut := os.Stderr
@@ -68,7 +135,7 @@ func TestJSGettingCalled(t *testing.T) {
 		r.NoError(err, "rcp serve")
 	}()
 
-	v, err := rpc1.Async(ctx, "string", []string{"callme"})
+	v, err := rpc1.Async(ctx, "string", []string{"callme", "async"})
 	r.NoError(err, "rcp Async call")
 
 	r.Equal(v, "call done", "expected call result")

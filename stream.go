@@ -25,13 +25,15 @@ type Stream interface {
 }
 
 // NewStram creates a new Stream.
-func NewStream(src luigi.Source, sink luigi.Sink, req int32) Stream {
+func NewStream(src luigi.Source, sink luigi.Sink, req int32, ins, outs bool) Stream {
 	return &stream{
 		pktSrc:    src,
 		pktSink:   sink,
 		req:       req,
 		closeCh:   make(chan struct{}),
 		closeOnce: &sync.Once{},
+		inStream:  ins,
+		outStream: outs,
 	}
 }
 
