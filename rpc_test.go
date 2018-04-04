@@ -15,11 +15,11 @@ type testHandler struct {
 	connect func(context.Context, Endpoint)
 }
 
-func (h *testHandler) OnCall(ctx context.Context, req *Request) {
+func (h *testHandler) HandleCall(ctx context.Context, req *Request) {
 	h.call(ctx, req)
 }
 
-func (h *testHandler) OnConnect(ctx context.Context, e Endpoint) {
+func (h *testHandler) HandleConnect(ctx context.Context, e Endpoint) {
 	h.connect(ctx, e)
 }
 
@@ -59,8 +59,8 @@ func TestAsync(t *testing.T) {
 		},
 	}
 
-	rpc1 := Handle(NewIOPacker(c1), h1)
-	rpc2 := Handle(NewIOPacker(c2), h2)
+	rpc1 := Handle(NewPacker(c1), h1)
+	rpc2 := Handle(NewPacker(c2), h2)
 
 	ctx := context.Background()
 
@@ -168,8 +168,8 @@ func TestSource(t *testing.T) {
 		},
 	}
 
-	rpc1 := Handle(NewIOPacker(c1), h1)
-	rpc2 := Handle(NewIOPacker(c2), h2)
+	rpc1 := Handle(NewPacker(c1), h1)
+	rpc2 := Handle(NewPacker(c2), h2)
 
 	ctx := context.Background()
 
@@ -295,8 +295,8 @@ func TestSink(t *testing.T) {
 		},
 	}
 
-	rpc1 := Handle(NewIOPacker(c1), h1)
-	rpc2 := Handle(NewIOPacker(c2), h2)
+	rpc1 := Handle(NewPacker(c1), h1)
+	rpc2 := Handle(NewPacker(c2), h2)
 
 	ctx := context.Background()
 
@@ -430,8 +430,8 @@ func TestDuplex(t *testing.T) {
 		},
 	}
 
-	rpc1 := Handle(NewIOPacker(c1), h1)
-	rpc2 := Handle(NewIOPacker(c2), h2)
+	rpc1 := Handle(NewPacker(c1), h1)
+	rpc2 := Handle(NewPacker(c2), h2)
 
 	ctx := context.Background()
 

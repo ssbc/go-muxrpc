@@ -12,23 +12,23 @@ import (
 	"github.com/pkg/errors"
 )
 
-var i int
-
+// Packer is a duplex stream that sends and receives *codec.Packet values.
+// Usually wraps a network connection or stdio.
 type Packer interface {
 	luigi.Source
 	luigi.Sink
 }
 
-func NewIOPacker(rwc io.ReadWriteCloser) Packer {
-	i++
+// NewPacker takes an io.ReadWriteCloser and returns a Packer.
+func NewPacker(rwc io.ReadWriteCloser) Packer {
 	return &packer{
 		r:  codec.NewReader(rwc),
 		w:  codec.NewWriter(rwc),
 		c:  rwc,
-		id: i,
 	}
 }
 
+// packer wraps an io.ReadWriteCloser and implements Packer.
 type packer struct {
 	rl sync.Mutex
 	wl sync.Mutex
@@ -36,9 +36,9 @@ type packer struct {
 	r  *codec.Reader
 	w  *codec.Writer
 	c  io.Closer
-	id int
 }
 
+// Next returns the next packet from the underlying stream.
 func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 	pkr.rl.Lock()
 	defer pkr.rl.Unlock()
@@ -58,6 +58,7 @@ func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 	return pkt, nil
 }
 
+// Pour sends a packet to the underlying stream.
 func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
 	pkr.wl.Lock()
 	defer pkr.wl.Unlock()
@@ -70,6 +71,7 @@ func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
 	return pkr.w.WritePacket(pkt)
 }
 
+// Close closes the packer.
 func (pkr *packer) Close() error {
 	pkr.wl.Lock()
 	defer pkr.wl.Unlock()

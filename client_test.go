@@ -47,7 +47,7 @@ func TestJSAsyncString(t *testing.T) {
 			hasConnected = true
 		},
 	}
-	packer := NewIOPacker(codec.Wrap(logger, serv))
+	packer := NewPacker(codec.Wrap(logger, serv))
 	rpc1 := Handle(packer, h1)
 
 	ctx := context.Background()
@@ -87,7 +87,7 @@ func TestJSAsyncObject(t *testing.T) {
 	}
 
 	// TODO: inject logger into Handle and/or packer?
-	packer := NewIOPacker(codec.Wrap(logger, serv))
+	packer := NewPacker(codec.Wrap(logger, serv))
 	rpc1 := Handle(packer, h1)
 
 	ctx := context.Background()
@@ -130,7 +130,7 @@ func TestJSSource(t *testing.T) {
 		},
 	}
 
-	packer := NewIOPacker(codec.Wrap(logger, serv))
+	packer := NewPacker(codec.Wrap(logger, serv))
 	rpc1 := Handle(packer, h1)
 
 	ctx := context.Background()

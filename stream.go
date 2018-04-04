@@ -12,14 +12,19 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Stream is a muxrpc stream for the general duplex case.
 type Stream interface {
 	luigi.Source
 	luigi.Sink
 
+	// WithType tells the stream in what type JSON data should be unmarshalled into
 	WithType(tipe interface{})
+
+	// WithReq tells the stream what request number should be used for sent messages
 	WithReq(req int32)
 }
 
+// NewStram creates a new Stream.
 func NewStream(src luigi.Source, sink luigi.Sink, req int32) Stream {
 	return &stream{
 		pktSrc:    src,
@@ -30,6 +35,7 @@ func NewStream(src luigi.Source, sink luigi.Sink, req int32) Stream {
 	}
 }
 
+// stream implements the Stream.
 type stream struct {
 	l sync.Mutex
 
@@ -44,6 +50,7 @@ type stream struct {
 	inStream, outStream bool
 }
 
+// WithType makes the stream unmarshal JSON into values of type tipe
 func (str *stream) WithType(tipe interface{}) {
 	str.l.Lock()
 	defer str.l.Unlock()
@@ -51,6 +58,7 @@ func (str *stream) WithType(tipe interface{}) {
 	str.tipe = tipe
 }
 
+// WithReq makes the stream use req as request ID for outbound messages.
 func (str *stream) WithReq(req int32) {
 	str.l.Lock()
 	defer str.l.Unlock()
@@ -58,70 +66,7 @@ func (str *stream) WithReq(req int32) {
 	str.req = req
 }
 
-func withCloseCtx(ctx context.Context) (context.Context, context.CancelFunc) {
-	ch := make(chan struct{})
-	next := &closeCtx{
-		ch:      ch,
-		Context: ctx,
-		once:    &sync.Once{},
-	}
-
-	go func() {
-		next.l.Lock()
-		defer next.l.Unlock()
-
-		select {
-		case <-ctx.Done():
-		case <-ch:
-			next.closed = true
-		}
-	}()
-
-	return next, func() { next.once.Do(func() { close(ch) }) }
-}
-
-type closeCtx struct {
-	ch <-chan struct{}
-	context.Context
-
-	l      sync.Mutex
-	once   *sync.Once
-	closed bool
-}
-
-func (ctx *closeCtx) Done() <-chan struct{} {
-	ch := make(chan struct{})
-
-	go func() {
-		select {
-		case <-ctx.ch:
-		case <-ctx.Context.Done():
-		}
-
-		close(ch)
-	}()
-
-	return ch
-}
-
-func (ctx *closeCtx) Err() error {
-	select {
-	case <-ctx.ch:
-	case <-ctx.Context.Done():
-	default:
-		return nil
-	}
-
-	ctx.l.Lock()
-	defer ctx.l.Unlock()
-
-	if ctx.closed {
-		return luigi.EOS{}
-	}
-
-	return ctx.Context.Err()
-}
-
+// Next returns the next incoming value on the stream
 func (str *stream) Next(ctx context.Context) (interface{}, error) {
 	str.l.Lock()
 	defer str.l.Unlock()
@@ -182,6 +127,7 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 	return pkt.Body, nil
 }
 
+// Pour sends a message on the stream
 func (str *stream) Pour(ctx context.Context, v interface{}) error {
 	var (
 		pkt *codec.Packet
@@ -203,6 +149,21 @@ func (str *stream) Pour(ctx context.Context, v interface{}) error {
 	return errors.Wrap(err, "error pouring to packet sink")
 }
 
+// Close closes the stream and sends the EndErr message.
+func (str *stream) Close() error {
+	var err error
+
+	str.closeOnce.Do(func() {
+		pkt := buildEndPacket(str.req)
+		close(str.closeCh)
+
+		err = str.pktSink.Pour(context.TODO(), pkt)
+	})
+
+	return err
+}
+
+// newRawPacket crafts a packet with a byte slice as payload
 func newRawPacket(stream bool, req int32, body []byte) *codec.Packet {
 	var flag codec.Flag
 
@@ -217,9 +178,11 @@ func newRawPacket(stream bool, req int32, body []byte) *codec.Packet {
 	}
 }
 
+
+// newStringPacket crafts a new packet with string payload
 func newStringPacket(stream bool, req int32, body string) *codec.Packet {
 	var flag codec.Flag
-
+ 
 	if stream {
 		flag = codec.FlagStream
 	}
@@ -233,6 +196,7 @@ func newStringPacket(stream bool, req int32, body string) *codec.Packet {
 	}
 }
 
+// newJSONPacket crafts a new packets with JSON payload
 func newJSONPacket(stream bool, req int32, v interface{}) (*codec.Packet, error) {
 	var flag codec.Flag
 
@@ -254,15 +218,3 @@ func newJSONPacket(stream bool, req int32, v interface{}) (*codec.Packet, error)
 	}, nil
 }
 
-func (str *stream) Close() error {
-	var err error
-
-	str.closeOnce.Do(func() {
-		pkt := buildEndPacket(str.req)
-		close(str.closeCh)
-
-		err = str.pktSink.Pour(context.TODO(), pkt)
-	})
-
-	return err
-}

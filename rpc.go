@@ -12,6 +12,7 @@ import (
 	"cryptoscope.co/go/muxrpc/codec"
 )
 
+// rpc implements an Endpoint, but has some more methods like Serve
 type rpc struct {
 	l sync.Mutex
 
@@ -28,14 +29,18 @@ type rpc struct {
 	terminated bool
 }
 
+// Handler allows handling connections.
+// When a connection is established, HandleConnect is called.
+// When we are being called, HandleCall is called.
 type Handler interface {
-	OnCall(ctx context.Context, req *Request)
-	OnConnect(ctx context.Context, e Endpoint)
+	HandleCall(ctx context.Context, req *Request)
+	HandleConnect(ctx context.Context, e Endpoint)
 }
 
 const bufSize = 5
 const rxTimeout time.Duration = time.Millisecond
 
+// Handle handles the connection of the packer using the specified handler.
 func Handle(pkr Packer, handler Handler) Endpoint {
 	r := &rpc{
 		pkr:  pkr,
@@ -43,11 +48,11 @@ func Handle(pkr Packer, handler Handler) Endpoint {
 		root: handler,
 	}
 
-	go handler.OnConnect(context.Background(), r)
+	go handler.HandleConnect(context.Background(), r)
 	return r
 }
 
-// Async does an aync call to the endpoint.
+// Async does an aync call on the remote.
 func (r *rpc) Async(ctx context.Context, tipe interface{}, method []string, args ...interface{}) (interface{}, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
@@ -71,6 +76,7 @@ func (r *rpc) Async(ctx context.Context, tipe interface{}, method []string, args
 	return v, errors.Wrap(err, "error reading response from request source")
 }
 
+// Source does a source call on the remote.
 func (r *rpc) Source(ctx context.Context, tipe interface{}, method []string, args ...interface{}) (luigi.Source, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
@@ -93,6 +99,7 @@ func (r *rpc) Source(ctx context.Context, tipe interface{}, method []string, arg
 	return req.Stream, nil
 }
 
+// Sink does a sink call on the remote.
 func (r *rpc) Sink(ctx context.Context, method []string, args ...interface{}) (luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
@@ -113,6 +120,7 @@ func (r *rpc) Sink(ctx context.Context, method []string, args ...interface{}) (l
 	return req.Stream, nil
 }
 
+// Duplex does a duplex call on the remote.
 func (r *rpc) Duplex(ctx context.Context, method []string, args ...interface{}) (luigi.Source, luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
@@ -133,6 +141,7 @@ func (r *rpc) Duplex(ctx context.Context, method []string, args ...interface{}) 
 	return req.Stream, req.Stream, nil
 }
 
+// Terminate ends the RPC session
 func (r *rpc) Terminate() error {
 	r.l.Lock()
 	defer r.l.Unlock()
@@ -158,6 +167,7 @@ func (r *rpc) finish(ctx context.Context, req int32) error {
 	return errors.Wrap(err, "error pouring done message")
 }
 
+// Do executes a generic call
 func (r *rpc) Do(ctx context.Context, req *Request) error {
 	var (
 		pkt codec.Packet
@@ -192,6 +202,7 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 	return r.pkr.Pour(ctx, &pkt)
 }
 
+// ParseRequest parses the first packet of a stream and parses the contained request
 func (r *rpc) ParseRequest(pkt *codec.Packet) (*Request, error) {
 	var req Request
 
@@ -226,6 +237,7 @@ func isTrue(data []byte) bool {
 		data[3] == 'e'
 }
 
+// fetchRequest returns the request from the reqs map or, if it's not there yet, builds a new one.
 func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bool, error) {
 	var err error
 
@@ -238,12 +250,13 @@ func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bo
 		}
 		r.reqs[pkt.Req] = req
 
-		go r.root.OnCall(ctx, req)
+		go r.root.HandleCall(ctx, req)
 	}
 
 	return req, !ok, nil
 }
 
+// Serve handles the RPC session
 func (r *rpc) Serve(ctx context.Context) (err error) {
 	for {
 		var vpkt interface{}
