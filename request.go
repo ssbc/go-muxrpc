@@ -36,7 +36,7 @@ type Request struct {
 // Return is a helper that returns on an async call
 func (req *Request) Return(ctx context.Context, v interface{}) error {
 	if req.Type != "async" && req.Type != "sync" {
-		return errors.Errorf("cannot return value on %v stream", req.Type)
+		return errors.Errorf("cannot return value on %q stream", req.Type)
 	}
 
 	err := req.Stream.Pour(ctx, v)

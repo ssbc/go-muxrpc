@@ -31,6 +31,54 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestJSGettingCalled(t *testing.T) {
+	r := require.New(t)
+	logOut := logtest.Logger("js", t)
+	//logOut := os.Stderr
+	logger := log.NewLogfmtLogger(logOut)
+
+	serv, err := proc.StartStdioProcess("node", logOut, "client_test.js")
+	r.NoError(err, "nodejs startup")
+
+	var hasConnected, hasCalled bool
+	h1 := &testHandler{
+		call: func(ctx context.Context, req *Request) {
+			t.Logf("got call: %+v", req)
+			if len(req.Method) != 1 || req.Method[0] != "hello" {
+				t.Error("unexpected method name:", req.Method)
+			}
+			req.Type = "async" // TODO: pass manifest into handler
+			err := req.Return(ctx, "meow")
+			if err != nil {
+				t.Error("return error:", err)
+			}
+			hasCalled = true
+		},
+		connect: func(ctx context.Context, e Endpoint) {
+			hasConnected = true
+		},
+	}
+	packer := NewPacker(codec.Wrap(logger, serv))
+	rpc1 := Handle(packer, h1)
+
+	ctx := context.Background()
+
+	go func() {
+		err := rpc1.(*rpc).Serve(ctx)
+		r.NoError(err, "rcp serve")
+	}()
+
+	v, err := rpc1.Async(ctx, "string", []string{"callme"})
+	r.NoError(err, "rcp Async call")
+
+	r.Equal(v, "call done", "expected call result")
+
+	r.True(hasConnected, "peer did not call 'connect'")
+	r.True(hasCalled, "peer did not call")
+
+	r.NoError(packer.Close())
+}
+
 func TestJSAsyncString(t *testing.T) {
 	r := require.New(t)
 	logger := log.NewLogfmtLogger(logtest.Logger("TestJSAsyncString()", t))
@@ -161,66 +209,3 @@ func TestJSSource(t *testing.T) {
 
 	r.NoError(packer.Close())
 }
-
-/*
-func TestFullCall(t *testing.T) {
-	p1, p2 := net.Pipe()
-	logger := log.NewLogfmtLogger(logtest.Logger("TestFull()", t))
-
-	server := NewClient(logger, p1)
-	go server.Handle()
-
-	client := NewClient(logger, p2)
-	go client.Handle()
-
-	server.HandleCall("test", func(args json.RawMessage) interface{} {
-		return "test"
-	})
-
-	var resp string
-	client.Call("test", &resp)
-
-	if resp != "test" {
-		t.Fatal("wrong response: ", resp)
-	}
-}
-
-func TestFullSource(t *testing.T) {
-	p1, p2 := net.Pipe()
-	logger := log.NewLogfmtLogger(logtest.Logger("TestFull()", t))
-
-	server := NewClient(logger, p1)
-	go server.Handle()
-
-	client := NewClient(logger, p2)
-	go client.Handle()
-
-	server.HandleSource("test", func(args json.RawMessage) chan interface{} {
-		stream := make(chan interface{}, 4)
-		stream <- "a"
-		stream <- "b"
-		stream <- "c"
-		stream <- "d"
-		close(stream)
-		return stream
-	})
-
-	resp := make(chan string)
-	go func() {
-		err := client.Source("test", resp)
-		if err != nil {
-			t.Fatal(err)
-		}
-		close(resp)
-	}()
-
-	count := 0
-	for range resp {
-		//fmt.Printf("%#v\n", val)
-		count++
-	}
-	if count != 4 {
-		t.Fatal("Incorrect number of elements")
-	}
-}
-*/
