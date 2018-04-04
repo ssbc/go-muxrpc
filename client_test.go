@@ -19,6 +19,7 @@ package muxrpc
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"cryptoscope.co/go/luigi"
@@ -92,17 +93,19 @@ func TestJSAsyncObject(t *testing.T) {
 	ctx := context.Background()
 
 	go func() {
+		fmt.Println("stating serve")
 		err := rpc1.(*rpc).Serve(ctx)
 		r.NoError(err, "rcp serve")
 	}()
 
-	var v struct {
-		With string
+	type resp struct {
+		With string `json:"with"`
 	}
-	err = rpc1.Async(ctx, &v, []string{"object"})
+
+	v, err := rpc1.Async(ctx, resp{}, []string{"object"})
 	r.NoError(err, "rcp Async call")
 
-	r.Equal(v.With, "fields!", "wrong call response")
+	r.Equal(v.(resp).With, "fields!", "wrong call response")
 
 	r.True(hasConnected, "peer did not call 'connect'")
 	r.False(hasCalled, "peer did call unexpectedly")
@@ -112,7 +115,7 @@ func TestJSAsyncObject(t *testing.T) {
 
 func TestJSSource(t *testing.T) {
 	r := require.New(t)
-	logger := log.NewLogfmtLogger(logtest.Logger("TestJSAsyncObject()", t))
+	logger := log.NewLogfmtLogger(logtest.Logger("TestJSSource()", t))
 
 	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
 	r.NoError(err, "nodejs startup")
@@ -137,13 +140,13 @@ func TestJSSource(t *testing.T) {
 		r.NoError(err, "rcp serve")
 	}()
 
-	src, err := rpc1.Source(ctx, []string{"stuff"})
-	r.NoError(err, "rcp Async call")
-
 	type obj struct {
 		A int
 	}
-	src = NewDecoder(src, &obj{})
+
+	src, err := rpc1.Source(ctx, obj{}, []string{"stuff"})
+	r.NoError(err, "rcp Async call")
+
 	for i := 1; i < 5; i++ {
 		v, err := src.Next(ctx)
 		r.NoError(err, "src.Next")

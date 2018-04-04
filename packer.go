@@ -55,7 +55,6 @@ func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 		fmt.Printf("packer: received end/err on req %v\n", pkt.Req)
 	}
 
-	fmt.Println("packer.next:", i, pkt)
 	return pkt, nil
 }
 

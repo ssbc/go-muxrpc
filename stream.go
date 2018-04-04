@@ -3,14 +3,13 @@ package muxrpc // import "cryptoscope.co/go/muxrpc"
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"sync"
 
-	"github.com/pkg/errors"
-
 	"cryptoscope.co/go/luigi"
 	"cryptoscope.co/go/muxrpc/codec"
+
+	"github.com/pkg/errors"
 )
 
 type Stream interface {
@@ -127,12 +126,6 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 	str.l.Lock()
 	defer str.l.Unlock()
 
-	select {
-	case <-str.closeCh:
-		return nil, luigi.EOS{}
-	default:
-	}
-
 	// cancellation
 	ctx, cancel := withCloseCtx(ctx)
 	defer cancel()
@@ -148,8 +141,6 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading from packet source")
 	}
-
-	fmt.Println("got packet from stream:", vpkt, err)
 
 	pkt := vpkt.(*codec.Packet)
 
@@ -172,12 +163,7 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 			ptrType = true
 		}
 
-		fmt.Println("starting unmarshal loop")
-		fmt.Println("pkt.Body:", pkt.Body)
-		fmt.Printf("dst(type %T): %v\n", dst, dst)
-		fmt.Println("starting unmarshal loop")
 		err := json.Unmarshal(pkt.Body, dst)
-		fmt.Println("ending unmarshal loop")
 		if err != nil {
 			return nil, errors.Wrap(err, "error unmarshaling json")
 		}
@@ -269,14 +255,14 @@ func newJSONPacket(stream bool, req int32, v interface{}) (*codec.Packet, error)
 }
 
 func (str *stream) Close() error {
+	var err error
+
 	str.closeOnce.Do(func() {
-		fmt.Println("closing stream")
 		pkt := buildEndPacket(str.req)
 		close(str.closeCh)
 
-		err := str.pktSink.Pour(context.TODO(), pkt)
-		fmt.Println("close pour err", err)
+		err = str.pktSink.Pour(context.TODO(), pkt)
 	})
 
-	return nil
+	return err
 }

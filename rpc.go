@@ -3,7 +3,6 @@ package muxrpc // import "cryptoscope.co/go/muxrpc"
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
 
@@ -165,6 +164,10 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 		err error
 	)
 
+	if req.Args == nil {
+		req.Args = []interface{}{}
+	}
+
 	func() {
 		r.l.Lock()
 		defer r.l.Unlock()
@@ -178,6 +181,7 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 		r.highest = pkt.Req
 		r.reqs[pkt.Req] = req
 		req.Stream.WithReq(pkt.Req)
+		req.Stream.WithType(req.tipe)
 
 		req.pkt = &pkt
 	}()
@@ -229,7 +233,6 @@ func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bo
 	req, ok := r.reqs[pkt.Req]
 	if !ok {
 		req, err = r.ParseRequest(pkt)
-		fmt.Printf("ParseRequest returned %+v, %+v\n", req, err)
 		if err != nil {
 			return nil, false, errors.Wrap(err, "error parsing request")
 		}
@@ -242,26 +245,9 @@ func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bo
 }
 
 func (r *rpc) Serve(ctx context.Context) (err error) {
-	/*
-		defer func() {
-			fmt.Printf("Serve returns with err=%q\n", err)
-
-			fmt.Println("finishing all connections - taking lock")
-			r.l.Lock()
-			defer r.l.Unlock()
-			fmt.Println("got lock")
-
-			for req := range r.reqs {
-				r.finish(ctx, req)
-			}
-
-			//fmt.Println("closing")
-			//r.pkr.Close()
-		}()
-	*/
-
 	for {
 		var vpkt interface{}
+
 		// read next packet from connection
 		doRet := func() bool {
 			vpkt, err = r.pkr.Next(ctx)
@@ -292,11 +278,27 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 		if pkt.Flag.Get(codec.FlagEndErr) {
 			if req, ok := r.reqs[pkt.Req]; ok {
-				req.Stream.Close()
-				delete(r.reqs, pkt.Req)
-			}
+				if isTrue(pkt.Body) {
+					err = req.in.Close()
+					if err != nil {
+						return errors.Wrap(err, "error closing pipe sink")
+					}
+				} else {
+					// TODO make type RPCError and return it as error
+					err = req.in.Pour(ctx, []byte(pkt.Body))
+					if err != nil {
+						return errors.Wrap(err, "error writing to pipe sink")
+					}
+				}
 
-			continue
+				err = req.Stream.Close()
+				if err != nil {
+					return errors.Wrap(err, "error closing stream")
+				}
+
+				delete(r.reqs, pkt.Req)
+				continue
+			}
 		}
 
 		req, isNew, err := r.fetchRequest(ctx, pkt)
@@ -307,70 +309,6 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			continue
 		}
 
-		// is this packet ending a stream?
-		if pkt.Flag.Get(codec.FlagEndErr) {
-			delete(r.reqs, pkt.Req)
-
-			// TODO make type RPCError and return it as error
-			if !isTrue(pkt.Body) {
-				fmt.Printf("not true: %q\n", pkt.Body)
-				err = req.in.Pour(ctx, []byte(pkt.Body))
-				if err != nil {
-					return errors.Wrap(err, "error writing to pipe sink")
-				}
-			}
-
-			if req.in != nil {
-				err = req.in.Close()
-				if err != nil {
-					return errors.Wrap(err, "error closing pipe sink")
-				}
-			}
-
-			select {
-			case <-req.Stream.(*stream).closeCh:
-			default:
-				//pkt.Body = []byte{'t', 'r', 'u', 'e'}
-				//pkt.Req = -pkt.Req
-				err = r.pkr.Pour(ctx, buildEndPacket(pkt.Req))
-				if err != nil {
-					return errors.Wrap(err, "error pouring end reply to packer")
-				}
-			}
-
-			continue
-		}
-
-		/*
-		   var v interface{}
-
-		   if pkt.Flag.Get(codec.FlagJSON) {
-		     if req.tipe != nil {
-		       var isPtr bool
-
-		       t := reflect.TypeOf(req.tipe)
-		       if t.Kind() == reflect.Ptr {
-		         isPtr = true
-		         t = t.Elem()
-		       }
-
-		       v = reflect.New(t).Interface()
-		       err := json.Unmarshal(pkt.Body, &v)
-		       if err != nil {
-		         return errors.Wrap(err, "error unmarshaling json")
-		       }
-
-		       if !isPtr {
-		         v = reflect.ValueOf(v).Elem().Interface()
-		       }
-		     }
-		   } else if pkt.Flag.Get(codec.FlagString) {
-		     v = string(pkt.Body)
-		   } else {
-		     v = pkt.Body
-		   }
-		*/
-
 		// localize defer
 		err = func() error {
 			// pour may block so we need to time out.
@@ -380,9 +318,9 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 			//err := req.in.Pour(ctx, v)
 			err := req.in.Pour(ctx, pkt)
-			fmt.Println("poured", pkt, "- err:", err)
 			return errors.Wrap(err, "error pouring data to handler")
 		}()
+
 		if err != nil {
 			return err
 		}
