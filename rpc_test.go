@@ -549,7 +549,7 @@ func TestErrorAsync(t *testing.T) {
 
 	e, ok := errors.Cause(err).(*CallError)
 	if !ok {
-		t.Errorf("not a callerror!")
+		t.Fatalf("not a callerror!")
 	}
 
 	if e.Message != "omg an error!" {

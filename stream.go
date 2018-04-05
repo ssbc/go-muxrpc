@@ -177,7 +177,7 @@ func (str *stream) CloseWithError(closeErr error) error {
 	}
 
 	str.closeOnce.Do(func() {
-		close(str.closeCh)
+		// don't close the stream itself, otherwise the error will be dropped!
 
 		// call in goroutine because we get called from the Serve-loop and
 		// this causes trouble when used with net.Pipe(), because the stream is

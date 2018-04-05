@@ -313,8 +313,12 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 						if err != nil {
 							return errors.Wrap(err, "error closing pipe sink")
 						}
+
+						err = req.Stream.Close()
+						if err != nil {
+							return errors.Wrap(err, "error closing stream")
+						}
 					} else {
-						// TODO make type RPCError and return it as error
 						e, err := parseError(pkt.Body)
 						if err != nil {
 							return errors.Wrap(err, "error parsing error packet")
@@ -324,11 +328,6 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 						if err != nil {
 							return errors.Wrap(err, "error closing pipe sink with error")
 						}
-					}
-
-					err = req.Stream.Close()
-					if err != nil {
-						return errors.Wrap(err, "error closing stream")
 					}
 
 					delete(r.reqs, pkt.Req)
