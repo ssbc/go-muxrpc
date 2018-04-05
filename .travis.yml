@@ -4,3 +4,4 @@ go:
   - "1.8"
   - "1.10.x"
   - master
+go_import_path: cryptoscope.co/go/muxrpc
