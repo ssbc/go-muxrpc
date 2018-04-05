@@ -557,7 +557,7 @@ func TestErrorAsync(t *testing.T) {
 	}
 
 	if e.Name != "Error" {
-		t.Error("expected field name to have %q, got %q", "Error", e.Name)
+		t.Errorf("expected field name to have %q, got %q", "Error", e.Name)
 	}
 
 	if v != nil {

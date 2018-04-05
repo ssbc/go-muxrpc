@@ -50,7 +50,7 @@ func TestSelf(t *testing.T) {
 	}
 
 	if err := w.Close(); err != nil {
-		t.Errorf("writer close failed", err)
+		t.Errorf("writer close failed: %s", err)
 	}
 
 	r := NewReader(&b)
