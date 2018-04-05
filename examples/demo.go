@@ -22,7 +22,8 @@ import (
 
 	"github.com/cryptix/go/logging"
 	"github.com/cryptix/go/proc"
-	"scuttlebot.io/go/muxrpc"
+
+	"cryptoscope.co/go/muxrpc"
 )
 
 func main() {
