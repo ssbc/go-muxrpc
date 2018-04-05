@@ -8,11 +8,12 @@ type myEndpoint struct {
 // go:generate muxgen -outtype []byte *myEndpoint async whoami
 // go:generate muxgen -args id:string *myEndpoint source getFeedStream
 // go:generate muxgen -args id:string *myEndpoint source blobs.get
-// go:generate muxgen -args id:string -outtype bool *myEndpoint aysnc blobs.has 
+// go:generate muxgen -args id:string -outtype bool *myEndpoint aysnc blobs.has
 */
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
@@ -80,13 +81,12 @@ func (args Args) AsArgs() string {
 	return strings.Join(arglist, ", ")
 }
 
-
 type Func struct {
 	Receiver string
-	Type muxrpc.CallType
-	Method []string
-	Args Args
-	OutType string
+	Type     muxrpc.CallType
+	Method   []string
+	Args     Args
+	OutType  string
 }
 
 func (f *Func) Name() string {
@@ -104,7 +104,7 @@ func Parse(args []string) (*Func, error) {
 		arglist string
 		outType string
 	)
-	
+
 	set := flag.NewFlagSet("muxgen", flag.ContinueOnError)
 	set.StringVar(&arglist, "args", "", "arguments of the call. comma seperated name:type pairs, e.g.: id:string,count:int")
 	set.StringVar(&outType, "outtype", "", "type of the values we expect to receive, either from async or source call")
@@ -122,9 +122,9 @@ func Parse(args []string) (*Func, error) {
 
 	m := &Func{
 		Receiver: args[0],
-		Type: muxrpc.CallType(args[1]),
-		Method: strings.Split(args[2], "."),
-		OutType: outType,
+		Type:     muxrpc.CallType(args[1]),
+		Method:   strings.Split(args[2], "."),
+		OutType:  outType,
 	}
 
 	m.Args, err = parseArgs(arglist)
@@ -197,7 +197,7 @@ func (m *Func) Generate() (string, error) {
 
 func (m *Func) generateAsync() (string, error) {
 	tpl := template.Must(template.New("").Parse(asyncTpl))
-	var b strings.Builder
+	var b bytes.Buffer
 
 	err := tpl.Execute(&b, m)
 	return b.String(), err
@@ -205,7 +205,7 @@ func (m *Func) generateAsync() (string, error) {
 
 func (m *Func) generateSource() (string, error) {
 	tpl := template.Must(template.New("").Parse(sourceTpl))
-	var b strings.Builder
+	var b bytes.Buffer
 
 	err := tpl.Execute(&b, m)
 	return b.String(), err
@@ -213,7 +213,7 @@ func (m *Func) generateSource() (string, error) {
 
 func (m *Func) generateSink() (string, error) {
 	tpl := template.Must(template.New("").Parse(sinkTpl))
-	var b strings.Builder
+	var b bytes.Buffer
 
 	err := tpl.Execute(&b, m)
 	return b.String(), err
@@ -221,7 +221,7 @@ func (m *Func) generateSink() (string, error) {
 
 func (m *Func) generateDuplex() (string, error) {
 	tpl := template.Must(template.New("").Parse(duplexTpl))
-	var b strings.Builder
+	var b bytes.Buffer
 
 	err := tpl.Execute(&b, m)
 	return b.String(), err
@@ -245,5 +245,3 @@ func main() {
 
 	fmt.Println(out)
 }
-
-
