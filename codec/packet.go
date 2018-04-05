@@ -77,34 +77,6 @@ const (
 	FlagStream
 )
 
-/*
-// PacketType are the 2 bits of type in the packet header
-type PacketType uint
-
-func (pt PacketType) Flag() Flag {
-	switch pt {
-	case String:
-		return FlagString
-	case JSON:
-		return FlagJSON
-	}
-	return 0
-}
-*/
-
-/*
-// Enumeration of the possible body types of a packet
-const (
-	Buffer PacketType = iota
-	String
-	JSON
-)
-
-func (f Flag) PacketType() PacketType {
-	return PacketType((byte(f) & 3))
-}
-*/
-
 // Header is the wire representation of a packet header
 type Header struct {
 	Flag Flag
