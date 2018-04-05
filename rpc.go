@@ -124,7 +124,7 @@ func (r *rpc) Sink(ctx context.Context, method []string, args ...interface{}) (l
 }
 
 // Duplex does a duplex call on the remote.
-func (r *rpc) Duplex(ctx context.Context, method []string, args ...interface{}) (luigi.Source, luigi.Sink, error) {
+func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method []string, args ...interface{}) (luigi.Source, luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
 	req := &Request{
@@ -134,6 +134,8 @@ func (r *rpc) Duplex(ctx context.Context, method []string, args ...interface{}) 
 
 		Method: method,
 		Args:   args,
+
+		tipe: tipe,
 	}
 
 	err := r.Do(ctx, req)

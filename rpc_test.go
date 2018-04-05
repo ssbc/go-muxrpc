@@ -453,7 +453,7 @@ func TestDuplex(t *testing.T) {
 		}
 	}()
 
-	src, sink, err := rpc1.Duplex(ctx, []string{"whoami"})
+	src, sink, err := rpc1.Duplex(ctx, "str", []string{"whoami"})
 	if err != nil {
 		t.Fatal(err)
 	}
