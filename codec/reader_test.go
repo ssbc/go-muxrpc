@@ -1,3 +1,5 @@
+// +build interop_nodejs
+
 /*
 This file is part of go-muxrpc.
 
@@ -25,20 +27,6 @@ import (
 
 	"github.com/cryptix/go/logging/logtest"
 )
-
-var testPkts = []Packet{
-	{Flag: FlagJSON, Req: 0, Body: []byte(`["event",{"okay":true}]`)},
-
-	{Flag: FlagString, Req: 1, Body: []byte(`whatever`)},
-
-	{Flag: FlagStream, Req: 2, Body: []byte(`hello`)},
-	{Flag: FlagStream, Req: -2, Body: []byte(`goodbye`)},
-
-	{Flag: FlagJSON | FlagEndErr, Req: -3, Body: []byte(`{"message":"intentional","name":"Error"}`)},
-
-	{Flag: FlagJSON | FlagEndErr | FlagStream, Req: 2, Body: []byte(`true`)},
-	{Flag: FlagJSON | FlagEndErr | FlagStream, Req: -2, Body: []byte(`true`)},
-}
 
 func TestReader(t *testing.T) {
 	cmd := exec.Command("node", "reader_test.js")
