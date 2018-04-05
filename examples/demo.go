@@ -17,6 +17,7 @@ along with go-muxrpc.  If not, see <http://www.gnu.org/licenses/>.
 
 package main
 
+/*
 import (
 	"os"
 
@@ -45,3 +46,8 @@ func main() {
 	// logging.CheckFatal(err)
 	logging.CheckFatal(c.Close())
 }
+
+*/
+
+func main() {}
+
