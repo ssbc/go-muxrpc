@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"cryptoscope.co/go/luigi"
-
+	"cryptoscope.co/go/luigi/mfr"
 	"github.com/pkg/errors"
+
+	"cryptoscope.co/go/muxrpc/codec"
 )
 
 type testHandler struct {
@@ -25,96 +27,132 @@ func (h *testHandler) HandleConnect(ctx context.Context, e Endpoint) {
 	h.connect(ctx, e)
 }
 
-func TestAsync(t *testing.T) {
-	c1, c2 := net.Pipe()
+func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
+	return func(t *testing.T) {
 
-	conn1 := make(chan struct{})
-	conn2 := make(chan struct{})
-	serve1 := make(chan struct{})
-	serve2 := make(chan struct{})
+		conn2 := make(chan struct{})
+		conn1 := make(chan struct{})
+		serve1 := make(chan struct{})
+		serve2 := make(chan struct{})
 
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
-			fmt.Println("h1 called")
-			t.Errorf("unexpected call to rpc1: %#v", req)
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h1 connected")
-			close(conn1)
-		},
-	}
+		h1 := &testHandler{
+			call: func(ctx context.Context, req *Request) {
+				fmt.Println("h1 called")
+				t.Errorf("unexpected call to rpc1: %#v", req)
+			},
+			connect: func(ctx context.Context, e Endpoint) {
+				fmt.Println("h1 connected")
+				close(conn1)
+			},
+		}
 
-	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
-			fmt.Printf("h2 called %+v\n", req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
-				err := req.Return(ctx, "you are a test")
-				if err != nil {
-					fmt.Printf("return errored with %+v\n", err)
-					t.Error(err)
+		h2 := &testHandler{
+			call: func(ctx context.Context, req *Request) {
+				fmt.Printf("h2 called %+v\n", req)
+				if len(req.Method) == 1 && req.Method[0] == "whoami" {
+					err := req.Return(ctx, "you are a test")
+					if err != nil {
+						fmt.Printf("return errored with %+v\n", err)
+						t.Error(err)
+					}
 				}
+			},
+			connect: func(ctx context.Context, e Endpoint) {
+				fmt.Println("h2 connected")
+				close(conn2)
+			},
+		}
+
+		rpc1 := Handle(pkr1, h1)
+		rpc2 := Handle(pkr2, h2)
+
+		ctx := context.Background()
+
+		go func() {
+			err := rpc1.(*rpc).Serve(ctx)
+			if err != nil {
+				fmt.Printf("rpc1: %+v\n", err)
+				t.Error(err)
 			}
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h2 connected")
-			close(conn2)
-		},
-	}
+			close(serve1)
+		}()
 
-	rpc1 := Handle(NewPacker(c1), h1)
-	rpc2 := Handle(NewPacker(c2), h2)
+		go func() {
+			err := rpc2.(*rpc).Serve(ctx)
+			if err != nil {
+				fmt.Printf("rpc2: %+v\n", err)
+				t.Error(err)
+			}
+			close(serve2)
+		}()
 
-	ctx := context.Background()
-
-	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
+		v, err := rpc1.Async(ctx, "string", []string{"whoami"})
 		if err != nil {
-			fmt.Printf("rpc1: %+v\n", err)
-			t.Error(err)
+			t.Fatal(err)
 		}
-		close(serve1)
-	}()
 
-	go func() {
-		err := rpc2.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc2: %+v\n", err)
-			t.Error(err)
+		if v != "you are a test" {
+			t.Errorf("unexpected response message %q", v)
 		}
-		close(serve2)
-	}()
 
-	v, err := rpc1.Async(ctx, "string", []string{"whoami"})
-	if err != nil {
-		t.Fatal(err)
+		t.Log(v)
+
+		time.Sleep(time.Millisecond)
+		rpc1.Terminate()
+		fmt.Println("waiting for closes")
+		for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
+			select {
+			case <-conn1:
+				fmt.Println("conn1 closed")
+				conn1 = nil
+			case <-conn2:
+				fmt.Println("conn2 closed")
+				conn2 = nil
+			case <-serve1:
+				fmt.Println("serve1 closed")
+				serve1 = nil
+			case <-serve2:
+				fmt.Println("serve2 closed")
+				serve2 = nil
+			}
+		}
+		t.Log("done")
+
+	}
+}
+
+func TestAsync(t *testing.T) {
+	pkrgens := []func() (string, Packer, Packer){
+		func() (string, Packer, Packer) {
+			c1, c2 := net.Pipe()
+			return "NetPipe", NewPacker(c1), NewPacker(c2)
+		},
+		func() (string, Packer, Packer) {
+			rxSrc, rxSink := luigi.NewPipe(luigi.WithBuffer(5))
+			txSrc, txSink := luigi.NewPipe(luigi.WithBuffer(5))
+
+			type duplex struct {
+				luigi.Source
+				luigi.Sink
+			}
+
+			negReqMapFunc := func(ctx context.Context, v interface{}) (interface{}, error) {
+				pkt := v.(*codec.Packet)
+				pkt.Req = -pkt.Req
+				return pkt, nil
+			}
+
+			rxSrc = mfr.SourceMap(rxSrc, negReqMapFunc)
+			txSrc = mfr.SourceMap(txSrc, negReqMapFunc)
+
+			return "LuigiPipes", duplex{rxSrc, txSink}, duplex{txSrc, rxSink}
+		},
 	}
 
-	if v != "you are a test" {
-		t.Errorf("unexpected response message %q", v)
+	for _, pkrgen := range pkrgens {
+		name, pkr1, pkr2 := pkrgen()
+		t.Run(name, BuildTestAsync(pkr1, pkr2))
 	}
-
-	t.Log(v)
-
-	time.Sleep(time.Millisecond)
-	rpc1.Terminate()
-	fmt.Println("waiting for closes")
-	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
-		select {
-		case <-conn1:
-			fmt.Println("conn1 closed")
-			conn1 = nil
-		case <-conn2:
-			fmt.Println("conn2 closed")
-			conn2 = nil
-		case <-serve1:
-			fmt.Println("serve1 closed")
-			serve1 = nil
-		case <-serve2:
-			fmt.Println("serve2 closed")
-			serve2 = nil
-		}
-	}
-	t.Log("done")
 }
 
 func TestSource(t *testing.T) {
@@ -481,6 +519,7 @@ func TestDuplex(t *testing.T) {
 		t.Errorf("error closing stream: %+v", err)
 	}
 }
+
 func TestErrorAsync(t *testing.T) {
 	c1, c2 := net.Pipe()
 
