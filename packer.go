@@ -38,7 +38,8 @@ type packer struct {
 	w *codec.Writer
 	c io.Closer
 
-	closing chan struct{}
+	closeOnce sync.Once
+	closing   chan struct{}
 }
 
 // Next returns the next packet from the underlying stream.
@@ -88,7 +89,12 @@ func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
 
 // Close closes the packer.
 func (pkr *packer) Close() error {
-	close(pkr.closing)
+	var err error
 
-	return pkr.c.Close()
+	pkr.closeOnce.Do(func() {
+		close(pkr.closing)
+		err = pkr.c.Close()
+	})
+
+	return err
 }
