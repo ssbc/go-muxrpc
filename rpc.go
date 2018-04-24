@@ -273,6 +273,8 @@ type Server interface {
 
 // Serve handles the RPC session
 func (r *rpc) Serve(ctx context.Context) (err error) {
+	defer r.pkr.Close()
+
 	for {
 		var vpkt interface{}
 
