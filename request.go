@@ -2,6 +2,7 @@ package muxrpc // import "cryptoscope.co/go/muxrpc"
 
 import (
 	"context"
+	"strings"
 
 	"github.com/pkg/errors"
 
@@ -9,13 +10,19 @@ import (
 	"cryptoscope.co/go/muxrpc/codec"
 )
 
+type Method []string
+
+func (m Method) String() string {
+	return strings.Join(m, ".")
+}
+
 // Request assembles the state of an RPC call
 type Request struct {
 	// Stream allows sending and receiving packets
 	Stream Stream `json:"-"`
 
 	// Method is the name of the called function
-	Method []string `json:"name"`
+	Method Method `json:"name"`
 	// Args contains the call arguments
 	Args []interface{} `json:"args"`
 	// Type is the type of the call, i.e. async, sink, source or duplex
