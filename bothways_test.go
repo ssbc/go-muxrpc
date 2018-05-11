@@ -80,7 +80,7 @@ func TestBothwaysAsync(t *testing.T) {
 	}()
 
 	go func() {
-		v, err := rpc1.Async(ctx, "string", []string{"whoami"})
+		v, err := rpc1.Async(ctx, "string", Method{"whoami"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -100,7 +100,7 @@ func TestBothwaysAsync(t *testing.T) {
 	}()
 
 	go func() {
-		v, err := rpc2.Async(ctx, "string", []string{"whoami"})
+		v, err := rpc2.Async(ctx, "string", Method{"whoami"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -241,7 +241,7 @@ func TestBohwaysSource(t *testing.T) {
 	}()
 
 	go func() {
-		src, err := rpc1.Source(ctx, "strings", []string{"whoami"})
+		src, err := rpc1.Source(ctx, "strings", Method{"whoami"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -269,7 +269,7 @@ func TestBohwaysSource(t *testing.T) {
 	}()
 
 	go func() {
-		src, err := rpc2.Source(ctx, "strings", []string{"whoami"})
+		src, err := rpc2.Source(ctx, "strings", Method{"whoami"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -410,7 +410,7 @@ func TestBothwaysSink(t *testing.T) {
 	}()
 
 	go func() {
-		sink, err := rpc1.Sink(ctx, []string{"whoami"})
+		sink, err := rpc1.Sink(ctx, Method{"whoami"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -434,7 +434,7 @@ func TestBothwaysSink(t *testing.T) {
 	}()
 
 	go func() {
-		sink, err := rpc2.Sink(ctx, []string{"whoami"})
+		sink, err := rpc2.Sink(ctx, Method{"whoami"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -579,7 +579,7 @@ func TestBothwayDuplex(t *testing.T) {
 	wait2 := make(chan struct{})
 
 	go func() {
-		src, sink, err := rpc1.Duplex(ctx, "str", []string{"whoami"})
+		src, sink, err := rpc1.Duplex(ctx, "str", Method{"whoami"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -611,7 +611,7 @@ func TestBothwayDuplex(t *testing.T) {
 	}()
 
 	go func() {
-		src, sink, err := rpc2.Duplex(ctx, "str", []string{"whoami"})
+		src, sink, err := rpc2.Duplex(ctx, "str", Method{"whoami"})
 		if err != nil {
 			t.Fatal(err)
 		}

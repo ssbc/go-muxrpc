@@ -81,7 +81,7 @@ func TestJSGettingCalledSource(t *testing.T) {
 		r.NoError(err, "rcp serve")
 	}()
 
-	v, err := rpc1.Async(ctx, "string", []string{"callme", "source"})
+	v, err := rpc1.Async(ctx, "string", Method{"callme", "source"})
 	r.NoError(err, "rcp Async call")
 
 	r.Equal(v, "call done", "expected call result")
@@ -137,7 +137,7 @@ func TestJSGettingCalledAsync(t *testing.T) {
 		r.NoError(err, "rcp serve")
 	}()
 
-	v, err := rpc1.Async(ctx, "string", []string{"callme", "async"})
+	v, err := rpc1.Async(ctx, "string", Method{"callme", "async"})
 	r.NoError(err, "rcp Async call")
 
 	r.Equal(v, "call done", "expected call result")
@@ -174,7 +174,7 @@ func TestJSAsyncString(t *testing.T) {
 		r.NoError(err, "rcp serve")
 	}()
 
-	v, err := rpc1.Async(ctx, "string", []string{"hello"}, "world", "bob")
+	v, err := rpc1.Async(ctx, "string", Method{"hello"}, "world", "bob")
 	r.NoError(err, "rcp Async call")
 
 	r.Equal(v, "hello, world and bob!", "expected call result")
@@ -219,7 +219,7 @@ func TestJSAsyncObject(t *testing.T) {
 		With string `json:"with"`
 	}
 
-	v, err := rpc1.Async(ctx, resp{}, []string{"object"})
+	v, err := rpc1.Async(ctx, resp{}, Method{"object"})
 	r.NoError(err, "rcp Async call")
 
 	r.Equal(v.(resp).With, "fields!", "wrong call response")
@@ -261,7 +261,7 @@ func TestJSSource(t *testing.T) {
 		A int
 	}
 
-	src, err := rpc1.Source(ctx, obj{}, []string{"stuff"})
+	src, err := rpc1.Source(ctx, obj{}, Method{"stuff"})
 	r.NoError(err, "rcp Async call")
 
 	for i := 1; i < 5; i++ {
