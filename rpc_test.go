@@ -86,7 +86,7 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 			close(serve2)
 		}()
 
-		v, err := rpc1.Async(ctx, "string", []string{"whoami"})
+		v, err := rpc1.Async(ctx, "string", Method{"whoami"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -231,7 +231,7 @@ func TestSource(t *testing.T) {
 		close(serve2)
 	}()
 
-	src, err := rpc1.Source(ctx, "strings", []string{"whoami"})
+	src, err := rpc1.Source(ctx, "strings", Method{"whoami"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +359,7 @@ func TestSink(t *testing.T) {
 		close(serve2)
 	}()
 
-	sink, err := rpc1.Sink(ctx, []string{"whoami"})
+	sink, err := rpc1.Sink(ctx, Method{"whoami"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +491,7 @@ func TestDuplex(t *testing.T) {
 		}
 	}()
 
-	src, sink, err := rpc1.Duplex(ctx, "str", []string{"whoami"})
+	src, sink, err := rpc1.Duplex(ctx, "str", Method{"whoami"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -579,7 +579,7 @@ func TestErrorAsync(t *testing.T) {
 		close(serve2)
 	}()
 
-	v, err := rpc1.Async(ctx, "string", []string{"whoami"})
+	v, err := rpc1.Async(ctx, "string", Method{"whoami"})
 	if err == nil {
 		t.Error("expected an error")
 	} else if errors.Cause(err).Error() != "omg an error!" {

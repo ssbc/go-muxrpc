@@ -84,7 +84,7 @@ func (args Args) AsArgs() string {
 type Func struct {
 	Receiver string
 	Type     muxrpc.CallType
-	Method   []string
+	Method   muxrpc.Method
 	Args     Args
 	OutType  string
 }

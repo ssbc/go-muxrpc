@@ -56,7 +56,7 @@ func Handle(pkr Packer, handler Handler) Endpoint {
 }
 
 // Async does an aync call on the remote.
-func (r *rpc) Async(ctx context.Context, tipe interface{}, method []string, args ...interface{}) (interface{}, error) {
+func (r *rpc) Async(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (interface{}, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
 	req := &Request{
@@ -80,7 +80,7 @@ func (r *rpc) Async(ctx context.Context, tipe interface{}, method []string, args
 }
 
 // Source does a source call on the remote.
-func (r *rpc) Source(ctx context.Context, tipe interface{}, method []string, args ...interface{}) (luigi.Source, error) {
+func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (luigi.Source, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
 	req := &Request{
@@ -103,7 +103,7 @@ func (r *rpc) Source(ctx context.Context, tipe interface{}, method []string, arg
 }
 
 // Sink does a sink call on the remote.
-func (r *rpc) Sink(ctx context.Context, method []string, args ...interface{}) (luigi.Sink, error) {
+func (r *rpc) Sink(ctx context.Context, method Method, args ...interface{}) (luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
 	req := &Request{
@@ -124,7 +124,7 @@ func (r *rpc) Sink(ctx context.Context, method []string, args ...interface{}) (l
 }
 
 // Duplex does a duplex call on the remote.
-func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method []string, args ...interface{}) (luigi.Source, luigi.Sink, error) {
+func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (luigi.Source, luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
 	req := &Request{

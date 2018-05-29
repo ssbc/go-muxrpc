@@ -20,7 +20,7 @@ func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request) {
 		}
 	}
 
-	req.Stream.CloseWithError(errors.Errorf("so such command: %v", req.Method))
+	req.Stream.CloseWithError(errors.Errorf("no such command: %v", req.Method))
 }
 
 func (hm *HandlerMux) HandleConnect(ctx context.Context, edp Endpoint) {
