@@ -18,7 +18,7 @@ func TestStream(t *testing.T) {
 	iSrc, iSink := luigi.NewPipe(luigi.WithBuffer(2))
 	oSrc, oSink := luigi.NewPipe(luigi.WithBuffer(4))
 
-	str := NewStream(iSrc, oSink, req, false, false)
+	str := NewStream(iSrc, oSink, req, true, false)
 
 	ctx := context.Background()
 
@@ -55,5 +55,6 @@ func TestStream(t *testing.T) {
 
 	v, err = oSrc.Next(ctx)
 	r.NoError(err, "error reading packet from oSrc")
+	t.Log(v)
 	r.Equal(codec.FlagEndErr|codec.FlagStream|codec.FlagJSON, v.(*codec.Packet).Flag, "wrong value")
 }

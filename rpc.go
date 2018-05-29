@@ -172,10 +172,11 @@ func (r *rpc) Terminate() error {
 	return r.pkr.Close()
 }
 
-func (r *rpc) finish(ctx context.Context, req int32) error {
-	delete(r.reqs, req)
-
-	err := r.pkr.Pour(ctx, newEndOkayPacket(req))
+func (r *rpc) finish(ctx context.Context, reqID int32) error {
+	req := r.reqs[reqID]
+	delete(r.reqs, reqID)
+	isStream := req.Type.Flags() != 0
+	err := r.pkr.Pour(ctx, newEndOkayPacket(reqID, isStream))
 	return errors.Wrap(err, "error pouring done message")
 }
 
