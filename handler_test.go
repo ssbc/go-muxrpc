@@ -14,16 +14,16 @@ func TestHandlerMux(t *testing.T) {
 	call := make(chan struct{})
 	connect := make(chan struct{})
 
-	back1, forth1 := luigi.NewDuplexPipe()
-	back2, _ := luigi.NewDuplexPipe()
+	src1, sink1 := luigi.NewPipe()
+	_, sink2 := luigi.NewPipe()
 
 	exp := &Request{
 		Method: Method{"foo", "bar"},
-		Stream: NewStream(back1, back1, 1, true, true),
+		Stream: NewStream(src1, sink1, 1, true, true),
 	}
 	notexp := &Request{
 		Method: Method{"goo", "bar"},
-		Stream: NewStream(back2, back2, 2, true, true),
+		Stream: NewStream(nil, sink2, 2, true, true),
 	}
 
 	handler := &testHandler{
@@ -55,6 +55,6 @@ func TestHandlerMux(t *testing.T) {
 		}
 	}
 
-	_, err := forth1.Next(context.TODO())
+	_, err := src1.Next(context.TODO())
 	r.Error(luigi.EOS{}, err)
 }
