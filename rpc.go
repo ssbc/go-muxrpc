@@ -3,17 +3,23 @@ package muxrpc // import "cryptoscope.co/go/muxrpc"
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
-
 	"cryptoscope.co/go/luigi"
 	"cryptoscope.co/go/muxrpc/codec"
+	"github.com/pkg/errors"
 )
 
-// rpc implements an Endpoint, but has some more methods like Serve
+var (
+	_ Endpoint = (*rpc)(nil)
+	_ Server   = (*rpc)(nil)
+)
+
+// rpc implements an Endpoint, but also implements Server
 type rpc struct {
+	remote net.Addr
 
 	// pkr is the Sink and Source of the network connection
 	pkr Packer
@@ -41,14 +47,25 @@ type Handler interface {
 }
 
 const bufSize = 5
-const rxTimeout time.Duration = time.Millisecond
+const rxTimeout time.Duration = 100 * time.Millisecond
 
 // Handle handles the connection of the packer using the specified handler.
 func Handle(pkr Packer, handler Handler) Endpoint {
+	return handle(pkr, handler, nil)
+}
+
+// HandleWithRemote also sets the remote address the endpoint is connected to
+// TODO: better passing through packer maybe?!
+func HandleWithRemote(pkr Packer, handler Handler, addr net.Addr) Endpoint {
+	return handle(pkr, handler, addr)
+}
+
+func handle(pkr Packer, handler Handler, remote net.Addr) Endpoint {
 	r := &rpc{
-		pkr:  pkr,
-		reqs: make(map[int32]*Request),
-		root: handler,
+		remote: remote,
+		pkr:    pkr,
+		reqs:   make(map[int32]*Request),
+		root:   handler,
 	}
 
 	go handler.HandleConnect(context.Background(), r)
@@ -268,6 +285,7 @@ func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bo
 }
 
 type Server interface {
+	Remote() net.Addr
 	Serve(context.Context) error
 }
 
@@ -360,7 +378,6 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			ctx, cancel := context.WithTimeout(ctx, rxTimeout)
 			defer cancel()
 
-			//err := req.in.Pour(ctx, v)
 			err := req.in.Pour(ctx, pkt)
 			return errors.Wrap(err, "error pouring data to handler")
 		}()
@@ -369,6 +386,10 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			return err
 		}
 	}
+}
+
+func (r *rpc) Remote() net.Addr {
+	return r.remote
 }
 
 type CallError struct {
