@@ -171,7 +171,7 @@ func (str *stream) Close() error {
 
 // Close closes the stream and sends the EndErr message.
 func (str *stream) CloseWithError(closeErr error) error {
-	pkt, err := newEndErrPacket(str.req, closeErr)
+	pkt, err := newEndErrPacket(str.req, str.inStream || str.outStream, closeErr)
 	if err != nil {
 		return errors.Wrap(err, "error building error packet")
 	}
@@ -254,7 +254,7 @@ func newEndOkayPacket(req int32) *codec.Packet {
 	}
 }
 
-func newEndErrPacket(req int32, err error) (*codec.Packet, error) {
+func newEndErrPacket(req int32, stream bool, err error) (*codec.Packet, error) {
 	body, err := json.Marshal(CallError{
 		Message: err.Error(),
 		Name:    "Error",
@@ -262,10 +262,13 @@ func newEndErrPacket(req int32, err error) (*codec.Packet, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "error marshaling value")
 	}
-
-	return &codec.Packet{
+	pkt := codec.Packet{
 		Req:  req,
-		Flag: codec.FlagJSON | codec.FlagEndErr | codec.FlagStream,
+		Flag: codec.FlagJSON | codec.FlagEndErr,
 		Body: body,
-	}, nil
+	}
+	if stream {
+		pkt.Flag |= codec.FlagStream
+	}
+	return &pkt, nil
 }
