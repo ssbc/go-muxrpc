@@ -1,4 +1,4 @@
-package muxrpc // import "cryptoscope.co/go/muxrpc"
+package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"cryptoscope.co/go/luigi"
-	"cryptoscope.co/go/luigi/mfr"
+	"go.cryptoscope.co/luigi"
+	"go.cryptoscope.co/luigi/mfr"
 	"github.com/pkg/errors"
 
-	"cryptoscope.co/go/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/codec"
 )
 
 type testHandler struct {

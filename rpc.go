@@ -1,4 +1,4 @@
-package muxrpc // import "cryptoscope.co/go/muxrpc"
+package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"cryptoscope.co/go/luigi"
-	"cryptoscope.co/go/muxrpc/codec"
+	"go.cryptoscope.co/luigi"
+	"go.cryptoscope.co/muxrpc/codec"
 	"github.com/pkg/errors"
 )
 

@@ -24,8 +24,8 @@ import (
 	"fmt"
 	"testing"
 
-	"cryptoscope.co/go/luigi"
-	"cryptoscope.co/go/muxrpc/codec"
+	"go.cryptoscope.co/luigi"
+	"go.cryptoscope.co/muxrpc/codec"
 
 	"github.com/cryptix/go/logging/logtest"
 	"github.com/cryptix/go/proc"

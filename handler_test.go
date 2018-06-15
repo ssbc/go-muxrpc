@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"cryptoscope.co/go/luigi"
+	"go.cryptoscope.co/luigi"
 	"github.com/stretchr/testify/require"
 )
 

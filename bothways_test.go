@@ -1,4 +1,4 @@
-package muxrpc // import "cryptoscope.co/go/muxrpc"
+package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"cryptoscope.co/go/luigi"
+	"go.cryptoscope.co/luigi"
 )
 
 func TestBothwaysAsync(t *testing.T) {

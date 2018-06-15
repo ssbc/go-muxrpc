@@ -1,9 +1,9 @@
-package muxrpc // import "cryptoscope.co/go/muxrpc"
+package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
 
-	"cryptoscope.co/go/luigi"
+	"go.cryptoscope.co/luigi"
 )
 
 // Endpoint allows calling functions on the RPC peer.

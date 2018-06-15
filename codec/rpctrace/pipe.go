@@ -24,7 +24,7 @@ import (
 	"github.com/cryptix/go/logging"
 	"github.com/cryptix/go/proc"
 
-	"cryptoscope.co/go/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/codec"
 )
 
 func main() {

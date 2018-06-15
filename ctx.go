@@ -1,10 +1,10 @@
-package muxrpc // import "cryptoscope.co/go/muxrpc"
+package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
 	"sync"
 
-	"cryptoscope.co/go/luigi"
+	"go.cryptoscope.co/luigi"
 )
 
 // withCloseCtx returns a cancellable context where ctx.Err() is luigi.EOS instead of "context cancelled"
