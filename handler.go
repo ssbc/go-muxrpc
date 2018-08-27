@@ -10,12 +10,12 @@ type HandlerMux struct {
 	handlers map[string]Handler
 }
 
-func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request) {
+func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 	for i := len(req.Method); i > 0; i-- {
 		m := req.Method[:i]
 		h, ok := hm.handlers[m.String()]
 		if ok {
-			h.HandleCall(ctx, req)
+			h.HandleCall(ctx, req, edp)
 			return
 		}
 	}

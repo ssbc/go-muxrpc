@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -42,8 +42,8 @@ type rpc struct {
 // When a connection is established, HandleConnect is called.
 // When we are being called, HandleCall is called.
 type Handler interface {
-	HandleCall(ctx context.Context, req *Request)
-	HandleConnect(ctx context.Context, e Endpoint)
+	HandleCall(ctx context.Context, req *Request, edp Endpoint)
+	HandleConnect(ctx context.Context, edp Endpoint)
 }
 
 const bufSize = 5
@@ -279,7 +279,7 @@ func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bo
 		}
 		r.reqs[pkt.Req] = req
 
-		go r.root.HandleCall(ctx, req)
+		go r.root.HandleCall(ctx, req, r)
 	}
 
 	return req, !ok, nil

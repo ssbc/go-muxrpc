@@ -7,24 +7,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/luigi/mfr"
-	"github.com/pkg/errors"
 
 	"go.cryptoscope.co/muxrpc/codec"
 )
 
 type testHandler struct {
-	call    func(context.Context, *Request)
+	call    func(context.Context, *Request, Endpoint)
 	connect func(context.Context, Endpoint)
 }
 
-func (h *testHandler) HandleCall(ctx context.Context, req *Request) {
-	h.call(ctx, req)
+func (h *testHandler) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
+	h.call(ctx, req, edp)
 }
 
-func (h *testHandler) HandleConnect(ctx context.Context, e Endpoint) {
-	h.connect(ctx, e)
+func (h *testHandler) HandleConnect(ctx context.Context, edp Endpoint) {
+	h.connect(ctx, edp)
 }
 
 func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
@@ -36,7 +36,7 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 		serve2 := make(chan struct{})
 
 		h1 := &testHandler{
-			call: func(ctx context.Context, req *Request) {
+			call: func(ctx context.Context, req *Request, edp Endpoint) {
 				fmt.Println("h1 called")
 				t.Errorf("unexpected call to rpc1: %#v", req)
 			},
@@ -47,7 +47,7 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 		}
 
 		h2 := &testHandler{
-			call: func(ctx context.Context, req *Request) {
+			call: func(ctx context.Context, req *Request, edp Endpoint) {
 				fmt.Printf("h2 called %+v\n", req)
 				if len(req.Method) == 1 && req.Method[0] == "whoami" {
 					err := req.Return(ctx, "you are a test")
@@ -172,7 +172,7 @@ func TestSource(t *testing.T) {
 	serve2 := make(chan struct{})
 
 	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Println("h1 called")
 			t.Errorf("unexpected call to rpc1: %#v", req)
 		},
@@ -183,7 +183,7 @@ func TestSource(t *testing.T) {
 	}
 
 	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Printf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for _, v := range expRx {
@@ -291,7 +291,7 @@ func TestSink(t *testing.T) {
 	wait := make(chan struct{})
 
 	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Println("h1 called")
 			t.Errorf("unexpected call to rpc1: %#v", req)
 		},
@@ -302,7 +302,7 @@ func TestSink(t *testing.T) {
 	}
 
 	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Printf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for i, exp := range expRx {
@@ -422,7 +422,7 @@ func TestDuplex(t *testing.T) {
 	conn2 := make(chan struct{})
 
 	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Println("h1 called")
 			t.Errorf("unexpected call to rpc1: %#v", req)
 		},
@@ -433,7 +433,7 @@ func TestDuplex(t *testing.T) {
 	}
 
 	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Printf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for _, exp := range expRx {
@@ -529,7 +529,7 @@ func TestErrorAsync(t *testing.T) {
 	serve2 := make(chan struct{})
 
 	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Println("h1 called")
 			t.Errorf("unexpected call to rpc1: %#v", req)
 		},
@@ -540,7 +540,7 @@ func TestErrorAsync(t *testing.T) {
 	}
 
 	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Printf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				err := req.Stream.CloseWithError(errors.New("omg an error!"))

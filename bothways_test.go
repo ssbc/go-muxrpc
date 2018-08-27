@@ -23,7 +23,7 @@ func TestBothwaysAsync(t *testing.T) {
 	term2 := make(chan struct{})
 
 	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Printf("h1 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				err := req.Return(ctx, "you are a test")
@@ -40,7 +40,7 @@ func TestBothwaysAsync(t *testing.T) {
 	}
 
 	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Printf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				err := req.Return(ctx, "you are a test")
@@ -165,7 +165,7 @@ func TestBohwaysSource(t *testing.T) {
 	term2 := make(chan struct{})
 
 	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 
 			fmt.Printf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
@@ -192,7 +192,7 @@ func TestBohwaysSource(t *testing.T) {
 	}
 
 	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Printf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for _, v := range expRx {
@@ -341,8 +341,8 @@ func TestBothwaysSink(t *testing.T) {
 	term1 := make(chan struct{})
 	term2 := make(chan struct{})
 
-	handler := func(name string) func(context.Context, *Request) {
-		return func(ctx context.Context, req *Request) {
+	handler := func(name string) func(context.Context, *Request, Endpoint) {
+		return func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Printf("%s called %+v\n", name, req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for i, exp := range expRx {
@@ -504,8 +504,8 @@ func TestBothwayDuplex(t *testing.T) {
 	conn1 := make(chan struct{})
 	conn2 := make(chan struct{})
 
-	handler := func(name string) func(context.Context, *Request) {
-		return func(ctx context.Context, req *Request) {
+	handler := func(name string) func(context.Context, *Request, Endpoint) {
+		return func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Printf("%s called %+v\n", name, req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for _, exp := range expRx {
