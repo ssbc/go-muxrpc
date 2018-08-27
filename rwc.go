@@ -67,6 +67,10 @@ func (r *srcReader) Read(data []byte) (int, error) {
 
 	v, err := r.src.Next(context.TODO())
 	if err != nil {
+		if err == (luigi.EOS{}) {
+			return 0, io.EOF
+		}
+
 		return 0, errors.Wrap(err, "error getting next block")
 	}
 
