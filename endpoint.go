@@ -2,6 +2,7 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
+	"net"
 
 	"go.cryptoscope.co/luigi"
 )
@@ -19,4 +20,7 @@ type Endpoint interface {
 
 	// Terminate wraps up the RPC session
 	Terminate() error
+
+	// Remote returns the network address of the remote
+	Remote() net.Addr
 }
