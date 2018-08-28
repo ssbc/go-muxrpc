@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net"
 	"sync"
-	"time"
 
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
@@ -47,7 +46,6 @@ type Handler interface {
 }
 
 const bufSize = 5
-const rxTimeout time.Duration = 100 * time.Millisecond
 
 // Handle handles the connection of the packer using the specified handler.
 func Handle(pkr Packer, handler Handler) Endpoint {
@@ -374,10 +372,6 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 		// localize defer
 		err = func() error {
-			// pour may block so we need to time out.
-			// note that you can use buffers make this less probable
-			ctx, cancel := context.WithTimeout(ctx, rxTimeout)
-			defer cancel()
 
 			err := req.in.Pour(ctx, pkt)
 			return errors.Wrap(err, "error pouring data to handler")
