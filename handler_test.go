@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"go.cryptoscope.co/luigi"
 	"github.com/stretchr/testify/require"
+	"go.cryptoscope.co/luigi"
 )
 
 func TestHandlerMux(t *testing.T) {
@@ -27,7 +27,7 @@ func TestHandlerMux(t *testing.T) {
 	}
 
 	handler := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, edp Endpoint) {
 			r.Equal(exp.Method.String(), req.Method.String(), "Method doesn't match")
 			req.Stream.Close()
 			close(call)
@@ -40,8 +40,8 @@ func TestHandlerMux(t *testing.T) {
 	mux.Register(Method{"foo", "bar"}, handler)
 
 	go func() {
-		mux.HandleCall(context.TODO(), exp)
-		mux.HandleCall(context.TODO(), notexp)
+		mux.HandleCall(context.TODO(), exp, nil)
+		mux.HandleCall(context.TODO(), notexp, nil)
 
 		mux.HandleConnect(context.TODO(), nil)
 	}()
