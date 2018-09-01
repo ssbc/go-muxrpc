@@ -20,6 +20,7 @@ package codec
 import (
 	"fmt"
 	"io"
+	"net"
 
 	"github.com/go-kit/kit/log"
 )
@@ -68,4 +69,25 @@ func Wrap(l log.Logger, rwc io.ReadWriteCloser) io.ReadWriteCloser {
 		io.Writer
 		io.Closer
 	}{Reader: prout, Writer: pwin, Closer: w}
+}
+
+type wrappedConn struct {
+	net.Conn
+	rwc io.ReadWriteCloser
+}
+
+func (conn *wrappedConn) Read(data []byte) (int, error) {
+	return conn.rwc.Read(data)
+}
+
+func (conn *wrappedConn) Write(data []byte) (int, error) {
+	return conn.rwc.Write(data)
+}
+
+func (conn *wrappedConn) Close() error {
+	return conn.rwc.Close()
+}
+
+func WrapConn(l log.Logger, conn net.Conn) net.Conn {
+	return &wrappedConn{conn, Wrap(l, conn)}
 }
