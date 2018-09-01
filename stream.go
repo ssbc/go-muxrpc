@@ -87,10 +87,17 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 
 	vpkt, err := str.pktSrc.Next(ctx)
 	if err != nil {
+		if err == (luigi.EOS{}) {
+			return nil, err
+		}
 		return nil, errors.Wrap(err, "error reading from packet source")
 	}
 
 	pkt := vpkt.(*codec.Packet)
+
+	if pkt.Flag.Get(codec.FlagEndErr) {
+		return nil, luigi.EOS{}
+	}
 
 	if pkt.Flag.Get(codec.FlagJSON) {
 		var (
