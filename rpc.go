@@ -51,7 +51,15 @@ const rxTimeout time.Duration = 100 * time.Millisecond
 
 // Handle handles the connection of the packer using the specified handler.
 func Handle(pkr Packer, handler Handler) Endpoint {
-	return handle(pkr, handler, nil)
+	var raddr net.Addr
+
+	if pkr, ok := pkr.(*packer); ok {
+		if ra, ok := pkr.c.(interface{ RemoteAddr() net.Addr }); ok {
+			raddr = ra.RemoteAddr()
+		}
+	}
+
+	return handle(pkr, handler, raddr)
 }
 
 // HandleWithRemote also sets the remote address the endpoint is connected to
