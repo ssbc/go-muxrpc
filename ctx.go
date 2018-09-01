@@ -22,8 +22,9 @@ func withCloseCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 
 		select {
 		case <-ctx.Done():
+			next.err = ctx.Err()
 		case <-ch:
-			next.closed = true
+			next.err = luigi.EOS{}
 		}
 	}()
 
@@ -38,6 +39,7 @@ type closeCtx struct {
 	l      sync.Mutex
 	once   *sync.Once
 	closed bool
+	err    error
 }
 
 // Done returns a channel that is closed once the context is cancelled.
@@ -62,10 +64,13 @@ func (ctx *closeCtx) Done() <-chan struct{} {
 func (ctx *closeCtx) Err() error {
 	select {
 	case <-ctx.ch:
-		return luigi.EOS{}
 	case <-ctx.Context.Done():
-		return ctx.Context.Err()
 	default:
 		return nil
 	}
+
+	ctx.l.Lock()
+	defer ctx.l.Unlock()
+
+	return ctx.err
 }
