@@ -13,49 +13,42 @@ func withCloseCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 	next := &closeCtx{
 		ch:      ch,
 		Context: ctx,
-		once:    &sync.Once{},
+	}
+
+	var once sync.Once
+
+	cls := func() {
+		once.Do(func() {
+			next.err = luigi.EOS{}
+			close(ch)
+		})
 	}
 
 	go func() {
-		next.l.Lock()
-		defer next.l.Unlock()
-
 		select {
 		case <-ctx.Done():
-			next.err = ctx.Err()
+			once.Do(func() {
+				next.err = ctx.Err()
+				close(ch)
+			})
 		case <-ch:
-			next.err = luigi.EOS{}
 		}
 	}()
 
-	return next, func() { next.once.Do(func() { close(ch) }) }
+	return next, cls
 }
 
 // closeCtx is the context that cancels functions and returns a luigi.EOS error
 type closeCtx struct {
-	ch <-chan struct{}
 	context.Context
 
-	l      sync.Mutex
-	once   *sync.Once
-	closed bool
-	err    error
+	ch  <-chan struct{}
+	err error
 }
 
 // Done returns a channel that is closed once the context is cancelled.
 func (ctx *closeCtx) Done() <-chan struct{} {
-	ch := make(chan struct{})
-
-	go func() {
-		select {
-		case <-ctx.ch:
-		case <-ctx.Context.Done():
-		}
-
-		close(ch)
-	}()
-
-	return ch
+	return ctx.ch
 }
 
 // Err returns the error that made the context cancel.
@@ -64,13 +57,8 @@ func (ctx *closeCtx) Done() <-chan struct{} {
 func (ctx *closeCtx) Err() error {
 	select {
 	case <-ctx.ch:
-	case <-ctx.Context.Done():
+		return ctx.err
 	default:
 		return nil
 	}
-
-	ctx.l.Lock()
-	defer ctx.l.Unlock()
-
-	return ctx.err
 }
