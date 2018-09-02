@@ -332,7 +332,15 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		pkt := vpkt.(*codec.Packet)
 
 		if pkt.Flag.Get(codec.FlagEndErr) {
-			if req, ok := r.reqs[pkt.Req]; ok {
+			getReq := func(req int32) (*Request, bool) {
+				r.rLock.Lock()
+				defer r.rLock.Unlock()
+
+				r, ok := r.reqs[req]
+				return r, ok
+			}
+
+			if req, ok := getReq(pkt.Req); ok {
 				err := func() error {
 					r.rLock.Lock()
 					defer r.rLock.Unlock()
