@@ -15,7 +15,7 @@ You should have received a copy of the GNU General Public License
 along with go-muxrpc.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-package codec
+package debug
 
 import (
 	"fmt"
@@ -23,6 +23,8 @@ import (
 	"net"
 
 	"github.com/go-kit/kit/log"
+
+	"go.cryptoscope.co/muxrpc/codec"
 )
 
 // Wrap decodes every packet that passes through it and logs it
@@ -30,7 +32,7 @@ func Wrap(l log.Logger, rwc io.ReadWriteCloser) io.ReadWriteCloser {
 	prout, pwout := io.Pipe()
 	go func() {
 		from := log.With(l, "unit", "pipeFrom")
-		r := NewReader(io.TeeReader(rwc, pwout))
+		r := codec.NewReader(io.TeeReader(rwc, pwout))
 		for {
 			pkt, err := r.ReadPacket()
 			if err != nil {
@@ -43,10 +45,10 @@ func Wrap(l log.Logger, rwc io.ReadWriteCloser) io.ReadWriteCloser {
 	}()
 
 	prin, pwin := io.Pipe()
-	w := NewWriter(rwc)
+	w := codec.NewWriter(rwc)
 	go func() {
 		to := log.With(l, "unit", "pipeTo")
-		r := NewReader(prin)
+		r := codec.NewReader(prin)
 		for {
 			pkt, err := r.ReadPacket()
 			if err != nil {

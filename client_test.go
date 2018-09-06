@@ -26,6 +26,7 @@ import (
 
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/codec/debug"
 
 	"github.com/cryptix/go/logging/logtest"
 	"github.com/cryptix/go/proc"
@@ -71,7 +72,7 @@ func TestJSGettingCalledSource(t *testing.T) {
 			hasConnected = true
 		},
 	}
-	packer := NewPacker(codec.Wrap(logger, serv))
+	packer := NewPacker(debug.Wrap(logger, serv))
 	rpc1 := Handle(packer, h1)
 
 	ctx := context.Background()
@@ -127,7 +128,7 @@ func TestJSGettingCalledAsync(t *testing.T) {
 			hasConnected = true
 		},
 	}
-	packer := NewPacker(codec.Wrap(logger, serv))
+	packer := NewPacker(debug.Wrap(logger, serv))
 	rpc1 := Handle(packer, h1)
 
 	ctx := context.Background()
@@ -164,7 +165,7 @@ func TestJSAsyncString(t *testing.T) {
 			hasConnected = true
 		},
 	}
-	packer := NewPacker(codec.Wrap(logger, serv))
+	packer := NewPacker(debug.Wrap(logger, serv))
 	rpc1 := Handle(packer, h1)
 
 	ctx := context.Background()
@@ -204,7 +205,7 @@ func TestJSAsyncObject(t *testing.T) {
 	}
 
 	// TODO: inject logger into Handle and/or packer?
-	packer := NewPacker(codec.Wrap(logger, serv))
+	packer := NewPacker(debug.Wrap(logger, serv))
 	rpc1 := Handle(packer, h1)
 
 	ctx := context.Background()
@@ -247,7 +248,7 @@ func TestJSSource(t *testing.T) {
 		},
 	}
 
-	packer := NewPacker(codec.Wrap(logger, serv))
+	packer := NewPacker(debug.Wrap(logger, serv))
 	rpc1 := Handle(packer, h1)
 
 	ctx := context.Background()
