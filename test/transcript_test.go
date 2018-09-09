@@ -76,21 +76,34 @@ func TestTranscript(t *testing.T) {
 	pkts := ts.Get()
 	a.Len(pkts, 3, "mismatched amount of read packets")
 
-	pkt := pkts[0]
-	r.NotNil(pkt, "packet in transcript is nil")
-	r.NotNil(pkt.Packet, "packet in transcript is nil")
-	a.Equal(codec.FlagStream, pkt.Flag, "packet flag mismatch")
-	a.Equal(int32(1), pkt.Req, "packet req mismatch")
-	a.Equal(codec.Body("Hello Hermies!"), pkt.Body, "packet body mismatch")
-	a.Equal(DirOut, pkt.Dir, "packet direction mismatch")
+	pktSpecMsg := MergePacketSpec(
+		BodyPacketSpec(EqualBodySpec(codec.Body("Hello Hermies!"))),
+		FlagPacketSpec(codec.FlagStream),
+		ReqPacketSpec(1),
+		DirPacketSpec(DirOut),
+	)
 
-	pkt = pkts[1]
-	a.Equal(io.EOF, pkt.Err, "packet err mismatch")
-	a.Equal(DirIn, pkt.Dir, "packet direction mismatch")
+	pktSpecErrIn := MergePacketSpec(
+		DirPacketSpec(DirIn),
+		ErrorPacketSpec(io.EOF.Error()),
+	)
 
-	pkt = pkts[2]
-	a.Equal(io.EOF, pkt.Err, "packet err mismatch")
-	a.Equal(DirOut, pkt.Dir, "packet direction mismatch")
+	pktSpecErrOut := MergePacketSpec(
+		DirPacketSpec(DirOut),
+		ErrorPacketSpec(io.EOF.Error()),
+	)
+
+	tsSpec := MergeTranscriptSpec(
+		UniqueMatchTranscriptSpec(pktSpecMsg),
+		UniqueMatchTranscriptSpec(pktSpecErrIn),
+		UniqueMatchTranscriptSpec(pktSpecErrOut),
+		OrderTranscriptSpec(pktSpecMsg, pktSpecErrIn),
+		OrderTranscriptSpec(pktSpecMsg, pktSpecErrOut),
+	)
+
+	if !tsSpec(&ts) {
+		t.Error("unexpected transcript")
+	}
 
 	t.Log(pkts)
 
