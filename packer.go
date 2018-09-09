@@ -59,7 +59,7 @@ func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 	if errors.Cause(err) == io.EOF {
 		return nil, luigi.EOS{}
 	} else if err != nil {
-		return nil, errors.Wrap(err, "ReadPacket failed.")
+		return nil, errors.Wrap(err, "error reading packet")
 	}
 
 	pkt.Req = -pkt.Req
