@@ -34,7 +34,7 @@ func NewReader(r io.Reader) *Reader { return &Reader{r} }
 func (r *Reader) ReadPacket() (*Packet, error) {
 	var hdr Header
 	err := binary.Read(r.r, binary.BigEndian, &hdr)
-	if errors.Cause(err) == os.ErrClosed {
+	if e := errors.Cause(err); e == os.ErrClosed || e == io.EOF {
 		return nil, io.EOF
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "pkt-codec: header read failed")
@@ -49,9 +49,9 @@ func (r *Reader) ReadPacket() (*Packet, error) {
 	var p = Packet{
 		Flag: hdr.Flag,
 		Req:  hdr.Req,
+		Body: make([]byte, hdr.Len),
 	}
 
-	p.Body = make([]byte, hdr.Len)
 	_, err = io.ReadFull(r.r, p.Body)
 	if err != nil {
 		return nil, errors.Wrapf(err, "pkt-codec: read body failed. Packet: %+v", p)
