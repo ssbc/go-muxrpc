@@ -21,56 +21,126 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 
 	"github.com/go-kit/kit/log"
+	"github.com/hashicorp/go-multierror"
 
 	"go.cryptoscope.co/muxrpc/codec"
 )
 
-// Wrap decodes every packet that passes through it and logs it
-func Wrap(l log.Logger, rwc io.ReadWriteCloser) io.ReadWriteCloser {
-	prout, pwout := io.Pipe()
+func newLogWriter(l log.Logger) *logWriter {
+	r, w := io.Pipe()
+
+	return &logWriter{
+		l:           l,
+		r:           codec.NewReader(r),
+		WriteCloser: w,
+	}
+}
+
+type logWriter struct {
+	l log.Logger
+	r *codec.Reader
+	io.WriteCloser
+}
+
+func (lw *logWriter) work() (func(), chan error) {
+	cancel := make(chan struct{})
+	errCh := make(chan error)
+
 	go func() {
-		from := log.With(l, "unit", "pipeFrom")
-		r := codec.NewReader(io.TeeReader(rwc, pwout))
+		var (
+			err error
+			pkt *codec.Packet
+		)
+
+		defer func() {
+			errCh <- err
+		}()
+
 		for {
-			pkt, err := r.ReadPacket()
+			select {
+			case <-cancel:
+				return
+			default:
+			}
+
+			pkt, err = lw.r.ReadPacket()
 			if err != nil {
-				from.Log("error", err)
-				//pwout.CloseWithError(err)
+				lw.l.Log("error", err)
+
+				// don't send EOF over error channel, because that error is okay
+				if err == io.EOF {
+					err = nil
+				}
+
 				return
 			}
-			from.Log("pkt", fmt.Sprintf("%+v", pkt))
+			lw.l.Log("pkt", fmt.Sprintf("%+v", pkt))
 		}
 	}()
 
-	prin, pwin := io.Pipe()
-	w := codec.NewWriter(rwc)
-	go func() {
-		to := log.With(l, "unit", "pipeTo")
-		r := codec.NewReader(prin)
-		for {
-			pkt, err := r.ReadPacket()
-			if err != nil {
-				if err != io.EOF {
-					to.Log("action", "ReadPacket", "error", err)
-					prin.CloseWithError(err)
-				}
-				return
-			}
-			if err := w.WritePacket(pkt); err != nil {
-				to.Log("action", "WritePacket", "error", err)
-				prin.CloseWithError(err)
-				return
-			}
-			to.Log("pkt", fmt.Sprintf("%+v", pkt))
-		}
-	}()
+	var closeOnce sync.Once
+
+	return func() {
+		closeOnce.Do(func() {
+			close(cancel)
+		})
+	}, errCh
+}
+
+type closer func() error
+
+func (c closer) Close() error { return c() }
+
+// Wrap decodes every packet that passes through it and logs it
+func Wrap(l log.Logger, rwc io.ReadWriteCloser) io.ReadWriteCloser {
+	lwIn := newLogWriter(log.With(l, "dir", "in"))
+	cnclIn, errChIn := lwIn.work()
+
+	lwOut := newLogWriter(log.With(l, "dir", "out"))
+	cnclOut, errChOut := lwOut.work()
+
 	return struct {
 		io.Reader
 		io.Writer
 		io.Closer
-	}{Reader: prout, Writer: pwin, Closer: w}
+	}{
+		Reader: io.TeeReader(rwc, lwIn),
+		Writer: io.MultiWriter(rwc, lwOut),
+		Closer: closer(func() error {
+
+			cnclIn()
+
+			cnclOut()
+
+			var err error
+
+			err = multierror.Append(err, lwIn.Close())
+
+			err = multierror.Append(err, lwOut.Close())
+
+			if errIn := <-errChIn; errIn != io.EOF && errIn != nil {
+				err = multierror.Append(err, errIn)
+			}
+
+			if errOut := <-errChOut; errOut != io.EOF && errOut != nil {
+				err = multierror.Append(err, errOut)
+			}
+
+			err = multierror.Append(err, rwc.Close())
+
+			// TODO: make better multierror -.-
+			if merr, ok := err.(*multierror.Error); ok {
+				if merr.Len() == 0 {
+					err = nil
+				}
+			}
+
+			return err
+		}),
+	}
 }
 
 type wrappedConn struct {
