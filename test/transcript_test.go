@@ -78,7 +78,7 @@ func TestTranscript(t *testing.T) {
 
 	pktSpecMsg := MergePacketSpec(
 		BodyPacketSpec(EqualBodySpec(codec.Body("Hello Hermies!"))),
-		FlagPacketSpec(codec.FlagStream),
+		FlagEqualPacketSpec(codec.FlagStream),
 		ReqPacketSpec(1),
 		DirPacketSpec(DirOut),
 	)
