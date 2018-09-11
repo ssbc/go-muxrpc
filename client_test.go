@@ -1,5 +1,3 @@
-// +build interop_nodejs
-
 /*
 This file is part of go-muxrpc.
 
@@ -21,12 +19,10 @@ package muxrpc
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/codec"
-	"go.cryptoscope.co/muxrpc/codec/debug"
+	"go.cryptoscope.co/muxrpc/debug"
 
 	"github.com/cryptix/go/logging/logtest"
 	"github.com/cryptix/go/proc"
@@ -46,7 +42,7 @@ func TestJSGettingCalledSource(t *testing.T) {
 	gotCall := make(chan struct{})
 	callServed := make(chan struct{})
 	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, _ Endpoint) {
 			t.Logf("got call: %+v", req)
 			close(gotCall)
 			if len(req.Method) != 1 || req.Method[0] != "stuff" {
@@ -78,7 +74,7 @@ func TestJSGettingCalledSource(t *testing.T) {
 	ctx := context.Background()
 
 	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
+		err := rpc1.(Server).Serve(ctx)
 		r.NoError(err, "rcp serve")
 	}()
 
@@ -98,7 +94,8 @@ func TestJSGettingCalledSource(t *testing.T) {
 			callServed = nil
 		}
 	}
-	r.NoError(packer.Close())
+	// Already closed?
+	// r.NoError(packer.Close())
 }
 
 func TestJSGettingCalledAsync(t *testing.T) {
@@ -112,7 +109,7 @@ func TestJSGettingCalledAsync(t *testing.T) {
 
 	var hasConnected, hasCalled bool
 	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, _ Endpoint) {
 			t.Logf("got call: %+v", req)
 			if len(req.Method) != 1 || req.Method[0] != "hello" {
 				t.Error("unexpected method name:", req.Method)
@@ -134,7 +131,7 @@ func TestJSGettingCalledAsync(t *testing.T) {
 	ctx := context.Background()
 
 	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
+		err := rpc1.(Server).Serve(ctx)
 		r.NoError(err, "rcp serve")
 	}()
 
@@ -149,16 +146,29 @@ func TestJSGettingCalledAsync(t *testing.T) {
 	r.NoError(packer.Close())
 }
 
-func TestJSAsyncString(t *testing.T) {
+/*see that we can do sync as async calls
+
+this feature is just usefull in JSland
+
+i.e.
+ver = sbot.version()
+
+vs
+
+sbot.whoami((err, who) => {
+  who..
+})
+*/
+func TestJSSyncString(t *testing.T) {
 	r := require.New(t)
-	logger := log.NewLogfmtLogger(logtest.Logger("TestJSAsyncString()", t))
+	logger := log.NewLogfmtLogger(logtest.Logger(t.Name(), t))
 
 	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var hasConnected, hasCalled bool
 	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, _ Endpoint) {
 			hasCalled = true
 		},
 		connect: func(ctx context.Context, e Endpoint) {
@@ -171,7 +181,47 @@ func TestJSAsyncString(t *testing.T) {
 	ctx := context.Background()
 
 	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
+		err := rpc1.(Server).Serve(ctx)
+		r.NoError(err, "rcp serve")
+	}()
+
+	v, err := rpc1.Async(ctx, "string", Method{"version"}, "some", "params", 23)
+	r.NoError(err, "rcp sync call")
+	r.Equal("some/version@1.2.3", v, "expected call result")
+
+	v, err = rpc1.Async(ctx, "string", Method{"version"}, "wrong", "params", 42)
+	r.Error(err, "rcp sync call")
+	r.Nil(v, "expected call result")
+
+	r.True(hasConnected, "peer did not call 'connect'")
+	r.False(hasCalled, "peer did call unexpectedly")
+
+	r.NoError(packer.Close())
+}
+
+func TestJSAsyncString(t *testing.T) {
+	r := require.New(t)
+	logger := log.NewLogfmtLogger(logtest.Logger("TestJSAsyncString()", t))
+
+	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
+	r.NoError(err, "nodejs startup")
+
+	var hasConnected, hasCalled bool
+	h1 := &testHandler{
+		call: func(ctx context.Context, req *Request, _ Endpoint) {
+			hasCalled = true
+		},
+		connect: func(ctx context.Context, e Endpoint) {
+			hasConnected = true
+		},
+	}
+	packer := NewPacker(debug.Wrap(logger, serv))
+	rpc1 := Handle(packer, h1)
+
+	ctx := context.Background()
+
+	go func() {
+		err := rpc1.(Server).Serve(ctx)
 		r.NoError(err, "rcp serve")
 	}()
 
@@ -196,7 +246,7 @@ func TestJSAsyncObject(t *testing.T) {
 	// TODO: use mock gen
 	var hasConnected, hasCalled bool
 	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, _ Endpoint) {
 			hasCalled = true
 		},
 		connect: func(ctx context.Context, e Endpoint) {
@@ -211,8 +261,7 @@ func TestJSAsyncObject(t *testing.T) {
 	ctx := context.Background()
 
 	go func() {
-		fmt.Println("stating serve")
-		err := rpc1.(*rpc).Serve(ctx)
+		err := rpc1.(Server).Serve(ctx)
 		r.NoError(err, "rcp serve")
 	}()
 
@@ -240,7 +289,7 @@ func TestJSSource(t *testing.T) {
 
 	var hasConnected, hasCalled bool
 	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request) {
+		call: func(ctx context.Context, req *Request, _ Endpoint) {
 			hasCalled = true
 		},
 		connect: func(ctx context.Context, e Endpoint) {
@@ -253,8 +302,9 @@ func TestJSSource(t *testing.T) {
 
 	ctx := context.Background()
 
+	srv := rpc1.(Server)
 	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
+		err := srv.Serve(ctx)
 		r.NoError(err, "rcp serve")
 	}()
 
@@ -278,4 +328,7 @@ func TestJSSource(t *testing.T) {
 	r.True(luigi.IsEOS(err), "expected EOS but got %+v", val)
 
 	r.NoError(packer.Close())
+
+	r.False(hasCalled)
+	r.True(hasConnected)
 }

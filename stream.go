@@ -87,13 +87,16 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 
 	vpkt, err := str.pktSrc.Next(ctx)
 	if err != nil {
-		if err == (luigi.EOS{}) {
+		if luigi.IsEOS(err) {
 			return nil, err
 		}
 		return nil, errors.Wrap(err, "error reading from packet source")
 	}
 
-	pkt := vpkt.(*codec.Packet)
+	pkt, ok := vpkt.(*codec.Packet)
+	if !ok {
+		return nil, errors.Errorf("unexpected vpkt value: %v %T", vpkt, vpkt)
+	}
 
 	if pkt.Flag.Get(codec.FlagEndErr) {
 		return nil, luigi.EOS{}

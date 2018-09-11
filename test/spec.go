@@ -11,6 +11,11 @@ import (
 	"go.cryptoscope.co/muxrpc/codec"
 )
 
+type Errorer interface {
+	Error(v ...interface{})
+	Errorf(fmt string, v ...interface{})
+}
+
 func MultiErrorer(rs ...Errorer) Errorer {
 	return multiErrorer{
 		rs: rs,
@@ -31,11 +36,6 @@ func (de multiErrorer) Errorf(fmt string, v ...interface{}) {
 	for _, r := range de.rs {
 		r.Errorf(fmt, v...)
 	}
-}
-
-type Errorer interface {
-	Error(v ...interface{})
-	Errorf(fmt string, v ...interface{})
 }
 
 func PacketSpecErrors(r Errorer, spec PacketSpec, pkt DirectedPacket) bool {
@@ -352,5 +352,5 @@ func ContainsBodySpec(exp codec.Body) BodySpec {
 
 func getLineString(n int) string {
 	pc, fn, line, _ := runtime.Caller(n + 1)
-	return fmt.Sprintf("%s[%s:%d] %v", runtime.FuncForPC(pc).Name(), fn, line)
+	return fmt.Sprintf("%s[%s:%d]", runtime.FuncForPC(pc).Name(), fn, line)
 }

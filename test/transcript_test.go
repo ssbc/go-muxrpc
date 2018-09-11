@@ -101,7 +101,10 @@ func TestTranscript(t *testing.T) {
 		OrderTranscriptSpec(pktSpecMsg, pktSpecErrOut),
 	)
 
-	if !tsSpec(&ts) {
+	var rrr DoesErrorer
+
+	tsSpec(&rrr, &ts)
+	if !rrr {
 		t.Error("unexpected transcript")
 	}
 

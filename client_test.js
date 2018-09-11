@@ -21,6 +21,7 @@ var pull = require('pull-stream')
 var toPull = require('stream-to-pull-stream')
 
 var api = {
+  version: 'sync',
   hello: 'async',
   callme: {
     'async': 'async',
@@ -31,31 +32,42 @@ var api = {
 }
 
 var server = MRPC(api, api)({
+  version: function(some, args, i) {
+    console.warn(arguments)
+    if (some === "wrong" && i === 42) {
+      throw new Error("oh wow - sorry")
+    }
+    return "some/version@1.2.3"
+  },
   hello: function (name, name2, cb) {
     console.error('hello:ok')
     cb(null, 'hello, ' + name + ' and ' + name2 + '!')
   },
-   callme: {
-	'source': function(cb) {
-		pull(server.stuff(), pull.collect(function(err,vals) {
-			console.error('callme:source:ok vals:',vals)
-			cb(err, "call done")
-		}))
-	},
-	'async': function (cb) {
-	  server.hello(function(err, greet) {
-	    console.error('callme:async:ok')
-	    cb(err, "call done")
-	  })
-	}
+  callme: {
+    'source': function (cb) {
+      pull(server.stuff(), pull.collect(function (err, vals) {
+        if (err) {
+          console.error(err)
+          throw err
+        }
+        console.error('callme:source:ok vals:', vals)
+        cb(err, "call done")
+      }))
+    },
+    'async': function (cb) {
+      server.hello(function (err, greet) {
+        console.error('callme:async:ok')
+        cb(err, "call done")
+      })
+    }
   },
   object: function (cb) {
     console.error('object:ok')
-    cb(null, {with:'fields!'})
+    cb(null, { with: 'fields!' })
   },
   stuff: function () {
     console.error('stuff called')
-    return pull.values([{"a":1}, {"a":2}, {"a":3}, {"a":4}])
+    return pull.values([{ "a": 1 }, { "a": 2 }, { "a": 3 }, { "a": 4 }])
   }
 })
 
