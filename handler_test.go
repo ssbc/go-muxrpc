@@ -2,10 +2,13 @@ package muxrpc
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
+	"go.cryptoscope.co/muxrpc/codec"
 )
 
 func TestHandlerMux(t *testing.T) {
@@ -13,38 +16,59 @@ func TestHandlerMux(t *testing.T) {
 	r := require.New(t)
 	call := make(chan struct{})
 	connect := make(chan struct{})
+	todo := context.TODO()
 
 	src1, sink1 := luigi.NewPipe()
-	_, sink2 := luigi.NewPipe()
+	src2, sink2 := luigi.NewPipe()
 
 	exp := &Request{
 		Method: Method{"foo", "bar"},
-		Stream: NewStream(src1, sink1, 1, true, true),
+		Stream: newStream(nil, sink1, 1, streamCapMultiple, streamCapMultiple),
 	}
 	notexp := &Request{
 		Method: Method{"goo", "bar"},
-		Stream: NewStream(nil, sink2, 2, true, true),
+		Stream: newStream(nil, sink2, 2, streamCapMultiple, streamCapMultiple),
 	}
 
-	handler := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			r.Equal(exp.Method.String(), req.Method.String(), "Method doesn't match")
+	var fh FakeHandler
+	fh.HandleCallCalls(func(ctx context.Context, req *Request, edp Endpoint) {
+		if exp.Method.String() == req.Method.String() {
 			req.Stream.Close()
-			close(call)
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			close(connect)
-		},
-	}
+		} else {
+			req.Stream.CloseWithError(errors.Errorf("test failed"))
+		}
+		close(call)
+	})
+	fh.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h connected")
+		close(connect)
+	})
 
-	mux.Register(Method{"foo", "bar"}, handler)
+	mux.Register(Method{"foo", "bar"}, &fh)
 
 	go func() {
-		mux.HandleCall(context.TODO(), exp, nil)
-		mux.HandleCall(context.TODO(), notexp, nil)
+		mux.HandleConnect(todo, nil)
+		t.Log("ran connect")
 
-		mux.HandleConnect(context.TODO(), nil)
+		mux.HandleCall(todo, notexp, nil)
+		t.Log("sent notexp")
+		mux.HandleCall(todo, exp, nil)
+		t.Log("sent exp")
 	}()
+
+	vErrPkt, err := src2.Next(todo)
+	r.Error(luigi.EOS{}, err)
+	errPkt, ok := vErrPkt.(*codec.Packet)
+	r.True(ok)
+	var actualErr CallError
+	r.NoError(json.Unmarshal(errPkt.Body, &actualErr))
+	r.Equal("no such command: goo.bar", actualErr.Message)
+
+	vEndOK, err := src1.Next(todo)
+	r.Error(luigi.EOS{}, err)
+	endPkt, ok := vEndOK.(*codec.Packet)
+	r.True(ok)
+	r.True(endPkt.Flag.Get(codec.FlagEndErr))
 
 	for call != nil || connect != nil {
 		select {
@@ -55,6 +79,4 @@ func TestHandlerMux(t *testing.T) {
 		}
 	}
 
-	_, err := src1.Next(context.TODO())
-	r.Error(luigi.EOS{}, err)
 }

@@ -2,6 +2,7 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
+	stderr "errors"
 	"io"
 	"sync"
 
@@ -57,6 +58,10 @@ func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 	}
 
 	if errors.Cause(err) == io.EOF {
+		if err = pkr.Close(); err != nil {
+			return nil, errors.Wrap(err, "error closing connection after reading EOF")
+		}
+
 		return nil, luigi.EOS{}
 	} else if err != nil {
 		return nil, errors.Wrap(err, "error reading packet")
@@ -69,22 +74,33 @@ func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 
 // Pour sends a packet to the underlying stream.
 func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
-	pkr.wl.Lock()
-	defer pkr.wl.Unlock()
-
 	pkt, ok := v.(*codec.Packet)
 	if !ok {
 		return errors.Errorf("packer sink expected type *codec.Packet, got %T", v)
 	}
 
+	pkr.wl.Lock()
+	defer pkr.wl.Unlock()
 	err := pkr.w.WritePacket(pkt)
-	select {
-	case <-pkr.closing:
-		return nil
-	default:
-		return err
+	if err != nil {
+		select {
+		case <-pkr.closing:
+			err = errSinkClosed
+		default:
+		}
 	}
 
+	return errors.Wrap(err, "muxrpc: error writing packet")
+}
+
+var errSinkClosed = stderr.New("muxrpc: pour to closed sink")
+
+// IsSinkClosed should be moved to luigi to gether with the error
+func IsSinkClosed(err error) bool {
+	if err := errors.Cause(err); err == errSinkClosed {
+		return true
+	}
+	return false
 }
 
 // Close closes the packer.
@@ -96,5 +112,5 @@ func (pkr *packer) Close() error {
 		err = pkr.c.Close()
 	})
 
-	return err
+	return errors.Wrap(err, "error closing underlying closer")
 }

@@ -1,3 +1,5 @@
+// +build interop_nodejs
+
 /*
 This file is part of go-muxrpc.
 
@@ -24,65 +26,57 @@ import (
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/debug"
 
-	"github.com/cryptix/go/logging/logtest"
 	"github.com/cryptix/go/proc"
-	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
 func TestJSGettingCalledSource(t *testing.T) {
 	r := require.New(t)
-	logOut := logtest.Logger("js", t)
-	logger := log.NewLogfmtLogger(logOut)
 
-	serv, err := proc.StartStdioProcess("node", logOut, "client_test.js")
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
-	var hasConnected bool
 	gotCall := make(chan struct{})
 	callServed := make(chan struct{})
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, _ Endpoint) {
-			t.Logf("got call: %+v", req)
-			close(gotCall)
-			if len(req.Method) != 1 || req.Method[0] != "stuff" {
-				t.Fatal("unexpected method name:", req.Method)
-			}
-			if req.Type != "source" {
-				t.Fatal("request type:", req.Type)
-			}
-			for i := 0; i < 25; i++ {
-				var v = struct {
-					A int `json:"a"`
-				}{i}
-				if err := req.Stream.Pour(ctx, v); err != nil {
-					t.Errorf("stream pour(%d) error:%s", i, err)
-				}
-			}
-			if err := req.Stream.Close(); err != nil {
-				t.Error("stream close err:", err)
-			}
-			close(callServed)
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			hasConnected = true
-		},
-	}
-	packer := NewPacker(debug.Wrap(logger, serv))
-	rpc1 := Handle(packer, h1)
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
+
+	var fh FakeHandler
+	fh.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("got call: %+v", req)
+		close(gotCall)
+		if len(req.Method) != 1 || req.Method[0] != "stuff" {
+			ckFatal(errors.Errorf("unexpected method name: %s", req.Method))
+		}
+		if req.Type != "source" {
+			ckFatal(errors.Errorf("request type: %s", req.Type))
+		}
+		for i := 0; i < 25; i++ {
+			var v = struct {
+				A int `json:"a"`
+			}{i}
+			err := req.Stream.Pour(ctx, v)
+			ckFatal(errors.Wrapf(err, "stream pour(%d) failed", i))
+		}
+		err := req.Stream.Close()
+		ckFatal(errors.Wrap(err, "stream close failed"))
+		close(callServed)
+	})
+
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
+	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
-
-	go func() {
-		err := rpc1.(Server).Serve(ctx)
-		r.NoError(err, "rcp serve")
-	}()
+	go serve(ctx, rpc1.(Server), errc)
 
 	v, err := rpc1.Async(ctx, "string", Method{"callme", "source"})
 	r.NoError(err, "rcp Async call")
 
 	r.Equal(v, "call done", "expected call result")
-	r.True(hasConnected, "peer did not call 'connect'")
+	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 
 	for gotCall != nil || callServed != nil {
 		select {
@@ -100,49 +94,54 @@ func TestJSGettingCalledSource(t *testing.T) {
 
 func TestJSGettingCalledAsync(t *testing.T) {
 	r := require.New(t)
-	logOut := logtest.Logger("js", t)
-	//logOut := os.Stderr
-	logger := log.NewLogfmtLogger(logOut)
 
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
+
+	done := make(chan struct{})
+
+	go func() {
+		<-done
+		close(errc)
+	}()
+
+	_, logOut := initLogging(t, "js")
 	serv, err := proc.StartStdioProcess("node", logOut, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
-	var hasConnected, hasCalled bool
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, _ Endpoint) {
-			t.Logf("got call: %+v", req)
-			if len(req.Method) != 1 || req.Method[0] != "hello" {
-				t.Error("unexpected method name:", req.Method)
-			}
-			req.Type = "async" // TODO: pass manifest into handler
-			err := req.Return(ctx, "meow")
-			if err != nil {
-				t.Error("return error:", err)
-			}
-			hasCalled = true
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			hasConnected = true
-		},
-	}
-	packer := NewPacker(debug.Wrap(logger, serv))
-	rpc1 := Handle(packer, h1)
+	var fh FakeHandler
+	fh.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("got call: %+v", req)
+		if len(req.Method) != 1 || req.Method[0] != "hello" {
+			ckFatal(errors.Errorf("unexpected method name: %s", req.Method))
+		}
+		err := req.Return(ctx, "meow")
+		ckFatal(err)
+	})
+
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
+	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
-
-	go func() {
-		err := rpc1.(Server).Serve(ctx)
-		r.NoError(err, "rcp serve")
-	}()
+	go serve(ctx, rpc1.(Server), errc, done)
 
 	v, err := rpc1.Async(ctx, "string", Method{"callme", "async"})
 	r.NoError(err, "rcp Async call")
-
 	r.Equal(v, "call done", "expected call result")
 
-	r.True(hasConnected, "peer did not call 'connect'")
-	r.True(hasCalled, "peer did not call")
+	v, err = rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	r.NoError(err, "rcp shutdown call")
+	r.Equal(v, "ty", "expected call result")
 
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
+	r.Equal(1, fh.HandleCallCallCount(), "peer did not call")
 	r.NoError(packer.Close())
 }
 
@@ -161,29 +160,20 @@ sbot.whoami((err, who) => {
 */
 func TestJSSyncString(t *testing.T) {
 	r := require.New(t)
-	logger := log.NewLogfmtLogger(logtest.Logger(t.Name(), t))
 
-	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
-	var hasConnected, hasCalled bool
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, _ Endpoint) {
-			hasCalled = true
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			hasConnected = true
-		},
-	}
-	packer := NewPacker(debug.Wrap(logger, serv))
-	rpc1 := Handle(packer, h1)
+	var fh FakeHandler
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
+	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
-
-	go func() {
-		err := rpc1.(Server).Serve(ctx)
-		r.NoError(err, "rcp serve")
-	}()
+	errc := make(chan error)
+	done := make(chan struct{})
+	go serve(ctx, rpc1.(Server), errc, done)
 
 	v, err := rpc1.Async(ctx, "string", Method{"version"}, "some", "params", 23)
 	r.NoError(err, "rcp sync call")
@@ -193,77 +183,91 @@ func TestJSSyncString(t *testing.T) {
 	r.Error(err, "rcp sync call")
 	r.Nil(v, "expected call result")
 
-	r.True(hasConnected, "peer did not call 'connect'")
-	r.False(hasCalled, "peer did call unexpectedly")
+	v, err = rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	r.NoError(err, "rcp shutdown call")
+	r.Equal(v, "ty", "expected call result")
 
+	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
+	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
 	r.NoError(packer.Close())
+
+	go func() {
+		<-done
+		close(errc)
+	}()
+
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func TestJSAsyncString(t *testing.T) {
 	r := require.New(t)
-	logger := log.NewLogfmtLogger(logtest.Logger("TestJSAsyncString()", t))
 
-	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
-	var hasConnected, hasCalled bool
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, _ Endpoint) {
-			hasCalled = true
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			hasConnected = true
-		},
-	}
-	packer := NewPacker(debug.Wrap(logger, serv))
-	rpc1 := Handle(packer, h1)
+	var fh FakeHandler
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
+	rpc1 := Handle(packer, &fh)
 
-	ctx := context.Background()
+	errc := make(chan error)
+	done := make(chan struct{})
 
 	go func() {
-		err := rpc1.(Server).Serve(ctx)
-		r.NoError(err, "rcp serve")
+		<-done
+		close(errc)
 	}()
+
+	ctx := context.Background()
+	go serve(ctx, rpc1.(Server), errc, done)
 
 	v, err := rpc1.Async(ctx, "string", Method{"hello"}, "world", "bob")
 	r.NoError(err, "rcp Async call")
-
 	r.Equal(v, "hello, world and bob!", "expected call result")
 
-	r.True(hasConnected, "peer did not call 'connect'")
-	r.False(hasCalled, "peer did call unexpectedly")
+	v, err = rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	r.NoError(err, "rcp shutdown call")
+	r.Equal(v, "ty", "expected call result")
+
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
+	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
 
 	r.NoError(packer.Close())
 }
 
 func TestJSAsyncObject(t *testing.T) {
 	r := require.New(t)
-	logger := log.NewLogfmtLogger(logtest.Logger("TestJSAsyncObject()", t))
 
-	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
-	// TODO: use mock gen
-	var hasConnected, hasCalled bool
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, _ Endpoint) {
-			hasCalled = true
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			hasConnected = true
-		},
-	}
-
-	// TODO: inject logger into Handle and/or packer?
-	packer := NewPacker(debug.Wrap(logger, serv))
-	rpc1 := Handle(packer, h1)
+	var fh FakeHandler
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
+	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
+	errc := make(chan error)
+	done := make(chan struct{})
 
 	go func() {
-		err := rpc1.(Server).Serve(ctx)
-		r.NoError(err, "rcp serve")
+		<-done
+		close(errc)
 	}()
+
+	go serve(ctx, rpc1.(Server), errc, done)
 
 	type resp struct {
 		With string `json:"with"`
@@ -271,42 +275,46 @@ func TestJSAsyncObject(t *testing.T) {
 
 	v, err := rpc1.Async(ctx, resp{}, Method{"object"})
 	r.NoError(err, "rcp Async call")
-
 	r.Equal(v.(resp).With, "fields!", "wrong call response")
 
-	r.True(hasConnected, "peer did not call 'connect'")
-	r.False(hasCalled, "peer did call unexpectedly")
+	v, err = rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	r.NoError(err, "rcp shutdown call")
+	r.Equal(v, "ty", "expected call result")
+
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
+	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
 
 	r.NoError(packer.Close())
 }
 
 func TestJSSource(t *testing.T) {
 	r := require.New(t)
-	logger := log.NewLogfmtLogger(logtest.Logger("TestJSSource()", t))
 
-	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
-	var hasConnected, hasCalled bool
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, _ Endpoint) {
-			hasCalled = true
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			hasConnected = true
-		},
-	}
-
-	packer := NewPacker(debug.Wrap(logger, serv))
-	rpc1 := Handle(packer, h1)
+	var fh FakeHandler
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
+	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
+	errc := make(chan error)
+	done := make(chan struct{})
 
-	srv := rpc1.(Server)
 	go func() {
-		err := srv.Serve(ctx)
-		r.NoError(err, "rcp serve")
+		<-done
+		close(errc)
 	}()
+
+	go serve(ctx, rpc1.(Server), errc, done)
 
 	type obj struct {
 		A int
@@ -327,8 +335,14 @@ func TestJSSource(t *testing.T) {
 	val, err := src.Next(ctx)
 	r.True(luigi.IsEOS(err), "expected EOS but got %+v", val)
 
-	r.NoError(packer.Close())
+	r.NoErrorf(packer.Close(), "%+s %s", "error closing packer")
 
-	r.False(hasCalled)
-	r.True(hasConnected)
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
+	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
 }

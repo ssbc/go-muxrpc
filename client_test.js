@@ -21,6 +21,7 @@ var pull = require('pull-stream')
 var toPull = require('stream-to-pull-stream')
 
 var api = {
+  finalCall: 'async',
   version: 'sync',
   hello: 'async',
   callme: {
@@ -32,6 +33,12 @@ var api = {
 }
 
 var server = MRPC(api, api)({
+  finalCall: function(delay, cb) {
+    setTimeout(() => {
+      server.close()
+    },delay)
+    cb(null, "ty")
+  },
   version: function(some, args, i) {
     console.warn(arguments)
     if (some === "wrong" && i === 42) {

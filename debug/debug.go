@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/hashicorp/go-multierror"
+	"github.com/pkg/errors"
 
 	"go.cryptoscope.co/muxrpc/codec"
 )
@@ -121,11 +122,11 @@ func Wrap(l log.Logger, rwc io.ReadWriteCloser) io.ReadWriteCloser {
 
 			err = multierror.Append(err, lwOut.Close())
 
-			if errIn := <-errChIn; errIn != io.EOF && errIn != nil {
+			if errIn := <-errChIn; errors.Cause(errIn) != io.EOF && errIn != nil {
 				err = multierror.Append(err, errIn)
 			}
 
-			if errOut := <-errChOut; errOut != io.EOF && errOut != nil {
+			if errOut := <-errChOut; errors.Cause(errOut) != io.EOF && errOut != nil {
 				err = multierror.Append(err, errOut)
 			}
 
@@ -134,7 +135,19 @@ func Wrap(l log.Logger, rwc io.ReadWriteCloser) io.ReadWriteCloser {
 			// TODO: make better multierror -.-
 			if merr, ok := err.(*multierror.Error); ok {
 				if merr.Len() == 0 {
-					err = nil
+					return nil
+					/*
+						} else {
+							for _, e := range merr.Errors {
+								if strings.HasSuffix(errors.Cause(e).Error(), "file already closed") {
+									// ignore
+									return nil
+								} else {
+									fmt.Printf("err:%T %#v", e, e)
+									return e
+								}
+							}
+					*/
 				}
 			}
 

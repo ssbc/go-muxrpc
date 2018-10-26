@@ -3,7 +3,9 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -37,14 +39,6 @@ type rpc struct {
 	tLock      sync.Mutex
 }
 
-// Handler allows handling connections.
-// When a connection is established, HandleConnect is called.
-// When we are being called, HandleCall is called.
-type Handler interface {
-	HandleCall(ctx context.Context, req *Request, edp Endpoint)
-	HandleConnect(ctx context.Context, edp Endpoint)
-}
-
 const bufSize = 5
 
 // Handle handles the connection of the packer using the specified handler.
@@ -74,7 +68,10 @@ func handle(pkr Packer, handler Handler, remote net.Addr) Endpoint {
 		root:   handler,
 	}
 
-	go handler.HandleConnect(context.Background(), r)
+	go func() {
+		handler.HandleConnect(context.TODO(), r)
+	}()
+
 	return r
 }
 
@@ -84,7 +81,7 @@ func (r *rpc) Async(ctx context.Context, tipe interface{}, method Method, args .
 
 	req := &Request{
 		Type:   "async",
-		Stream: NewStream(inSrc, r.pkr, 0, false, false),
+		Stream: newStream(inSrc, r.pkr, 0, streamCapOnce, streamCapNone),
 		in:     inSink,
 
 		Method: method,
@@ -108,7 +105,7 @@ func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args 
 
 	req := &Request{
 		Type:   "source",
-		Stream: NewStream(inSrc, r.pkr, 0, true, false),
+		Stream: newStream(inSrc, r.pkr, 0, streamCapMultiple, streamCapNone),
 		in:     inSink,
 
 		Method: method,
@@ -131,7 +128,7 @@ func (r *rpc) Sink(ctx context.Context, method Method, args ...interface{}) (lui
 
 	req := &Request{
 		Type:   "sink",
-		Stream: NewStream(inSrc, r.pkr, 0, false, true),
+		Stream: newStream(inSrc, r.pkr, 0, streamCapNone, streamCapMultiple),
 		in:     inSink,
 
 		Method: method,
@@ -152,7 +149,7 @@ func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args 
 
 	req := &Request{
 		Type:   "duplex",
-		Stream: NewStream(inSrc, r.pkr, 0, true, true),
+		Stream: newStream(inSrc, r.pkr, 0, streamCapMultiple, streamCapMultiple),
 		in:     inSink,
 
 		Method: method,
@@ -206,8 +203,8 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 
 		pkt.Body, err = json.Marshal(req)
 
-		pkt.Req = r.highest + 1
-		r.highest = pkt.Req
+		r.highest++
+		pkt.Req = r.highest
 		r.reqs[pkt.Req] = req
 		req.Stream.WithReq(pkt.Req)
 		req.Stream.WithType(req.tipe)
@@ -242,20 +239,29 @@ func (r *rpc) ParseRequest(pkt *codec.Packet) (*Request, error) {
 
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
-	var inStream, outStream bool
+	var inStream, outStream streamCapability
 	if pkt.Flag.Get(codec.FlagStream) {
 		switch req.Type {
 		case "duplex":
-			inStream, outStream = true, true
+			inStream, outStream = streamCapMultiple, streamCapMultiple
 		case "source":
-			inStream, outStream = false, true
+			inStream, outStream = streamCapNone, streamCapMultiple
 		case "sink":
-			inStream, outStream = true, false
+			inStream, outStream = streamCapMultiple, streamCapNone
 		default:
 			return nil, errors.Errorf("unhandled request type: %q", req.Type)
 		}
+	} else {
+		if req.Type == "" {
+			req.Type = "async"
+		}
+		if req.Type != "async" {
+			return nil, errors.Errorf("unhandled request type: %q", req.Type)
+		}
+		inStream, outStream = streamCapNone, streamCapOnce
+
 	}
-	req.Stream = NewStream(inSrc, r.pkr, pkt.Req, inStream, outStream)
+	req.Stream = newStream(inSrc, r.pkr, pkt.Req, inStream, outStream)
 	req.in = inSink
 
 	return &req, nil
@@ -291,6 +297,7 @@ func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bo
 	return req, !ok, nil
 }
 
+// Server can handle packets to and from a remote party
 type Server interface {
 	Remote() net.Addr
 	Serve(context.Context) error
@@ -298,7 +305,16 @@ type Server interface {
 
 // Serve handles the RPC session
 func (r *rpc) Serve(ctx context.Context) (err error) {
-	defer r.pkr.Close()
+	var shutdown bool
+	defer func() {
+		if shutdown {
+			return
+		}
+		cerr := r.pkr.Close()
+		if err != nil {
+			log.Printf("muxrpc: Serve closed.\nHandle Err: %+v\nPacker Close Err: %+v", err, cerr)
+		}
+	}()
 
 	for {
 		var vpkt interface{}
@@ -306,14 +322,14 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		// read next packet from connection
 		doRet := func() bool {
 			vpkt, err = r.pkr.Next(ctx)
-
-			r.tLock.Lock()
-			defer r.tLock.Unlock()
-
 			if luigi.IsEOS(err) {
 				err = nil
 				return true
 			}
+
+			r.tLock.Lock()
+			defer r.tLock.Unlock()
+
 			if err != nil {
 				if r.terminated {
 					err = nil
@@ -326,11 +342,27 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			return false
 		}()
 		if doRet {
-			return err
+			cerr := r.pkr.Close()
+			if cerr != nil {
+				log.Printf("muxrpc: Packer Close Err: %+v", cerr)
+			}
+			r.rLock.Lock()
+			defer r.rLock.Unlock()
+			if n := len(r.reqs); n > 0 {
+				log.Println("muxrpc: serve loop returning - closing open reqs:", n)
+				for _, req := range r.reqs {
+					unexpected := errors.Errorf("muxrpc: unexpected end of session")
+					req.Stream.CloseWithError(unexpected)
+				}
+			}
+			shutdown = true
+			return
 		}
 
 		pkt := vpkt.(*codec.Packet)
 
+		// error handling and cleanup
+		var req *Request
 		if pkt.Flag.Get(codec.FlagEndErr) {
 			getReq := func(req int32) (*Request, bool) {
 				r.rLock.Lock()
@@ -340,69 +372,88 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 				return r, ok
 			}
 
-			if req, ok := getReq(pkt.Req); ok {
-				err := func() error {
-					r.rLock.Lock()
-					defer r.rLock.Unlock()
+			var ok bool
+			if req, ok = getReq(pkt.Req); ok {
 
-					if isTrue(pkt.Body) {
-						err = req.in.Close()
-						if err != nil {
-							return errors.Wrap(err, "error closing pipe sink")
-						}
+				var streamErr error
 
-						err = req.Stream.Close()
-						if err != nil {
-							return errors.Wrap(err, "error closing stream")
-						}
-					} else {
-						e, err := parseError(pkt.Body)
-						if err != nil {
-							return errors.Wrap(err, "error parsing error packet")
-						}
-
-						err = req.in.(luigi.ErrorCloser).CloseWithError(e)
-						if err != nil {
-							return errors.Wrap(err, "error closing pipe sink with error")
-						}
+				if !isTrue(pkt.Body) {
+					streamErr, err = parseError(pkt.Body)
+					if err != nil {
+						return errors.Wrap(err, "error parsing error packet")
 					}
-
-					delete(r.reqs, pkt.Req)
-					return nil
-				}()
-				if err != nil {
-					return err
 				}
-
-				continue
+				go func() {
+					err := r.closeStream(req, streamErr)
+					if err != nil {
+						log.Println(errors.Wrapf(err, "muxrpc: failed to handle pkt of stream %d", pkt.Req))
+					}
+				}()
+			} else {
+				log.Printf("warning: unhandled packet for request %d", pkt.Req)
 			}
+			continue
 		}
 
-		req, isNew, err := r.fetchRequest(ctx, pkt)
+		var isNew bool
+		req, isNew, err = r.fetchRequest(ctx, pkt)
 		if err != nil {
-			return errors.Wrap(err, "error getting request")
+			err = errors.Wrap(err, "muxrpc: error getting request")
+			return
 		}
 		if isNew {
 			continue
 		}
 
-		// localize defer
-		err = func() error {
-
-			err := req.in.Pour(ctx, pkt)
-			return errors.Wrap(err, "error pouring data to handler")
-		}()
-
+		err = req.in.Pour(ctx, pkt)
 		if err != nil {
-			return err
+			err = errors.Wrap(err, "muxrpc: error pouring data to handler")
+			return
 		}
 	}
+}
+
+func (r *rpc) closeStream(req *Request, streamErr error) error {
+	var err error
+
+	if streamErr == nil {
+		err = req.in.Close()
+		if err != nil {
+			return errors.Wrap(err, "error closing pipe sink")
+		}
+	} else {
+		err = req.in.(luigi.ErrorCloser).CloseWithError(streamErr)
+		if err != nil {
+			return errors.Wrap(err, "error closing pipe sink with error")
+		}
+	}
+
+	err = req.Stream.Close()
+	if err != nil {
+		ec := errors.Cause(err)
+		switch {
+		case strings.Contains(ec.Error(), "closed pipe"):
+			// log.Println("this is fine - closed os pipe")
+		case ec == errSinkClosed:
+			// log.Println("this is fine - closed sink")
+		case ec == ErrStreamNotClosable:
+			// log.Println("this is fine - stream not closable")
+		default:
+			log.Println(errors.Wrapf(err, "muxrpc: error closing stream(%d) %v", req.pkt.Req, req.Method))
+		}
+	}
+
+	r.rLock.Lock()
+	defer r.rLock.Unlock()
+	delete(r.reqs, req.pkt.Req)
+	return nil
 }
 
 func (r *rpc) Remote() net.Addr {
 	return r.remote
 }
 
+// CallError is returned when a call fails
 type CallError struct {
 	Name    string `json:"name"`
 	Message string `json:"message"`

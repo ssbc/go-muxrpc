@@ -1,16 +1,29 @@
 language: go
 
-go:
-  - "1.x"
-  - "1.9.x"
-  - "1.10.x"
-  - master
-
+# bummer.. go.mod still fetches the code to it's cache even if vendor/ is filled
+# https://arslan.io/2018/08/26/using-go-modules-with-vendor-support-on-travis-ci/
 matrix:
   allow_failures:
     - go: master
+  include:
+  - go: "1.10.x"
+    script: go test -tags interop_nodejs -count 100 -race ./...
+  - go: "1.11.x"
+    script: go test -tags interop_nodejs -count 100 -race -mod=vendor ./...
+  - go: "1.x"
+    script: go test -tags interop_nodejs -count 100 -race -mod=vendor ./...
+  - go: "master"
+    script: go test -tags interop_nodejs -count 100 -race -mod=vendor ./...
+
+env:
+  - GO111MODULE=on
 
 go_import_path: go.cryptoscope.co/muxrpc
 
-install:
-  - go get -t -v go.cryptoscope.co/muxrpc/...
+# we use 'go mod vendor' to populate vendor/ dir
+# no need to fetch anything
+install: true
+
+before_script: # install interop deps
+  - nvm install --lts
+  - npm ci
