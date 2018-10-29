@@ -82,13 +82,15 @@ func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
 	}
 
 	err := pkr.w.WritePacket(pkt)
-	select {
-	case <-pkr.closing:
-		return nil
-	default:
-		return err
+	if err != nil {
+		select {
+		case <-pkr.closing:
+			return errors.New("pour to closed sink")
+		default:
+		}
 	}
 
+	return errors.Wrap(err, "error writing packet")
 }
 
 // Close closes the packer.
