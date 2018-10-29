@@ -57,6 +57,10 @@ func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 	}
 
 	if errors.Cause(err) == io.EOF {
+		if err = pkr.Close(); err != nil {
+			return nil, errors.Wrap(err, "error closing connection after reading EOF")
+		}
+
 		return nil, luigi.EOS{}
 	} else if err != nil {
 		return nil, errors.Wrap(err, "error reading packet")
@@ -96,5 +100,5 @@ func (pkr *packer) Close() error {
 		err = pkr.c.Close()
 	})
 
-	return err
+	return errors.Wrap(err, "error closing underlying closer")
 }
