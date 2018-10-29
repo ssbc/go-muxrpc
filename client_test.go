@@ -327,7 +327,7 @@ func TestJSSource(t *testing.T) {
 	val, err := src.Next(ctx)
 	r.True(luigi.IsEOS(err), "expected EOS but got %+v", val)
 
-	r.NoError(packer.Close())
+	r.NoErrorf(packer.Close(), "%+s %s", "error closing packer")
 
 	r.False(hasCalled)
 	r.True(hasConnected)
