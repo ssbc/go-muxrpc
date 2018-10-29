@@ -71,9 +71,6 @@ func (str *stream) WithReq(req int32) {
 
 // Next returns the next incoming value on the stream
 func (str *stream) Next(ctx context.Context) (interface{}, error) {
-	str.l.Lock()
-	defer str.l.Unlock()
-
 	// cancellation
 	ctx, cancel := withCloseCtx(ctx)
 	defer cancel()
