@@ -66,7 +66,28 @@ func HandleWithRemote(pkr Packer, handler Handler, addr net.Addr) Endpoint {
 	return handle(pkr, handler, addr)
 }
 
+func newPackerContext(pkr Packer) (Packer, context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &contextPacker{pkr, cancel}, ctx, cancel
+}
+
+type contextPacker struct {
+	Packer
+	cancel context.CancelFunc
+}
+
+func (pctx *contextPacker) Next(ctx context.Context) (interface{}, error) {
+	v, err := pctx.Packer.Next(ctx)
+	if err != nil {
+		pctx.cancel()
+	}
+
+	return v, err
+}
+
 func handle(pkr Packer, handler Handler, remote net.Addr) Endpoint {
+	pkr, ctx, cancel := newPackerContext(pkr)
+
 	r := &rpc{
 		remote: remote,
 		pkr:    pkr,
@@ -74,7 +95,11 @@ func handle(pkr Packer, handler Handler, remote net.Addr) Endpoint {
 		root:   handler,
 	}
 
-	go handler.HandleConnect(context.Background(), r)
+	go func() {
+		handler.HandleConnect(ctx, r)
+		cancel()
+	}()
+
 	return r
 }
 
