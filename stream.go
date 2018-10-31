@@ -84,6 +84,8 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 
 	vpkt, err := str.pktSrc.Next(ctx)
 	if err != nil {
+		str.Close()
+
 		if luigi.IsEOS(err) {
 			return nil, err
 		}
