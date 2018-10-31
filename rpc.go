@@ -85,6 +85,10 @@ func (pctx *contextPacker) Next(ctx context.Context) (interface{}, error) {
 	return v, err
 }
 
+func (pctx *contextPacker) Close() error {
+	pctx.cancel()
+	return pctx.Packer.Close()
+}
 func handle(pkr Packer, handler Handler, remote net.Addr) Endpoint {
 	pkr, ctx, cancel := newPackerContext(pkr)
 
