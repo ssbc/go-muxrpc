@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"sync"
+	"time"
 
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
@@ -71,6 +72,13 @@ func (str *stream) WithReq(req int32) {
 
 // Next returns the next incoming value on the stream
 func (str *stream) Next(ctx context.Context) (interface{}, error) {
+	// TODO: for some reason the streams are not getting closed when a
+	// connection closes, and thus the context returned by withCloseCtx
+	// is not cancelled.  As a temporary fix we cancel after five
+	// minutes of inactivity.
+	ctx, cancel_ := context.WithTimeout(ctx, 5 * time.Minute)
+	defer cancel_()
+
 	// cancellation
 	ctx, cancel := withCloseCtx(ctx)
 	defer cancel()
