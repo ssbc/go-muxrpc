@@ -2,11 +2,11 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
 )
 
@@ -22,71 +22,47 @@ func TestBothwaysAsync(t *testing.T) {
 	term1 := make(chan struct{})
 	term2 := make(chan struct{})
 
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Printf("h1 called %+v\n", req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
-				err := req.Return(ctx, "you are a test")
-				if err != nil {
-					fmt.Printf("return errored with %+v\n", err)
-					t.Errorf("%+v", err)
-				}
-			}
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h1 connected")
-			close(conn1)
-		},
-	}
+	var fh1 FakeHandler
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("h1 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+			err := req.Return(ctx, "you are a test")
+			ckFatal(err)
+		}
+	})
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1) // I think this _should_ terminate e?
+	})
 
-	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Printf("h2 called %+v\n", req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
-				err := req.Return(ctx, "you are a test")
-				if err != nil {
-					fmt.Printf("return errored with %+v\n", err)
-					t.Errorf("%+v", err)
-				}
-			}
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h2 connected")
-			close(conn2)
-		},
-	}
+	var fh2 FakeHandler
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("h2 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+			err := req.Return(ctx, "you are a test")
+			ckFatal(err)
+		}
+	})
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
 
-	rpc1 := Handle(NewPacker(c1), h1)
-	rpc2 := Handle(NewPacker(c2), h2)
+	rpc1 := Handle(NewPacker(c1), &fh1)
+	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
 
-	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc1: %+v\n", err)
-			t.Error(err)
-		}
-		close(serve1)
-	}()
-
-	go func() {
-		err := rpc2.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc2: %+v\n", err)
-			t.Error(err)
-		}
-		close(serve2)
-	}()
+	go serve(ctx, rpc1.(Server), serve1)
+	go serve(ctx, rpc2.(Server), serve2)
 
 	go func() {
 		v, err := rpc1.Async(ctx, "string", Method{"whoami"})
-		if err != nil {
-			t.Fatal(err)
-		}
+		ckFatal(err)
 
 		if v != "you are a test" {
-			t.Errorf("unexpected response message %q", v)
+			err = errors.Errorf("unexpected response message %q", v)
+			ckFatal(err)
 		}
 
 		t.Log("return of rpc1.whoami/async:", v)
@@ -95,18 +71,18 @@ func TestBothwaysAsync(t *testing.T) {
 
 		close(call1)
 		<-call2
-		rpc1.Terminate()
+		err = rpc1.Terminate()
+		ckFatal(err)
 		close(term1)
 	}()
 
 	go func() {
 		v, err := rpc2.Async(ctx, "string", Method{"whoami"})
-		if err != nil {
-			t.Fatal(err)
-		}
+		ckFatal(err)
 
 		if v != "you are a test" {
-			t.Errorf("unexpected response message %q", v)
+			err = errors.Errorf("unexpected response message %q", v)
+			ckFatal(err)
 		}
 
 		t.Log("return of rpc2.whoami/async:", v)
@@ -115,29 +91,30 @@ func TestBothwaysAsync(t *testing.T) {
 
 		close(call2)
 		<-call1
-		rpc2.Terminate()
+		err = rpc2.Terminate()
+		ckFatal(err)
 		close(term2)
 	}()
 
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil && term1 != nil || term2 != nil {
 		select {
 		case <-conn1:
-			fmt.Println("conn1 closed")
+			t.Log("conn1 closed")
 			conn1 = nil
 		case <-conn2:
-			fmt.Println("conn2 closed")
+			t.Log("conn2 closed")
 			conn2 = nil
 		case <-serve1:
-			fmt.Println("serve1 closed")
+			t.Log("serve1 closed")
 			serve1 = nil
 		case <-serve2:
-			fmt.Println("serve2 closed")
+			t.Log("serve2 closed")
 			serve2 = nil
 		case <-term1:
-			fmt.Println("term1 closed")
+			t.Log("term1 closed")
 			term1 = nil
 		case <-term2:
-			fmt.Println("term2 closed")
+			t.Log("term2 closed")
 			term2 = nil
 		}
 	}
@@ -164,124 +141,104 @@ func TestBohwaysSource(t *testing.T) {
 	term1 := make(chan struct{})
 	term2 := make(chan struct{})
 
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
+	var fh1 FakeHandler
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 
-			fmt.Printf("h2 called %+v\n", req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
-				for _, v := range expRx {
-					err := req.Stream.Pour(ctx, v)
-					if err != nil {
-						fmt.Printf("pour errored with %+v\n", err)
-						t.Error(err)
-					}
-				}
-
-				err := req.Stream.Close()
+		t.Logf("h2 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+			for _, v := range expRx {
+				err := req.Stream.Pour(ctx, v)
 				if err != nil {
-					fmt.Printf("end pour errored with %+v\n", err)
+					t.Logf("pour errored with %+v\n", err)
 					t.Error(err)
 				}
-
 			}
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h1 connected")
-			close(conn1)
-		},
-	}
 
-	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Printf("h2 called %+v\n", req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
-				for _, v := range expRx {
-					err := req.Stream.Pour(ctx, v)
-					if err != nil {
-						fmt.Printf("pour errored with %+v\n", err)
-						t.Error(err)
-					}
-				}
-
-				err := req.Stream.Close()
-				if err != nil {
-					fmt.Printf("end pour errored with %+v\n", err)
-					t.Error(err)
-				}
-
-			}
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h2 connected")
-			close(conn2)
-		},
-	}
-
-	rpc1 := Handle(NewPacker(c1), h1)
-	rpc2 := Handle(NewPacker(c2), h2)
-
-	ctx := context.Background()
-
-	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc1: %+v\n", err)
-			t.Error(err)
-		}
-		close(serve1)
-	}()
-
-	go func() {
-		err := rpc2.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc2: %+v\n", err)
-			t.Error(err)
-		}
-		close(serve2)
-	}()
-
-	go func() {
-		src, err := rpc1.Source(ctx, "strings", Method{"whoami"})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		for _, exp := range expRx {
-			v, err := src.Next(ctx)
+			err := req.Stream.Close()
 			if err != nil {
+				t.Logf("end pour errored with %+v\n", err)
 				t.Error(err)
 			}
 
+		}
+	})
+
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1) // I think this _should_ terminate e?
+	})
+
+	var fh2 FakeHandler
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("h2 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+			for _, v := range expRx {
+				err := req.Stream.Pour(ctx, v)
+				if err != nil {
+					t.Logf("pour errored with %+v\n", err)
+					t.Error(err)
+				}
+			}
+
+			err := req.Stream.Close()
+			if err != nil {
+				t.Logf("end pour errored with %+v\n", err)
+				t.Error(err)
+			}
+
+		}
+	})
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
+
+	rpc1 := Handle(NewPacker(c1), &fh1)
+	rpc2 := Handle(NewPacker(c2), &fh2)
+
+	ctx := context.Background()
+
+	go serve(ctx, rpc1.(Server), serve1)
+	go serve(ctx, rpc2.(Server), serve2)
+
+	go func() {
+		src, err := rpc1.Source(ctx, "strings", Method{"whoami"})
+		ckFatal(err)
+
+		for _, exp := range expRx {
+			v, err := src.Next(ctx)
+			ckFatal(err)
+
 			if v != exp {
-				t.Errorf("unexpected response message %q, expected %v", v, exp)
+				err = errors.Errorf("unexpected response message %q, expected %v", v, exp)
+				ckFatal(err)
 			}
 		}
 
 		val, err := src.Next(ctx)
 		if !luigi.IsEOS(err) {
-			t.Errorf("expected end of stream, got value %v and error %+v", val, err)
+			err = errors.Errorf("expected end of stream, got value %v and error %+v", val, err)
+			ckFatal(err)
 		}
 
 		close(call1)
 		<-call2
-		rpc1.Terminate()
+		err = rpc1.Terminate()
+		ckFatal(err)
 		close(term1)
 	}()
 
 	go func() {
 		src, err := rpc2.Source(ctx, "strings", Method{"whoami"})
-		if err != nil {
-			t.Fatal(err)
-		}
+		ckFatal(err)
 
 		for _, exp := range expRx {
 			v, err := src.Next(ctx)
-			if err != nil {
-				t.Error(err)
-			}
+			ckFatal(err)
 
 			if v != exp {
-				t.Errorf("unexpected response message %q, expected %v", v, exp)
+				err = errors.Errorf("unexpected response message %q, expected %v", v, exp)
+				ckFatal(err)
 			}
 		}
 
@@ -292,30 +249,31 @@ func TestBohwaysSource(t *testing.T) {
 
 		close(call2)
 		<-call1
-		rpc2.Terminate()
+		err = rpc2.Terminate()
+		ckFatal(err)
 		close(term2)
 	}()
 
-	fmt.Println("waiting for everything to shut down")
+	t.Log("waiting for everything to shut down")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil && term1 != nil || term2 != nil {
 		select {
 		case <-conn1:
-			fmt.Println("conn1 closed")
+			t.Log("conn1 closed")
 			conn1 = nil
 		case <-conn2:
-			fmt.Println("conn2 closed")
+			t.Log("conn2 closed")
 			conn2 = nil
 		case <-serve1:
-			fmt.Println("serve1 closed")
+			t.Log("serve1 closed")
 			serve1 = nil
 		case <-serve2:
-			fmt.Println("serve2 closed")
+			t.Log("serve2 closed")
 			serve2 = nil
 		case <-term1:
-			fmt.Println("term1 closed")
+			t.Log("term1 closed")
 			term1 = nil
 		case <-term2:
-			fmt.Println("term2 closed")
+			t.Log("term2 closed")
 			term2 = nil
 		}
 	}
@@ -343,16 +301,16 @@ func TestBothwaysSink(t *testing.T) {
 
 	handler := func(name string) func(context.Context, *Request, Endpoint) {
 		return func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Printf("%s called %+v\n", name, req)
+			t.Logf("%s called %+v\n", name, req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for i, exp := range expRx {
-					fmt.Println("calling Next()", i)
+					t.Log("calling Next()", i)
 					v, err := req.Stream.Next(ctx)
 					if err != nil {
-						fmt.Printf("next errored with %+v\n", err)
+						t.Logf("next errored with %+v\n", err)
 						t.Error(err)
 					}
-					fmt.Println("Next()", i, "returned", v)
+					t.Log("Next()", i, "returned", v)
 
 					if v != exp {
 						t.Errorf("expected value %v, got %v", exp, v)
@@ -361,7 +319,7 @@ func TestBothwaysSink(t *testing.T) {
 
 				err := req.Stream.Close()
 				if err != nil {
-					fmt.Printf("end pour errored with %+v\n", err)
+					t.Logf("end pour errored with %+v\n", err)
 					t.Error(err)
 				}
 
@@ -369,31 +327,29 @@ func TestBothwaysSink(t *testing.T) {
 		}
 	}
 
-	h1 := &testHandler{
-		call: handler("h1"),
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h1 connected")
-			close(conn1)
-		},
-	}
+	var fh1 FakeHandler
+	fh1.HandleCallCalls(handler("h1"))
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1)
+	})
 
-	h2 := &testHandler{
-		call: handler("h2"),
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h2 connected")
-			close(conn2)
-		},
-	}
+	var fh2 FakeHandler
+	fh2.HandleCallCalls(handler("h2"))
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
 
-	rpc1 := Handle(NewPacker(c1), h1)
-	rpc2 := Handle(NewPacker(c2), h2)
+	rpc1 := Handle(NewPacker(c1), &fh1)
+	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
 
 	go func() {
 		err := rpc1.(*rpc).Serve(ctx)
 		if err != nil {
-			fmt.Printf("rpc1: %+v\n", err)
+			t.Logf("rpc1: %+v\n", err)
 			t.Error(err)
 		}
 
@@ -403,7 +359,7 @@ func TestBothwaysSink(t *testing.T) {
 	go func() {
 		err := rpc2.(*rpc).Serve(ctx)
 		if err != nil {
-			fmt.Printf("rpc2: %+v\n", err)
+			t.Logf("rpc2: %+v\n", err)
 			t.Error(err)
 		}
 		close(serve2)
@@ -411,72 +367,62 @@ func TestBothwaysSink(t *testing.T) {
 
 	go func() {
 		sink, err := rpc1.Sink(ctx, Method{"whoami"})
-		if err != nil {
-			t.Fatal(err)
-		}
+		ckFatal(err)
 
 		for _, v := range expRx {
 			err := sink.Pour(ctx, v)
-			if err != nil {
-				t.Error(err)
-			}
+			ckFatal(err)
 		}
 
 		err = sink.Close()
-		if err != nil {
-			t.Errorf("error closing stream: %+v", err)
-		}
+		ckFatal(err)
 
 		close(call1)
 		<-call2
-		rpc1.Terminate()
+		err = rpc1.Terminate()
+		ckFatal(err)
 		close(term1)
 	}()
 
 	go func() {
 		sink, err := rpc2.Sink(ctx, Method{"whoami"})
-		if err != nil {
-			t.Fatal(err)
-		}
+		ckFatal(err)
 
 		for _, v := range expRx {
 			err := sink.Pour(ctx, v)
-			if err != nil {
-				t.Error(err)
-			}
+			ckFatal(err)
 		}
 
 		err = sink.Close()
-		if err != nil {
-			t.Errorf("error closing stream: %+v", err)
-		}
+		ckFatal(err)
 
 		close(call2)
 		<-call1
-		rpc2.Terminate()
+		err = rpc2.Terminate()
+		ckFatal(err)
 		close(term2)
 	}()
 
-	fmt.Println("waiting for everything to shut down")
+	t.Log("waiting for everything to shut down")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil || term1 != nil || term2 != nil {
 		select {
 		case <-conn1:
-			fmt.Println("conn1 closed")
+			t.Log("conn1 closed")
 			conn1 = nil
 		case <-conn2:
-			fmt.Println("conn2 closed")
+			t.Log("conn2 closed")
 			conn2 = nil
 		case <-serve1:
-			fmt.Println("serve1 closed")
+			t.Log("serve1 closed")
 			serve1 = nil
 		case <-serve2:
-			fmt.Println("serve2 closed")
+			t.Log("serve2 closed")
 			serve2 = nil
 		case <-term1:
-			fmt.Println("term1 closed")
+			t.Log("term1 closed")
 			term1 = nil
 		case <-term2:
-			fmt.Println("term2 closed")
+			t.Log("term2 closed")
 			term2 = nil
 		}
 	}
@@ -506,138 +452,97 @@ func TestBothwayDuplex(t *testing.T) {
 
 	handler := func(name string) func(context.Context, *Request, Endpoint) {
 		return func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Printf("%s called %+v\n", name, req)
+			t.Logf("%s called %+v\n", name, req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for _, exp := range expRx {
 					v, err := req.Stream.Next(ctx)
-					if err != nil {
-						fmt.Printf("pour errored with %+v\n", err)
-						t.Error(err)
-					}
-
+					ckFatal(err)
 					if v != exp {
-						t.Errorf("expected value %v, got %v", exp, v)
+						err = errors.Errorf("expected value %v, got %v", exp, v)
+						ckFatal(err)
 					}
 				}
-
 				for _, v := range expTx {
 					err := req.Stream.Pour(ctx, v)
-					if err != nil {
-						fmt.Printf("pour errored with %+v\n", err)
-						t.Error(err)
-					}
+					ckFatal(err)
 				}
-
 				err := req.Stream.Close()
-				if err != nil {
-					fmt.Printf("end pour errored with %+v\n", err)
-					t.Error(err)
-				}
-
+				ckFatal(err)
 			}
 		}
 	}
 
-	h1 := &testHandler{
-		call: handler("h1"),
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h1 connected")
-			close(conn1)
-		},
-	}
+	var fh1 FakeHandler
+	fh1.HandleCallCalls(handler("h1"))
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1)
+	})
 
-	h2 := &testHandler{
-		call: handler("h2"),
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h2 connected")
-			close(conn2)
-		},
-	}
+	var fh2 FakeHandler
+	fh2.HandleCallCalls(handler("h2"))
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
 
-	rpc1 := Handle(NewPacker(c1), h1)
-	rpc2 := Handle(NewPacker(c2), h2)
+	rpc1 := Handle(NewPacker(c1), &fh1)
+	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
 
-	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc1: %+v\n", err)
-			t.Error(err)
-		}
-	}()
-
-	go func() {
-		err := rpc2.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc2: %+v\n", err)
-			t.Error(err)
-		}
-	}()
+	go serve(ctx, rpc1.(Server))
+	go serve(ctx, rpc2.(Server))
 
 	wait1 := make(chan struct{})
 	wait2 := make(chan struct{})
 
 	go func() {
 		src, sink, err := rpc1.Duplex(ctx, "str", Method{"whoami"})
-		if err != nil {
-			t.Fatal(err)
-		}
+		ckFatal(err)
 
 		for _, v := range expRx {
 			err := sink.Pour(ctx, v)
-			if err != nil {
-				t.Error(err)
-			}
+			ckFatal(err)
 		}
 
 		for _, exp := range expTx {
 			v, err := src.Next(ctx)
-			if err != nil {
-				t.Error(err)
-			}
+			ckFatal(err)
 
 			if v != exp {
-				t.Errorf("expected %v, got %v", exp, v)
+				err = errors.Errorf("expected %v, got %v", exp, v)
+				ckFatal(err)
 			}
 		}
 
 		err = sink.Close()
-		if err != nil {
-			t.Errorf("error closing stream: %+v", err)
-		}
+		ckFatal(err)
 
 		close(wait1)
 	}()
 
 	go func() {
 		src, sink, err := rpc2.Duplex(ctx, "str", Method{"whoami"})
-		if err != nil {
-			t.Fatal(err)
-		}
+		ckFatal(err)
 
 		for _, v := range expRx {
 			err := sink.Pour(ctx, v)
-			if err != nil {
-				t.Error(err)
-			}
+			ckFatal(err)
 		}
 
 		for _, exp := range expTx {
 			v, err := src.Next(ctx)
-			if err != nil {
-				t.Error(err)
-			}
+			ckFatal(err)
 
 			if v != exp {
-				t.Errorf("expected %v, got %v", exp, v)
+				err = errors.Errorf("expected %v, got %v", exp, v)
+				ckFatal(err)
 			}
 		}
 
 		err = sink.Close()
-		if err != nil {
-			t.Errorf("error closing stream: %+v", err)
-		}
+		ckFatal(err)
 
 		close(wait2)
 	}()

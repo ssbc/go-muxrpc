@@ -94,15 +94,15 @@ func TestStream_1(t *testing.T) {
 
 	v, err := oSrc.Next(ctx)
 	r.NoError(err, "error reading packet from oSrc")
-	r.Equal("foo", string(v.(*codec.Packet).Body), "wrong value")
+	r.Equal("foo", string(v.(*codec.Packet).Body), "wrong value: %+v", v.(*codec.Packet))
 
 	v, err = oSrc.Next(ctx)
 	r.NoError(err, "error reading packet from oSrc")
-	r.Equal("bar", string(v.(*codec.Packet).Body), "wrong value")
+	r.Equal("bar", string(v.(*codec.Packet).Body), "wrong value: %+v", v.(*codec.Packet))
 
 	v, err = oSrc.Next(ctx)
 	r.NoError(err, "error reading packet from oSrc")
-	r.Equal("baz", string(v.(*codec.Packet).Body), "wrong value")
+	r.Equal("baz", string(v.(*codec.Packet).Body), "wrong value: %+v", v.(*codec.Packet))
 
 	v, err = oSrc.Next(ctx)
 	r.NoError(err, "error reading packet from oSrc")

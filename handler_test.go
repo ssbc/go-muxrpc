@@ -26,18 +26,18 @@ func TestHandlerMux(t *testing.T) {
 		Stream: NewStream(nil, sink2, 2, true, true),
 	}
 
-	handler := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			r.Equal(exp.Method.String(), req.Method.String(), "Method doesn't match")
-			req.Stream.Close()
-			close(call)
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			close(connect)
-		},
-	}
+	var fh FakeHandler
+	fh.HandleCallCalls(func(ctx context.Context, req *Request, edp Endpoint) {
+		r.Equal(exp.Method.String(), req.Method.String(), "Method doesn't match")
+		req.Stream.Close()
+		close(call)
+	})
+	fh.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h connected")
+		close(connect)
+	})
 
-	mux.Register(Method{"foo", "bar"}, handler)
+	mux.Register(Method{"foo", "bar"}, &fh)
 
 	go func() {
 		mux.HandleCall(context.TODO(), exp, nil)

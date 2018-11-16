@@ -4,120 +4,102 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"runtime/debug"
 	"testing"
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/luigi/mfr"
 
 	"go.cryptoscope.co/muxrpc/codec"
 )
 
-type testHandler struct {
-	call    func(context.Context, *Request, Endpoint)
-	connect func(context.Context, Endpoint)
+// for some reason you can't use t.Fatal // t.Error in goroutines... :-/
+func serve(ctx context.Context, r Server, closers ...chan<- struct{}) {
+	err := r.Serve(ctx)
+	ckFatal(err)
+	if len(closers) > 0 {
+		c := closers[0]
+		close(c)
+	}
 }
 
-func (h *testHandler) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
-	h.call(ctx, req, edp)
-}
-
-func (h *testHandler) HandleConnect(ctx context.Context, edp Endpoint) {
-	h.connect(ctx, edp)
+func ckFatal(err error) {
+	if err != nil {
+		fmt.Println("ckFatal err:", err)
+		debug.PrintStack()
+		os.Exit(2)
+	}
 }
 
 func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 	return func(t *testing.T) {
+		r := require.New(t)
 
 		conn2 := make(chan struct{})
 		conn1 := make(chan struct{})
 		serve1 := make(chan struct{})
 		serve2 := make(chan struct{})
 
-		h1 := &testHandler{
-			call: func(ctx context.Context, req *Request, edp Endpoint) {
-				fmt.Println("h1 called")
-				t.Errorf("unexpected call to rpc1: %#v", req)
-			},
-			connect: func(ctx context.Context, e Endpoint) {
-				fmt.Println("h1 connected")
-				close(conn1)
-			},
-		}
+		var fh1 FakeHandler
+		fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+			t.Log("h1 connected")
+			close(conn1) // I think this _should_ terminate e?
+		})
 
-		h2 := &testHandler{
-			call: func(ctx context.Context, req *Request, edp Endpoint) {
-				fmt.Printf("h2 called %+v\n", req)
-				if len(req.Method) == 1 && req.Method[0] == "whoami" {
-					err := req.Return(ctx, "you are a test")
-					if err != nil {
-						fmt.Printf("return errored with %+v\n", err)
-						t.Error(err)
-					}
-				}
-			},
-			connect: func(ctx context.Context, e Endpoint) {
-				fmt.Println("h2 connected")
-				close(conn2)
-			},
-		}
+		var fh2 FakeHandler
+		fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+			t.Logf("h2 called %+v\n", req)
+			if len(req.Method) == 1 && req.Method[0] == "whoami" {
+				err := req.Return(ctx, "you are a test")
+				ckFatal(errors.Wrap(err, "return errored"))
+			}
+		})
 
-		rpc1 := Handle(pkr1, h1)
-		rpc2 := Handle(pkr2, h2)
+		fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+			t.Log("h2 connected")
+			close(conn2)
+		})
+
+		rpc1 := Handle(pkr1, &fh1)
+		rpc2 := Handle(pkr2, &fh2)
 
 		ctx := context.Background()
 
-		go func() {
-			err := rpc1.(*rpc).Serve(ctx)
-			if err != nil {
-				fmt.Printf("rpc1: %+v\n", err)
-				t.Error(err)
-			}
-			close(serve1)
-		}()
-
-		go func() {
-			err := rpc2.(*rpc).Serve(ctx)
-			if err != nil {
-				fmt.Printf("rpc2: %+v\n", err)
-				t.Error(err)
-			}
-			close(serve2)
-		}()
+		go serve(ctx, rpc1.(Server), serve1)
+		go serve(ctx, rpc2.(Server), serve2)
 
 		v, err := rpc1.Async(ctx, "string", Method{"whoami"})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if v != "you are a test" {
-			t.Errorf("unexpected response message %q", v)
-		}
-
-		t.Log(v)
+		r.NoError(err)
+		r.Equal("you are a test", v)
 
 		time.Sleep(time.Millisecond)
-		rpc1.Terminate()
-		fmt.Println("waiting for closes")
+
+		err = rpc1.Terminate()
+		t.Log("waiting for closes")
+
 		for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
 			select {
 			case <-conn1:
-				fmt.Println("conn1 closed")
+				t.Log("conn1 closed")
 				conn1 = nil
 			case <-conn2:
-				fmt.Println("conn2 closed")
+				t.Log("conn2 closed")
 				conn2 = nil
 			case <-serve1:
-				fmt.Println("serve1 closed")
+				t.Log("serve1 closed")
 				serve1 = nil
 			case <-serve2:
-				fmt.Println("serve2 closed")
+				t.Log("serve2 closed")
 				serve2 = nil
 			}
 		}
 		t.Log("done")
 
+		r.Equal(0, fh1.HandleCallCallCount(), "peer h2 did call unexpectedly")
 	}
 }
 
@@ -156,6 +138,7 @@ func TestAsync(t *testing.T) {
 }
 
 func TestSource(t *testing.T) {
+	r := require.New(t)
 	expRx := []string{
 		"you are a test",
 		"you're a test",
@@ -171,65 +154,41 @@ func TestSource(t *testing.T) {
 	serve1 := make(chan struct{})
 	serve2 := make(chan struct{})
 
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Println("h1 called")
-			t.Errorf("unexpected call to rpc1: %#v", req)
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h1 connected")
-			close(conn1)
-		},
-	}
+	var fh1 FakeHandler
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Log("h1 called")
+		t.Errorf("unexpected call to rpc1: %#v", req)
+	})
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1)
+	})
 
-	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Printf("h2 called %+v\n", req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
-				for _, v := range expRx {
-					err := req.Stream.Pour(ctx, v)
-					if err != nil {
-						fmt.Printf("pour errored with %+v\n", err)
-						t.Error(err)
-					}
-				}
-
-				err := req.Stream.Close()
-				if err != nil {
-					fmt.Printf("end pour errored with %+v\n", err)
-					t.Error(err)
-				}
-
+	var fh2 FakeHandler
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("h2 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+			for _, v := range expRx {
+				err := req.Stream.Pour(ctx, v)
+				ckFatal(errors.Wrap(err, "h2 pour errored"))
 			}
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h2 connected")
-			close(conn2)
-		},
-	}
+			err := req.Stream.Close()
+			ckFatal(errors.Wrap(err, "h2 end pour errored"))
+		}
+	})
 
-	rpc1 := Handle(NewPacker(c1), h1)
-	rpc2 := Handle(NewPacker(c2), h2)
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
+
+	rpc1 := Handle(NewPacker(c1), &fh1)
+	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
 
-	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc1: %+v\n", err)
-			t.Error(err)
-		}
-		close(serve1)
-	}()
-
-	go func() {
-		err := rpc2.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc2: %+v\n", err)
-			t.Error(err)
-		}
-		close(serve2)
-	}()
+	go serve(ctx, rpc1.(Server), serve1)
+	go serve(ctx, rpc2.(Server), serve2)
 
 	src, err := rpc1.Source(ctx, "strings", Method{"whoami"})
 	if err != nil {
@@ -253,27 +212,31 @@ func TestSource(t *testing.T) {
 	}
 
 	time.Sleep(time.Millisecond)
-	rpc1.Terminate()
-	fmt.Println("waiting for everything to shut down")
+	err = rpc1.Terminate()
+	r.NoError(err)
+	t.Log("waiting for everything to shut down")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
 		select {
 		case <-conn1:
-			fmt.Println("conn1 closed")
+			t.Log("conn1 closed")
 			conn1 = nil
 		case <-conn2:
-			fmt.Println("conn2 closed")
+			t.Log("conn2 closed")
 			conn2 = nil
 		case <-serve1:
-			fmt.Println("serve1 closed")
+			t.Log("serve1 closed")
 			serve1 = nil
 		case <-serve2:
-			fmt.Println("serve2 closed")
+			t.Log("serve2 closed")
 			serve2 = nil
 		}
 	}
+
+	r.Equal(0, fh1.HandleCallCallCount(), "peer did not call 'connect'")
 }
 
 func TestSink(t *testing.T) {
+	r := require.New(t)
 	expRx := []string{
 		"you are a test",
 		"you're a test",
@@ -290,116 +253,86 @@ func TestSink(t *testing.T) {
 	serve2 := make(chan struct{})
 	wait := make(chan struct{})
 
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Println("h1 called")
-			t.Errorf("unexpected call to rpc1: %#v", req)
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h1 connected")
-			close(conn1)
-		},
-	}
+	var fh1 FakeHandler
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1) // I think this _should_ terminate e?
+	})
 
-	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Printf("h2 called %+v\n", req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
-				for i, exp := range expRx {
-					fmt.Println("calling Next()", i)
-					v, err := req.Stream.Next(ctx)
-					if err != nil {
-						fmt.Printf("next errored with %+v\n", err)
-						t.Error(err)
-					}
-					fmt.Println("Next()", i, "returned", v)
+	var fh2 FakeHandler
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("h2 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+			for i, exp := range expRx {
+				t.Log("calling Next()", i)
+				v, err := req.Stream.Next(ctx)
+				ckFatal(err)
+				t.Log("Next()", i, "returned", v)
 
-					if v != exp {
-						t.Errorf("expected value %v, got %v", exp, v)
-					}
+				if v != exp {
+					err = errors.Errorf("expected value %v, got %v", exp, v)
+					ckFatal(err)
 				}
-
-				close(wait)
-
-				err := req.Stream.Close()
-				if err != nil {
-					fmt.Printf("end pour errored with %+v\n", err)
-					t.Error(err)
-				}
-
 			}
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h2 connected")
-			close(conn2)
-		},
-	}
 
-	rpc1 := Handle(NewPacker(c1), h1)
-	rpc2 := Handle(NewPacker(c2), h2)
+			close(wait)
+
+			err := req.Stream.Close()
+			ckFatal(err)
+
+		}
+	})
+
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
+
+	rpc1 := Handle(NewPacker(c1), &fh1)
+	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
 
-	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc1: %+v\n", err)
-			t.Error(err)
-		}
-
-		close(serve1)
-	}()
-
-	go func() {
-		err := rpc2.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc2: %+v\n", err)
-			t.Error(err)
-		}
-		close(serve2)
-	}()
+	go serve(ctx, rpc1.(Server), serve1)
+	go serve(ctx, rpc2.(Server), serve2)
 
 	sink, err := rpc1.Sink(ctx, Method{"whoami"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	r.NoError(err)
 
 	for _, v := range expRx {
 		err := sink.Pour(ctx, v)
-		if err != nil {
-			t.Error(err)
-		}
+		r.NoError(err)
 	}
-	fmt.Println("waiting for wait...")
+	t.Log("waiting for wait...")
 	<-wait
-	fmt.Println("got wait!")
+	t.Log("got wait!")
 	err = sink.Close()
-	if err != nil {
-		t.Errorf("error closing stream: %+v", err)
-	}
+	r.NoError(err)
 
 	time.Sleep(time.Millisecond)
-	rpc1.Terminate()
-	fmt.Println("waiting for everything to shut down")
+	err = rpc1.Terminate()
+	r.NoError(err)
+	t.Log("waiting for everything to shut down")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
 		select {
 		case <-conn1:
-			fmt.Println("conn1 closed")
+			t.Log("conn1 closed")
 			conn1 = nil
 		case <-conn2:
-			fmt.Println("conn2 closed")
+			t.Log("conn2 closed")
 			conn2 = nil
 		case <-serve1:
-			fmt.Println("serve1 closed")
+			t.Log("serve1 closed")
 			serve1 = nil
 		case <-serve2:
-			fmt.Println("serve2 closed")
+			t.Log("serve2 closed")
 			serve2 = nil
 		}
 	}
 }
 
 func TestDuplex(t *testing.T) {
+	r := require.New(t)
 	expRx := []string{
 		"you are a test",
 		"you're a test",
@@ -421,75 +354,50 @@ func TestDuplex(t *testing.T) {
 	conn1 := make(chan struct{})
 	conn2 := make(chan struct{})
 
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Println("h1 called")
-			t.Errorf("unexpected call to rpc1: %#v", req)
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h1 connected")
-			close(conn1)
-		},
-	}
+	var fh1 FakeHandler
+	// todo: check call count (there is a 2nd case of this)
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1) // I think this _should_ terminate e?
+	})
 
-	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Printf("h2 called %+v\n", req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
-				for _, exp := range expRx {
-					v, err := req.Stream.Next(ctx)
-					if err != nil {
-						fmt.Printf("pour errored with %+v\n", err)
-						t.Error(err)
-					}
+	var fh2 FakeHandler
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("h2 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+			for _, exp := range expRx {
+				v, err := req.Stream.Next(ctx)
+				ckFatal(errors.Wrap(err, "pour errored"))
 
-					if v != exp {
-						t.Errorf("expected value %v, got %v", exp, v)
-					}
+				if v != exp {
+					err = errors.Errorf("expected value %v, got %v", exp, v)
+					ckFatal(err)
 				}
-
-				for _, v := range expTx {
-					err := req.Stream.Pour(ctx, v)
-					if err != nil {
-						fmt.Printf("pour errored with %+v\n", err)
-						t.Error(err)
-					}
-				}
-
-				err := req.Stream.Close()
-				if err != nil {
-					fmt.Printf("end pour errored with %+v\n", err)
-					t.Error(err)
-				}
-
 			}
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h2 connected")
-			close(conn2)
-		},
-	}
 
-	rpc1 := Handle(NewPacker(c1), h1)
-	rpc2 := Handle(NewPacker(c2), h2)
+			for _, v := range expTx {
+				err := req.Stream.Pour(ctx, v)
+				ckFatal(err)
+			}
+
+			err := req.Stream.Close()
+			ckFatal(err)
+
+		}
+	})
+
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
+
+	rpc1 := Handle(NewPacker(c1), &fh1)
+	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
 
-	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc1: %+v\n", err)
-			t.Error(err)
-		}
-	}()
-
-	go func() {
-		err := rpc2.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc2: %+v\n", err)
-			t.Error(err)
-		}
-	}()
+	go serve(ctx, rpc1.(Server))
+	go serve(ctx, rpc2.(Server))
 
 	src, sink, err := rpc1.Duplex(ctx, "str", Method{"whoami"})
 	if err != nil {
@@ -515,9 +423,10 @@ func TestDuplex(t *testing.T) {
 	}
 
 	err = sink.Close()
-	if err != nil {
-		t.Errorf("error closing stream: %+v", err)
-	}
+	r.NoError(err, "error closing stream")
+
+	r.Equal(0, fh1.HandleCallCallCount(), "peer h1 did call unexpectedly")
+	r.Equal(1, fh2.HandleCallCallCount(), "peer h2 did call unexpectedly")
 }
 
 func TestErrorAsync(t *testing.T) {
@@ -528,56 +437,34 @@ func TestErrorAsync(t *testing.T) {
 	serve1 := make(chan struct{})
 	serve2 := make(chan struct{})
 
-	h1 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Println("h1 called")
-			t.Errorf("unexpected call to rpc1: %#v", req)
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h1 connected")
-			close(conn1)
-		},
-	}
+	var fh1 FakeHandler
+	// todo: check call count (there is a 2nd case of this)
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1) // I think this _should_ terminate e?
+	})
 
-	h2 := &testHandler{
-		call: func(ctx context.Context, req *Request, edp Endpoint) {
-			fmt.Printf("h2 called %+v\n", req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
-				err := req.Stream.CloseWithError(errors.New("omg an error!"))
-				if err != nil {
-					fmt.Printf("return errored with %+v\n", err)
-					t.Error(err)
-				}
-			}
-		},
-		connect: func(ctx context.Context, e Endpoint) {
-			fmt.Println("h2 connected")
-			close(conn2)
-		},
-	}
+	var fh2 FakeHandler
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("h2 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+			err := req.Stream.CloseWithError(errors.New("omg an error!"))
+			ckFatal(err)
+		}
+	})
 
-	rpc1 := Handle(NewPacker(c1), h1)
-	rpc2 := Handle(NewPacker(c2), h2)
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
+
+	rpc1 := Handle(NewPacker(c1), &fh1)
+	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
 
-	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc1: %+v\n", err)
-			t.Error(err)
-		}
-		close(serve1)
-	}()
-
-	go func() {
-		err := rpc2.(*rpc).Serve(ctx)
-		if err != nil {
-			fmt.Printf("rpc2: %+v\n", err)
-			t.Error(err)
-		}
-		close(serve2)
-	}()
+	go serve(ctx, rpc1.(Server), serve1)
+	go serve(ctx, rpc2.(Server), serve2)
 
 	v, err := rpc1.Async(ctx, "string", Method{"whoami"})
 	if err == nil {
@@ -605,20 +492,20 @@ func TestErrorAsync(t *testing.T) {
 
 	time.Sleep(time.Millisecond)
 	rpc1.Terminate()
-	fmt.Println("waiting for closes")
+	t.Log("waiting for closes")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
 		select {
 		case <-conn1:
-			fmt.Println("conn1 closed")
+			t.Log("conn1 closed")
 			conn1 = nil
 		case <-conn2:
-			fmt.Println("conn2 closed")
+			t.Log("conn2 closed")
 			conn2 = nil
 		case <-serve1:
-			fmt.Println("serve1 closed")
+			t.Log("serve1 closed")
 			serve1 = nil
 		case <-serve2:
-			fmt.Println("serve2 closed")
+			t.Log("serve2 closed")
 			serve2 = nil
 		}
 	}
