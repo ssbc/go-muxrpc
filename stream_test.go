@@ -86,11 +86,14 @@ func TestStream_1(t *testing.T) {
 	_, err = str.Next(ctx)
 	r.Equal(luigi.EOS{}, err, "expected end of stream error")
 
-	// TODO better check these errors...
-	str.Pour(ctx, "foo")
-	str.Pour(ctx, "bar")
-	str.Pour(ctx, "baz")
-	str.Close()
+	err = str.Pour(ctx, "foo")
+	r.NoError(err)
+	err = str.Pour(ctx, "bar")
+	r.NoError(err)
+	err = str.Pour(ctx, "baz")
+	r.NoError(err)
+	err = str.Close()
+	r.NoError(err)
 
 	v, err := oSrc.Next(ctx)
 	r.NoError(err, "error reading packet from oSrc")
