@@ -138,8 +138,9 @@ sbot.whoami((err, who) => {
 func TestJSSyncString(t *testing.T) {
 	r := require.New(t)
 	logger := log.NewLogfmtLogger(logtest.Logger(t.Name(), t))
-
-	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
+	//logOut := os.Stderr
+	logOut := logtest.Logger("client_test.js", t)
+	serv, err := proc.StartStdioProcess("node", logOut, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
@@ -147,7 +148,8 @@ func TestJSSyncString(t *testing.T) {
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
-	go serve(ctx, rpc1.(Server))
+	done := make(chan struct{})
+	go serve(ctx, rpc1.(Server), done)
 
 	v, err := rpc1.Async(ctx, "string", Method{"version"}, "some", "params", 23)
 	r.NoError(err, "rcp sync call")
@@ -159,7 +161,11 @@ func TestJSSyncString(t *testing.T) {
 
 	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
-	r.NoError(packer.Close())
+	//r.NoError(packer.Close())
+	v, err = rpc1.Async(ctx, "ok", Method{"finalCall"}, 1000)
+	r.NoError(err, "rcp close")
+	r.Equal("ty", v, "expected good bye")
+	<-done
 }
 
 func TestJSAsyncString(t *testing.T) {
