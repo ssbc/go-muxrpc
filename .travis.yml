@@ -2,7 +2,6 @@ language: go
 
 go:
   - "1.x"
-  - "1.9.x"
   - "1.10.x"
   - master
 
@@ -14,3 +13,5 @@ go_import_path: go.cryptoscope.co/muxrpc
 
 install:
   - go get -t -v go.cryptoscope.co/muxrpc/...
+
+scripts: go test -count 1000 -race ./...
