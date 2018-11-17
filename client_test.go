@@ -1,3 +1,5 @@
+// +build interop_nodejs
+
 /*
 This file is part of go-muxrpc.
 
@@ -161,11 +163,11 @@ func TestJSSyncString(t *testing.T) {
 
 	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
-	//r.NoError(packer.Close())
-	v, err = rpc1.Async(ctx, "ok", Method{"finalCall"}, 1000)
-	r.NoError(err, "rcp close")
-	r.Equal("ty", v, "expected good bye")
+	r.NoError(packer.Close())
 	<-done
+	//v, err = rpc1.Async(ctx, "ok", Method{"finalCall"}, 1000)
+	//r.NoError(err, "rcp close")
+	//r.Equal("ty", v, "expected good bye")
 }
 
 func TestJSAsyncString(t *testing.T) {
