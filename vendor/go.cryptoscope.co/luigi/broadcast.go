@@ -3,6 +3,8 @@ package luigi // import "go.cryptoscope.co/luigi"
 import (
 	"context"
 	"sync"
+
+	"github.com/hashicorp/go-multierror"
 )
 
 type Broadcast interface {
@@ -36,60 +38,44 @@ func (bcst *broadcast) Register(sink Sink) func() {
 type broadcastSink broadcast
 
 func (bcst *broadcastSink) Pour(ctx context.Context, v interface{}) error {
-	errCh := make(chan error)
-	errOut := make(chan error, 1)
-
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	bcst.Lock()
 	defer bcst.Unlock()
 
-	go func() {
-		defer close(errOut)
+	sinks := make([]Sink, 0, len(bcst.sinks))
 
-		if err, ok := <-errCh; ok {
-			cancel()
-			errOut <- err
-		}
+	for sink := range bcst.sinks {
+		sinks = append(sinks, *sink)
+	}
 
-		for range errCh {
-			// drain
-		}
-	}()
+	// release lock while broadcasting
+	// they might want to take it, e.g. to call cancel()
+	bcst.Unlock()
+	defer bcst.Lock()
 
-	func() {
-		sinks := make([]Sink, 0, len(bcst.sinks))
+	var (
+		wg   sync.WaitGroup
+		merr *multierror.Error
+	)
 
-		for sink := range bcst.sinks {
-			sinks = append(sinks, *sink)
-		}
+	wg.Add(len(sinks))
+	for _, sink_ := range sinks {
+		go func(sink Sink) {
+			defer wg.Done()
 
-		// release lock while broadcasting
-		// they might want to take it, e.g. to call cancel()
-		bcst.Unlock()
-		defer bcst.Lock()
+			err := sink.Pour(ctx, v)
+			if err != nil {
+				merr = multierror.Append(merr, err)
+				return
+			}
+		}(sink_)
+	}
 
-		var wg sync.WaitGroup
+	wg.Wait()
 
-		wg.Add(len(sinks))
-		for _, sink_ := range sinks {
-			go func(sink Sink) {
-				defer wg.Done()
-
-				err := sink.Pour(ctx, v)
-				if err != nil {
-					errCh <- err
-					return
-				}
-			}(sink_)
-		}
-
-		wg.Wait()
-		close(errCh)
-	}()
-
-	return <-errOut
+	return merr.ErrorOrNil()
 }
 
 func (bcst *broadcastSink) Close() error { return nil }
