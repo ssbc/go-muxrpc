@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
@@ -327,14 +328,18 @@ type Server interface {
 
 // Serve handles the RPC session
 func (r *rpc) Serve(ctx context.Context) (err error) {
-	defer r.pkr.Close()
+	toLong, cancel := context.WithTimeout(ctx, time.Minute*7)
+	defer func() {
+		cancel()
+		r.pkr.Close()
+	}()
 
 	for {
 		var vpkt interface{}
 
 		// read next packet from connection
 		doRet := func() bool {
-			vpkt, err = r.pkr.Next(ctx)
+			vpkt, err = r.pkr.Next(toLong)
 
 			r.tLock.Lock()
 			defer r.tLock.Unlock()
@@ -407,7 +412,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			}
 		}
 
-		req, isNew, err := r.fetchRequest(ctx, pkt)
+		req, isNew, err := r.fetchRequest(toLong, pkt)
 		if err != nil {
 			return errors.Wrap(err, "error getting request")
 		}
@@ -417,8 +422,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 		// localize defer
 		err = func() error {
-
-			err := req.in.Pour(ctx, pkt)
+			err := req.in.Pour(toLong, pkt)
 			return errors.Wrap(err, "error pouring data to handler")
 		}()
 
