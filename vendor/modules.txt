@@ -23,6 +23,6 @@ github.com/pmezard/go-difflib/difflib
 # github.com/stretchr/testify v1.2.2
 github.com/stretchr/testify/require
 github.com/stretchr/testify/assert
-# go.cryptoscope.co/luigi v0.0.1
+# go.cryptoscope.co/luigi v0.0.1 => /home/cryptix/go/src/go.cryptoscope.co/luigi/
 go.cryptoscope.co/luigi
 go.cryptoscope.co/luigi/mfr
