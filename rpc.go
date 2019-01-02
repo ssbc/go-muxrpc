@@ -3,6 +3,7 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -302,10 +303,17 @@ type Server interface {
 
 // Serve handles the RPC session
 func (r *rpc) Serve(ctx context.Context) (err error) {
-	toLong, cancel := context.WithTimeout(ctx, time.Minute*7)
+	// naive/protective staleness close - to be improved
+	toLong, cancel := context.WithTimeout(ctx, time.Minute*23)
 	defer func() {
 		cancel()
-		r.pkr.Close()
+		var cerr error
+		if err != nil {
+			cerr = r.pkr.CloseWithError(errors.Wrap(err, "muxrpc: error in Serve"))
+		} else {
+			cerr = r.pkr.Close()
+		}
+		log.Println("muxrpc: Serve closed. Err: %s - Close Err: %s", err, cerr)
 	}()
 
 	for {
@@ -334,7 +342,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			return false
 		}()
 		if doRet {
-			return err
+			return
 		}
 
 		pkt := vpkt.(*codec.Packet)
@@ -349,7 +357,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			}
 
 			if req, ok := getReq(pkt.Req); ok {
-				err := func() error {
+				err = func() error { // localize defer
 					r.rLock.Lock()
 					defer r.rLock.Unlock()
 
@@ -364,12 +372,13 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 							return errors.Wrap(err, "error closing stream")
 						}
 					} else {
-						e, err := parseError(pkt.Body)
+						var pkgErr error
+						pkgErr, err = parseError(pkt.Body)
 						if err != nil {
 							return errors.Wrap(err, "error parsing error packet")
 						}
 
-						err = req.in.(luigi.ErrorCloser).CloseWithError(e)
+						err = req.in.(luigi.ErrorCloser).CloseWithError(pkgErr)
 						if err != nil {
 							return errors.Wrap(err, "error closing pipe sink with error")
 						}
@@ -379,7 +388,8 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 					return nil
 				}()
 				if err != nil {
-					return err
+					err = errors.Wrap(err, "muxrpc: failed to handle pkt of stream %d", pkt.Req)
+					return
 				}
 
 				continue
@@ -388,16 +398,16 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 		req, isNew, err := r.fetchRequest(toLong, pkt)
 		if err != nil {
-			return errors.Wrap(err, "error getting request")
+			err = errors.Wrap(err, "muxrpc: error getting request")
+			return
 		}
 		if isNew {
 			continue
 		}
 
-		// localize defer
-		err = func() error {
+		err = func() error { // localize defer
 			err := req.in.Pour(toLong, pkt)
-			return errors.Wrap(err, "error pouring data to handler")
+			return errors.Wrap(err, "muxrpc: error pouring data to handler")
 		}()
 
 		if err != nil {
