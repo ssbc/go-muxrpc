@@ -296,6 +296,7 @@ func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bo
 	return req, !ok, nil
 }
 
+// Server can handle packets to and from a remote party
 type Server interface {
 	Remote() net.Addr
 	Serve(context.Context) error
@@ -307,13 +308,10 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 	toLong, cancel := context.WithTimeout(ctx, time.Minute*23)
 	defer func() {
 		cancel()
-		var cerr error
+		cerr := r.pkr.Close()
 		if err != nil {
-			cerr = r.pkr.CloseWithError(errors.Wrap(err, "muxrpc: error in Serve"))
-		} else {
-			cerr = r.pkr.Close()
+			log.Printf("muxrpc: Serve closed. Err: %v - Close Err: %v", err, cerr)
 		}
-		log.Println("muxrpc: Serve closed. Err: %s - Close Err: %s", err, cerr)
 	}()
 
 	for {
@@ -347,6 +345,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 		pkt := vpkt.(*codec.Packet)
 
+		var req *Request
 		if pkt.Flag.Get(codec.FlagEndErr) {
 			getReq := func(req int32) (*Request, bool) {
 				r.rLock.Lock()
@@ -356,7 +355,8 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 				return r, ok
 			}
 
-			if req, ok := getReq(pkt.Req); ok {
+			var ok bool
+			if req, ok = getReq(pkt.Req); ok {
 				err = func() error { // localize defer
 					r.rLock.Lock()
 					defer r.rLock.Unlock()
@@ -388,15 +388,18 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 					return nil
 				}()
 				if err != nil {
-					err = errors.Wrap(err, "muxrpc: failed to handle pkt of stream %d", pkt.Req)
+					err = errors.Wrapf(err, "muxrpc: failed to handle pkt of stream %d", pkt.Req)
 					return
 				}
 
-				continue
+			} else {
+				log.Printf("warning: unhandled packet for request %d", pkt.Req)
 			}
+			continue
 		}
 
-		req, isNew, err := r.fetchRequest(toLong, pkt)
+		var isNew bool
+		req, isNew, err = r.fetchRequest(toLong, pkt)
 		if err != nil {
 			err = errors.Wrap(err, "muxrpc: error getting request")
 			return
@@ -420,6 +423,7 @@ func (r *rpc) Remote() net.Addr {
 	return r.remote
 }
 
+// CallError is returned when a call fails
 type CallError struct {
 	Name    string `json:"name"`
 	Message string `json:"message"`
