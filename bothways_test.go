@@ -3,6 +3,7 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 import (
 	"context"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +22,9 @@ func TestBothwaysAsync(t *testing.T) {
 	call2 := make(chan struct{})
 	term1 := make(chan struct{})
 	term2 := make(chan struct{})
+
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
@@ -53,8 +57,8 @@ func TestBothwaysAsync(t *testing.T) {
 
 	ctx := context.Background()
 
-	go serve(ctx, rpc1.(Server), serve1)
-	go serve(ctx, rpc2.(Server), serve2)
+	go serve(ctx, rpc1.(Server), errc, serve1)
+	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	go func() {
 		v, err := rpc1.Async(ctx, "string", Method{"whoami"})
@@ -141,6 +145,9 @@ func TestBohwaysSource(t *testing.T) {
 	term1 := make(chan struct{})
 	term2 := make(chan struct{})
 
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
+
 	var fh1 FakeHandler
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 
@@ -198,8 +205,8 @@ func TestBohwaysSource(t *testing.T) {
 
 	ctx := context.Background()
 
-	go serve(ctx, rpc1.(Server), serve1)
-	go serve(ctx, rpc2.(Server), serve2)
+	go serve(ctx, rpc1.(Server), errc, serve1)
+	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	go func() {
 		src, err := rpc1.Source(ctx, "strings", Method{"whoami"})
@@ -299,6 +306,9 @@ func TestBothwaysSink(t *testing.T) {
 	term1 := make(chan struct{})
 	term2 := make(chan struct{})
 
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
+
 	handler := func(name string) func(context.Context, *Request, Endpoint) {
 		return func(ctx context.Context, req *Request, edp Endpoint) {
 			t.Logf("%s called %+v\n", name, req)
@@ -307,22 +317,21 @@ func TestBothwaysSink(t *testing.T) {
 					t.Log("calling Next()", i)
 					v, err := req.Stream.Next(ctx)
 					if err != nil {
-						t.Logf("next errored with %+v\n", err)
-						t.Error(err)
+						errc <- errors.Wrapf(err, "next errored with %+v\n", err)
+						return
 					}
 					t.Log("Next()", i, "returned", v)
 
 					if v != exp {
-						t.Errorf("expected value %v, got %v", exp, v)
+						errc <- errors.Errorf("expected value %v, got %v", exp, v)
+						return
 					}
 				}
 
 				err := req.Stream.Close()
 				if err != nil {
-					t.Logf("end pour errored with %+v\n", err)
-					t.Error(err)
+					errc <- errors.Errorf("end pour errored with %+v\n", err)
 				}
-
 			}
 		}
 	}
@@ -406,6 +415,10 @@ func TestBothwaysSink(t *testing.T) {
 	t.Log("waiting for everything to shut down")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil || term1 != nil || term2 != nil {
 		select {
+		case err := <-errc:
+			if err != nil {
+				t.Fatal(err)
+			}
 		case <-conn1:
 			t.Log("conn1 closed")
 			conn1 = nil
@@ -450,6 +463,9 @@ func TestBothwayDuplex(t *testing.T) {
 	conn1 := make(chan struct{})
 	conn2 := make(chan struct{})
 
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
+
 	handler := func(name string) func(context.Context, *Request, Endpoint) {
 		return func(ctx context.Context, req *Request, edp Endpoint) {
 			t.Logf("%s called %+v\n", name, req)
@@ -491,11 +507,11 @@ func TestBothwayDuplex(t *testing.T) {
 
 	ctx := context.Background()
 
-	go serve(ctx, rpc1.(Server))
-	go serve(ctx, rpc2.(Server))
+	go serve(ctx, rpc1.(Server), errc)
+	go serve(ctx, rpc2.(Server), errc)
 
-	wait1 := make(chan struct{})
-	wait2 := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	go func() {
 		src, sink, err := rpc1.Duplex(ctx, "str", Method{"whoami"})
@@ -519,7 +535,7 @@ func TestBothwayDuplex(t *testing.T) {
 		err = sink.Close()
 		ckFatal(err)
 
-		close(wait1)
+		wg.Done()
 	}()
 
 	go func() {
@@ -544,9 +560,19 @@ func TestBothwayDuplex(t *testing.T) {
 		err = sink.Close()
 		ckFatal(err)
 
-		close(wait2)
+		wg.Done()
 	}()
 
-	<-wait1
-	<-wait2
+	go func() {
+		wg.Wait()
+		close(errc)
+	}()
+
+	i := 0
+	for err := range errc {
+		if err != nil {
+			t.Fatalf("err#%d from goroutine: %s", i, err)
+			i++
+		}
+	}
 }

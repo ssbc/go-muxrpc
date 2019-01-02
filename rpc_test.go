@@ -2,10 +2,8 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
-	"fmt"
 	"net"
-	"os"
-	"runtime/debug"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,20 +16,21 @@ import (
 )
 
 // for some reason you can't use t.Fatal // t.Error in goroutines... :-/
-func serve(ctx context.Context, r Server, closers ...chan<- struct{}) {
+func serve(ctx context.Context, r Server, errc chan<- error, done ...chan<- struct{}) {
 	err := r.Serve(ctx)
-	ckFatal(err)
-	if len(closers) > 0 {
-		c := closers[0]
-		close(c)
+	if err != nil {
+		errc <- errors.Wrap(err, "Serve failed")
+	}
+	if len(done) > 0 { // might want to use a waitGroup here instead?
+		close(done[0])
 	}
 }
 
-func ckFatal(err error) {
-	if err != nil {
-		fmt.Println("ckFatal err:", err)
-		debug.PrintStack()
-		os.Exit(2)
+func mkCheck(errc chan<- error) func(err error) {
+	return func(err error) {
+		if err != nil {
+			errc <- err
+		}
 	}
 }
 
@@ -44,6 +43,8 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 		serve1 := make(chan struct{})
 		serve2 := make(chan struct{})
 
+		errc := make(chan error)
+
 		var fh1 FakeHandler
 		fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 			t.Log("h1 connected")
@@ -55,7 +56,7 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 			t.Logf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				err := req.Return(ctx, "you are a test")
-				ckFatal(errors.Wrap(err, "return errored"))
+				errc <- errors.Wrap(err, "return errored")
 			}
 		})
 
@@ -69,8 +70,8 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 
 		ctx := context.Background()
 
-		go serve(ctx, rpc1.(Server), serve1)
-		go serve(ctx, rpc2.(Server), serve2)
+		go serve(ctx, rpc1.(Server), errc, serve1)
+		go serve(ctx, rpc2.(Server), errc, serve2)
 
 		v, err := rpc1.Async(ctx, "string", Method{"whoami"})
 		r.NoError(err)
@@ -83,6 +84,10 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 
 		for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
 			select {
+			case err := <-errc:
+				if err != nil {
+					t.Fatal(err)
+				}
 			case <-conn1:
 				t.Log("conn1 closed")
 				conn1 = nil
@@ -154,6 +159,9 @@ func TestSource(t *testing.T) {
 	serve1 := make(chan struct{})
 	serve2 := make(chan struct{})
 
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
+
 	var fh1 FakeHandler
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Log("h1 called")
@@ -187,8 +195,8 @@ func TestSource(t *testing.T) {
 
 	ctx := context.Background()
 
-	go serve(ctx, rpc1.(Server), serve1)
-	go serve(ctx, rpc2.(Server), serve2)
+	go serve(ctx, rpc1.(Server), errc, serve1)
+	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	src, err := rpc1.Source(ctx, "strings", Method{"whoami"})
 	if err != nil {
@@ -217,6 +225,10 @@ func TestSource(t *testing.T) {
 	t.Log("waiting for everything to shut down")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
 		select {
+		case err := <-errc:
+			if err != nil {
+				t.Fatal(err)
+			}
 		case <-conn1:
 			t.Log("conn1 closed")
 			conn1 = nil
@@ -252,6 +264,9 @@ func TestSink(t *testing.T) {
 	serve1 := make(chan struct{})
 	serve2 := make(chan struct{})
 	wait := make(chan struct{})
+
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
@@ -293,8 +308,8 @@ func TestSink(t *testing.T) {
 
 	ctx := context.Background()
 
-	go serve(ctx, rpc1.(Server), serve1)
-	go serve(ctx, rpc2.(Server), serve2)
+	go serve(ctx, rpc1.(Server), errc, serve1)
+	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	sink, err := rpc1.Sink(ctx, Method{"whoami"})
 	r.NoError(err)
@@ -351,14 +366,19 @@ func TestDuplex(t *testing.T) {
 
 	c1, c2 := net.Pipe()
 
-	conn1 := make(chan struct{})
-	conn2 := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
 	// todo: check call count (there is a 2nd case of this)
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h1 connected")
-		close(conn1) // I think this _should_ terminate e?
+		// I think this _should_ terminate e?
+
+		wg.Done()
 	})
 
 	var fh2 FakeHandler
@@ -388,7 +408,7 @@ func TestDuplex(t *testing.T) {
 
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h2 connected")
-		close(conn2)
+		wg.Done()
 	})
 
 	rpc1 := Handle(NewPacker(c1), &fh1)
@@ -396,8 +416,8 @@ func TestDuplex(t *testing.T) {
 
 	ctx := context.Background()
 
-	go serve(ctx, rpc1.(Server))
-	go serve(ctx, rpc2.(Server))
+	go serve(ctx, rpc1.(Server), errc)
+	go serve(ctx, rpc2.(Server), errc)
 
 	src, sink, err := rpc1.Duplex(ctx, "str", Method{"whoami"})
 	if err != nil {
@@ -425,6 +445,17 @@ func TestDuplex(t *testing.T) {
 	err = sink.Close()
 	r.NoError(err, "error closing stream")
 
+	go func() {
+		wg.Wait()
+		close(errc)
+	}()
+
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	r.Equal(0, fh1.HandleCallCallCount(), "peer h1 did call unexpectedly")
 	r.Equal(1, fh2.HandleCallCallCount(), "peer h2 did call unexpectedly")
 }
@@ -436,6 +467,9 @@ func TestErrorAsync(t *testing.T) {
 	conn2 := make(chan struct{})
 	serve1 := make(chan struct{})
 	serve2 := make(chan struct{})
+
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
 	// todo: check call count (there is a 2nd case of this)
@@ -463,8 +497,8 @@ func TestErrorAsync(t *testing.T) {
 
 	ctx := context.Background()
 
-	go serve(ctx, rpc1.(Server), serve1)
-	go serve(ctx, rpc2.(Server), serve2)
+	go serve(ctx, rpc1.(Server), errc, serve1)
+	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	v, err := rpc1.Async(ctx, "string", Method{"whoami"})
 	if err == nil {
@@ -495,6 +529,10 @@ func TestErrorAsync(t *testing.T) {
 	t.Log("waiting for closes")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
 		select {
+		case err := <-errc:
+			if err != nil {
+				t.Fatal(err)
+			}
 		case <-conn1:
 			t.Log("conn1 closed")
 			conn1 = nil

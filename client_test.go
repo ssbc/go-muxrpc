@@ -43,6 +43,9 @@ func TestJSGettingCalledSource(t *testing.T) {
 
 	gotCall := make(chan struct{})
 	callServed := make(chan struct{})
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
+
 	var fh FakeHandler
 	fh.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("got call: %+v", req)
@@ -68,7 +71,7 @@ func TestJSGettingCalledSource(t *testing.T) {
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
-	go serve(ctx, rpc1.(Server))
+	go serve(ctx, rpc1.(Server), errc)
 
 	v, err := rpc1.Async(ctx, "string", Method{"callme", "source"})
 	r.NoError(err, "rcp Async call")
@@ -96,6 +99,16 @@ func TestJSGettingCalledAsync(t *testing.T) {
 	//logOut := os.Stderr
 	logger := log.NewLogfmtLogger(logOut)
 
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
+
+	done := make(chan struct{})
+
+	go func() {
+		<-done
+		close(errc)
+	}()
+
 	serv, err := proc.StartStdioProcess("node", logOut, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
@@ -113,11 +126,17 @@ func TestJSGettingCalledAsync(t *testing.T) {
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
-	go serve(ctx, rpc1.(Server))
+	go serve(ctx, rpc1.(Server), errc, done)
 
 	v, err := rpc1.Async(ctx, "string", Method{"callme", "async"})
 	r.NoError(err, "rcp Async call")
 	r.Equal(v, "call done", "expected call result")
+
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 	r.Equal(1, fh.HandleCallCallCount(), "peer did not call")
@@ -150,8 +169,9 @@ func TestJSSyncString(t *testing.T) {
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
+	errc := make(chan error)
 	done := make(chan struct{})
-	go serve(ctx, rpc1.(Server), done)
+	go serve(ctx, rpc1.(Server), errc, done)
 
 	v, err := rpc1.Async(ctx, "string", Method{"version"}, "some", "params", 23)
 	r.NoError(err, "rcp sync call")
@@ -164,7 +184,18 @@ func TestJSSyncString(t *testing.T) {
 	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
 	r.NoError(packer.Close())
-	<-done
+
+	go func() {
+		<-done
+		close(errc)
+	}()
+
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	//v, err = rpc1.Async(ctx, "ok", Method{"finalCall"}, 1000)
 	//r.NoError(err, "rcp close")
 	//r.Equal("ty", v, "expected good bye")
@@ -181,13 +212,27 @@ func TestJSAsyncString(t *testing.T) {
 	packer := NewPacker(debug.Wrap(logger, serv))
 	rpc1 := Handle(packer, &fh)
 
+	errc := make(chan error)
+	done := make(chan struct{})
+
+	go func() {
+		<-done
+		close(errc)
+	}()
+
 	ctx := context.Background()
-	go serve(ctx, rpc1.(Server))
+	go serve(ctx, rpc1.(Server), errc, done)
 
 	v, err := rpc1.Async(ctx, "string", Method{"hello"}, "world", "bob")
 	r.NoError(err, "rcp Async call")
 
 	r.Equal(v, "hello, world and bob!", "expected call result")
+
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
@@ -208,7 +253,15 @@ func TestJSAsyncObject(t *testing.T) {
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
-	go serve(ctx, rpc1.(Server))
+	errc := make(chan error)
+	done := make(chan struct{})
+
+	go func() {
+		<-done
+		close(errc)
+	}()
+
+	go serve(ctx, rpc1.(Server), errc, done)
 
 	type resp struct {
 		With string `json:"with"`
@@ -216,8 +269,13 @@ func TestJSAsyncObject(t *testing.T) {
 
 	v, err := rpc1.Async(ctx, resp{}, Method{"object"})
 	r.NoError(err, "rcp Async call")
-
 	r.Equal(v.(resp).With, "fields!", "wrong call response")
+
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
@@ -237,7 +295,15 @@ func TestJSSource(t *testing.T) {
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
-	go serve(ctx, rpc1.(Server))
+	errc := make(chan error)
+	done := make(chan struct{})
+
+	go func() {
+		<-done
+		close(errc)
+	}()
+
+	go serve(ctx, rpc1.(Server), errc, done)
 
 	type obj struct {
 		A int
@@ -259,6 +325,12 @@ func TestJSSource(t *testing.T) {
 	r.True(luigi.IsEOS(err), "expected EOS but got %+v", val)
 
 	r.NoErrorf(packer.Close(), "%+s %s", "error closing packer")
+
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
