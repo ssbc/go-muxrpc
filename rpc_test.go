@@ -56,7 +56,9 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 			t.Logf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				err := req.Return(ctx, "you are a test")
-				errc <- errors.Wrap(err, "return errored")
+				if err != nil {
+					errc <- errors.Wrap(err, "return errored")
+				}
 			}
 		})
 
@@ -82,27 +84,32 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 		err = rpc1.Terminate()
 		t.Log("waiting for closes")
 
-		for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
-			select {
-			case err := <-errc:
-				if err != nil {
-					t.Fatal(err)
+		go func() {
+			for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
+				select {
+				case <-conn1:
+					t.Log("conn1 closed")
+					conn1 = nil
+				case <-conn2:
+					t.Log("conn2 closed")
+					conn2 = nil
+				case <-serve1:
+					t.Log("serve1 closed")
+					serve1 = nil
+				case <-serve2:
+					t.Log("serve2 closed")
+					serve2 = nil
 				}
-			case <-conn1:
-				t.Log("conn1 closed")
-				conn1 = nil
-			case <-conn2:
-				t.Log("conn2 closed")
-				conn2 = nil
-			case <-serve1:
-				t.Log("serve1 closed")
-				serve1 = nil
-			case <-serve2:
-				t.Log("serve2 closed")
-				serve2 = nil
+			}
+			t.Log("done")
+			close(errc)
+		}()
+
+		for err := range errc {
+			if err != nil {
+				t.Fatal(err)
 			}
 		}
-		t.Log("done")
 
 		r.Equal(0, fh1.HandleCallCallCount(), "peer h2 did call unexpectedly")
 	}

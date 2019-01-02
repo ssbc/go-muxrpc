@@ -76,7 +76,7 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 	// connection closes, and thus the context returned by withCloseCtx
 	// is not cancelled.  As a temporary fix we cancel after five
 	// minutes of inactivity.
-	ctx, cancel_ := context.WithTimeout(ctx, 5 * time.Minute)
+	ctx, cancel_ := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel_()
 
 	// cancellation
@@ -141,8 +141,6 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 	} else {
 		return []byte(pkt.Body), nil
 	}
-
-	return pkt.Body, nil
 }
 
 // Pour sends a message on the stream
