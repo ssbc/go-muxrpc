@@ -317,7 +317,7 @@ func TestBothwaysSink(t *testing.T) {
 					t.Log("calling Next()", i)
 					v, err := req.Stream.Next(ctx)
 					if err != nil {
-						errc <- errors.Wrapf(err, "next errored with %+v\n", err)
+						errc <- errors.Wrapf(err, "stream next errored")
 						return
 					}
 					t.Log("Next()", i, "returned", v)
@@ -330,7 +330,7 @@ func TestBothwaysSink(t *testing.T) {
 
 				err := req.Stream.Close()
 				if err != nil {
-					errc <- errors.Errorf("end pour errored with %+v\n", err)
+					errc <- errors.Wrap(err, "stream close errored")
 				}
 			}
 		}
@@ -357,20 +357,13 @@ func TestBothwaysSink(t *testing.T) {
 
 	go func() {
 		err := rpc1.(*rpc).Serve(ctx)
-		if err != nil {
-			t.Logf("rpc1: %+v\n", err)
-			t.Error(err)
-		}
-
+		ckFatal(err)
 		close(serve1)
 	}()
 
 	go func() {
 		err := rpc2.(*rpc).Serve(ctx)
-		if err != nil {
-			t.Logf("rpc2: %+v\n", err)
-			t.Error(err)
-		}
+		ckFatal(err)
 		close(serve2)
 	}()
 
@@ -417,7 +410,7 @@ func TestBothwaysSink(t *testing.T) {
 		select {
 		case err := <-errc:
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("got error from channel: %+v", err)
 			}
 		case <-conn1:
 			t.Log("conn1 closed")
@@ -472,18 +465,20 @@ func TestBothwayDuplex(t *testing.T) {
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for _, exp := range expRx {
 					v, err := req.Stream.Next(ctx)
-					ckFatal(err)
+					if err != nil {
+						ckFatal(errors.Wrap(err, "err from stream next"))
+						return
+					}
 					if v != exp {
-						err = errors.Errorf("expected value %v, got %v", exp, v)
-						ckFatal(err)
+						ckFatal(errors.Errorf("expected value %v, got %v", exp, v))
 					}
 				}
 				for _, v := range expTx {
 					err := req.Stream.Pour(ctx, v)
-					ckFatal(err)
+					ckFatal(errors.Wrap(err, "err pouring to stream"))
 				}
 				err := req.Stream.Close()
-				ckFatal(err)
+				ckFatal(errors.Wrap(err, "failed to close stream"))
 			}
 		}
 	}
@@ -571,7 +566,7 @@ func TestBothwayDuplex(t *testing.T) {
 	i := 0
 	for err := range errc {
 		if err != nil {
-			t.Fatalf("err#%d from goroutine: %s", i, err)
+			t.Fatalf("err#%d from goroutine: %+v", i, err)
 			i++
 		}
 	}

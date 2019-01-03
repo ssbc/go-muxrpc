@@ -213,7 +213,7 @@ func TestSource(t *testing.T) {
 	for _, exp := range expRx {
 		v, err := src.Next(ctx)
 		if err != nil {
-			t.Error(err)
+			t.Errorf("next failed: %+v", err)
 		}
 
 		if v != exp {
@@ -234,7 +234,7 @@ func TestSource(t *testing.T) {
 		select {
 		case err := <-errc:
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("from errc: %+v", err)
 			}
 		case <-conn1:
 			t.Log("conn1 closed")

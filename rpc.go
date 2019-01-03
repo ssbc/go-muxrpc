@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"sync"
-	"time"
 
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
@@ -304,10 +303,7 @@ type Server interface {
 
 // Serve handles the RPC session
 func (r *rpc) Serve(ctx context.Context) (err error) {
-	// naive/protective staleness close - to be improved
-	toLong, cancel := context.WithTimeout(ctx, time.Minute*23)
 	defer func() {
-		cancel()
 		cerr := r.pkr.Close()
 		if err != nil {
 			log.Printf("muxrpc: Serve closed. Err: %v - Close Err: %v", err, cerr)
@@ -319,7 +315,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 		// read next packet from connection
 		doRet := func() bool {
-			vpkt, err = r.pkr.Next(toLong)
+			vpkt, err = r.pkr.Next(ctx)
 
 			r.tLock.Lock()
 			defer r.tLock.Unlock()
@@ -399,7 +395,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		}
 
 		var isNew bool
-		req, isNew, err = r.fetchRequest(toLong, pkt)
+		req, isNew, err = r.fetchRequest(ctx, pkt)
 		if err != nil {
 			err = errors.Wrap(err, "muxrpc: error getting request")
 			return
@@ -409,12 +405,12 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		}
 
 		err = func() error { // localize defer
-			err := req.in.Pour(toLong, pkt)
+			err := req.in.Pour(ctx, pkt)
 			return errors.Wrap(err, "muxrpc: error pouring data to handler")
 		}()
 
 		if err != nil {
-			return err
+			return
 		}
 	}
 }
