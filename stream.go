@@ -3,6 +3,7 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"reflect"
 	"sync"
 	"time"
@@ -50,6 +51,7 @@ type stream struct {
 	req       int32
 	closeCh   chan struct{}
 	closeOnce *sync.Once
+	closed    bool
 
 	inStream, outStream bool
 }
@@ -148,7 +150,7 @@ func (str *stream) Pour(ctx context.Context, v interface{}) error {
 	)
 
 	// cancellation
-	ctx, cancel := withError(ctx, errors.New("pour to closed stream"))
+	ctx, cancel := withError(ctx, errSinkClosed)
 	defer cancel()
 	go func() {
 		select {
@@ -175,19 +177,24 @@ func (str *stream) Pour(ctx context.Context, v interface{}) error {
 
 // Close closes the stream and sends the EndErr message.
 func (str *stream) Close() error {
+	str.l.Lock()
+	defer str.l.Unlock()
+
+	if str.closed {
+		log.Println("already closed")
+		return nil
+	}
+	var err error
 	str.closeOnce.Do(func() {
 		pkt := newEndOkayPacket(str.req, str.inStream || str.outStream)
 		close(str.closeCh)
+		str.closed = true
 
-		// call in goroutine because we get called from the Serve-loop and
-		// this causes trouble when used with net.Pipe(), because the stream is
-		// unbuffered.  This shouldn't block too long and returns (a) when the
-		// packet is sent, (b) if the connection is closed or some other error
-		// occurs, which at some point will happen.
-		go str.pktSink.Pour(context.TODO(), pkt)
+		// sorry not sorry
+		err = str.pktSink.Pour(context.TODO(), pkt)
 	})
 
-	return nil
+	return errors.Wrapf(err, "failed to close stream (%d)", str.req)
 }
 
 // Close closes the stream and sends the EndErr message.

@@ -8,16 +8,14 @@ import (
 	"go.cryptoscope.co/muxrpc/codec"
 
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	//"github.com/stretchr/testify/assert"
-	//"github.com/pkg/errors"
 )
 
 func TestStream(t *testing.T) {
 	const req = 23
 
 	r := require.New(t)
-	a := assert.New(t)
 	iSrc, iSink := luigi.NewPipe(luigi.WithBuffer(2))
 	oSrc, oSink := luigi.NewPipe(luigi.WithBuffer(4))
 
@@ -66,6 +64,7 @@ func TestStream_1(t *testing.T) {
 	const req = 23
 
 	r := require.New(t)
+	a := assert.New(t)
 	iSrc, iSink := luigi.NewPipe(luigi.WithBuffer(2))
 	oSrc, oSink := luigi.NewPipe(luigi.WithBuffer(4))
 
@@ -98,7 +97,7 @@ func TestStream_1(t *testing.T) {
 	r.NoError(err)
 
 	err = str.Pour(ctx, "bar")
-	a.EqualError(err, "error", "expected error pouring")
+	a.Equal(errSinkClosed, errors.Cause(err), "expected error pouring")
 
 	v, err := oSrc.Next(ctx)
 	r.NoError(err, "error reading packet from oSrc")

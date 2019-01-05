@@ -306,7 +306,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 	defer func() {
 		cerr := r.pkr.Close()
 		if err != nil {
-			log.Printf("muxrpc: Serve closed. Err: %v - Close Err: %v", err, cerr)
+			log.Printf("muxrpc: Serve closed.\nHandle Err: %+v\nPacker Close Err: %+v", err, cerr)
 		}
 	}()
 
@@ -368,7 +368,11 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 						err = req.Stream.Close()
 						if err != nil {
-							return errors.Wrap(err, "error closing stream")
+							if errors.Cause(err) == errSinkClosed {
+								log.Println("this is fine")
+							} else {
+								return errors.Wrap(err, "error closing stream")
+							}
 						}
 					} else {
 						var pkgErr error
