@@ -74,9 +74,6 @@ func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 
 // Pour sends a packet to the underlying stream.
 func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
-	pkr.wl.Lock()
-	defer pkr.wl.Unlock()
-
 	pkt, ok := v.(*codec.Packet)
 	if !ok {
 		return errors.Errorf("packer sink expected type *codec.Packet, got %T", v)
@@ -84,6 +81,8 @@ func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
 
 	errc := make(chan error)
 	go func() {
+		pkr.wl.Lock()
+		defer pkr.wl.Unlock()
 		err := pkr.w.WritePacket(pkt)
 		if err != nil {
 			errc <- err
