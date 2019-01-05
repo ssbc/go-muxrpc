@@ -338,7 +338,11 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		}()
 		if doRet {
 			if n := len(r.reqs); n > 0 {
-				log.Println("muxrpc: returning - open reqs:", n, r.reqs)
+				log.Println("muxrpc: serve loop returning - closing open reqs:", n)
+				for _, req := range r.reqs {
+					unexpected := errors.Errorf("muxrpc: unexpected end of session")
+					req.Stream.CloseWithError(unexpected)
+				}
 			}
 			return
 		}
