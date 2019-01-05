@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -337,7 +338,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		}()
 		if doRet {
 			if n := len(r.reqs); n > 0 {
-				log.Println("open reqs:", n)
+				log.Println("muxrpc: returning - open reqs:", n, r.reqs)
 			}
 			return
 		}
@@ -368,10 +369,14 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 						err = req.Stream.Close()
 						if err != nil {
-							if errors.Cause(err) == errSinkClosed {
-								log.Println("this is fine")
-							} else {
-								return errors.Wrap(err, "error closing stream")
+							ec := errors.Cause(err)
+							switch {
+							case strings.Contains(ec.Error(), "closed pipe"):
+								log.Println("this is fine - closed os pipe")
+							case ec == errSinkClosed:
+								log.Println("this is fine - closed sink")
+							default:
+								return errors.Wrapf(err, "error closing stream %+v", req)
 							}
 						}
 					} else {

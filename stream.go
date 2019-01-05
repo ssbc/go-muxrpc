@@ -181,7 +181,7 @@ func (str *stream) Close() error {
 	defer str.l.Unlock()
 
 	if str.closed {
-		log.Println("already closed")
+		log.Println("muxrpc: stream already closed")
 		return nil
 	}
 	var err error
@@ -199,6 +199,15 @@ func (str *stream) Close() error {
 
 // Close closes the stream and sends the EndErr message.
 func (str *stream) CloseWithError(closeErr error) error {
+	// TOOD: write above as this?!
+	str.l.Lock()
+	defer str.l.Unlock()
+
+	if str.closed {
+		log.Println("muxrpc: stream already closed - with err:", closeErr)
+		return nil
+	}
+
 	pkt, err := newEndErrPacket(str.req, str.inStream || str.outStream, closeErr)
 	if err != nil {
 		return errors.Wrap(err, "error building error packet")
@@ -212,10 +221,10 @@ func (str *stream) CloseWithError(closeErr error) error {
 		// unbuffered.  This shouldn't block too long and returns (a) when the
 		// packet is sent, (b) if the connection is closed or some other error
 		// occurs, which at some point will happen.
-		go str.pktSink.Pour(context.TODO(), pkt)
+		err = str.pktSink.Pour(context.TODO(), pkt)
 	})
 
-	return nil
+	return errors.Wrapf(err, "muxrpc: failed to close stream (%d) with err: %s", str.req, closeErr)
 }
 
 // newRawPacket crafts a packet with a byte slice as payload
