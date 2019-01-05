@@ -80,7 +80,7 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 	defer cancel_()
 
 	// cancellation
-	ctx, cancel := withCloseCtx(ctx)
+	ctx, cancel := withError(ctx, luigi.EOS{})
 	defer cancel()
 	go func() {
 		select {
@@ -146,6 +146,17 @@ func (str *stream) Pour(ctx context.Context, v interface{}) error {
 		pkt *codec.Packet
 		err error
 	)
+
+	// cancellation
+	ctx, cancel := withError(ctx, errors.New("pour to closed stream"))
+	defer cancel()
+	go func() {
+		select {
+		case <-str.closeCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 
 	if body, ok := v.(codec.Body); ok {
 		pkt = newRawPacket(str.outStream, str.req, body)

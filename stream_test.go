@@ -17,6 +17,7 @@ func TestStream(t *testing.T) {
 	const req = 23
 
 	r := require.New(t)
+	a := assert.New(t)
 	iSrc, iSink := luigi.NewPipe(luigi.WithBuffer(2))
 	oSrc, oSink := luigi.NewPipe(luigi.WithBuffer(4))
 
@@ -95,6 +96,9 @@ func TestStream_1(t *testing.T) {
 	r.NoError(err)
 	err = str.Close()
 	r.NoError(err)
+
+	err = str.Pour(ctx, "bar")
+	a.EqualError(err, "error", "expected error pouring")
 
 	v, err := oSrc.Next(ctx)
 	r.NoError(err, "error reading packet from oSrc")

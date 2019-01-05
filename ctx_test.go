@@ -43,7 +43,7 @@ func TestCloseContext(t *testing.T) {
 			ctx := context.Background()
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			ctx, cls := withCloseCtx(ctx)
+			ctx, cls := withError(ctx, luigi.EOS{})
 			defer cls()
 
 			for _, op := range tc.closes {
