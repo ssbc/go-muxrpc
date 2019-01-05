@@ -197,6 +197,10 @@ func (str *stream) Close() error {
 		err = str.pktSink.Pour(toLong, pkt)
 	})
 
+	if IsSinkClosed(errors.Cause(err)) {
+		// log.Printf("muxrpc: stream(%d) sink closed", str.req)
+		return nil
+	}
 	return errors.Wrapf(err, "failed to close stream (%d)", str.req)
 }
 
