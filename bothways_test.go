@@ -327,11 +327,6 @@ func TestBothwaysSink(t *testing.T) {
 						return
 					}
 				}
-
-				err := req.Stream.Close()
-				if err != nil {
-					errc <- errors.Wrap(err, "stream close errored")
-				}
 			}
 		}
 	}
@@ -410,7 +405,7 @@ func TestBothwaysSink(t *testing.T) {
 		select {
 		case err := <-errc:
 			if err != nil {
-				t.Fatalf("got error from channel: %+v", err)
+				t.Fatalf("got error from channel:\n%+v", err)
 			}
 		case <-conn1:
 			t.Log("conn1 closed")
