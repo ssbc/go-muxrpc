@@ -336,6 +336,9 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			return false
 		}()
 		if doRet {
+			if n := len(r.reqs); n > 0 {
+				log.Println("open reqs:", n)
+			}
 			return
 		}
 
