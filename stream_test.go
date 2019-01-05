@@ -7,6 +7,7 @@ import (
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
 
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	//"github.com/stretchr/testify/assert"
 	//"github.com/pkg/errors"
@@ -84,7 +85,7 @@ func TestStream_1(t *testing.T) {
 	r.Equal(s, "test msg", "wrong value in string")
 
 	_, err = str.Next(ctx)
-	r.Equal(luigi.EOS{}, err, "expected end of stream error")
+	r.Equal(luigi.EOS{}, errors.Cause(err), "expected end of stream error")
 
 	err = str.Pour(ctx, "foo")
 	r.NoError(err)
