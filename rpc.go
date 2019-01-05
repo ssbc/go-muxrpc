@@ -376,7 +376,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 							case ec == errSinkClosed:
 								log.Println("this is fine - closed sink")
 							default:
-								return errors.Wrapf(err, "error closing stream %+v", req)
+								return errors.Wrapf(err, "error closing stream(%d) %v", pkt.Req, req.Method)
 							}
 						}
 					} else {

@@ -153,20 +153,13 @@ func TestBohwaysSource(t *testing.T) {
 
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
-			for _, v := range expRx {
+			for i, v := range expRx {
 				err := req.Stream.Pour(ctx, v)
-				if err != nil {
-					t.Logf("pour errored with %+v\n", err)
-					t.Error(err)
-				}
+				ckFatal(errors.Wrapf(err, "test pour %d failed", i))
 			}
 
 			err := req.Stream.Close()
-			if err != nil {
-				t.Logf("end pour errored with %+v\n", err)
-				t.Error(err)
-			}
-
+			ckFatal(errors.Wrap(err, "test close failed"))
 		}
 	})
 
@@ -179,20 +172,13 @@ func TestBohwaysSource(t *testing.T) {
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
-			for _, v := range expRx {
+			for i, v := range expRx {
 				err := req.Stream.Pour(ctx, v)
-				if err != nil {
-					t.Logf("pour errored with %+v\n", err)
-					t.Error(err)
-				}
+				ckFatal(errors.Wrapf(err, "test pour %d failed", i))
 			}
 
 			err := req.Stream.Close()
-			if err != nil {
-				t.Logf("end pour errored with %+v\n", err)
-				t.Error(err)
-			}
-
+			ckFatal(errors.Wrap(err, "test close failed"))
 		}
 	})
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
@@ -448,12 +434,11 @@ func TestBothwayDuplex(t *testing.T) {
 
 	c1, c2 := net.Pipe()
 
-	conn1 := make(chan struct{})
-	conn2 := make(chan struct{})
-
 	errc := make(chan error)
 	ckFatal := mkCheck(errc)
 
+	var wg sync.WaitGroup
+	wg.Add(6)
 	handler := func(name string) func(context.Context, *Request, Endpoint) {
 		return func(ctx context.Context, req *Request, edp Endpoint) {
 			t.Logf("%s called %+v\n", name, req)
@@ -474,6 +459,7 @@ func TestBothwayDuplex(t *testing.T) {
 				}
 				err := req.Stream.Close()
 				ckFatal(errors.Wrap(err, "failed to close stream"))
+				wg.Done()
 			}
 		}
 	}
@@ -482,14 +468,14 @@ func TestBothwayDuplex(t *testing.T) {
 	fh1.HandleCallCalls(handler("h1"))
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h1 connected")
-		close(conn1)
+		wg.Done()
 	})
 
 	var fh2 FakeHandler
 	fh2.HandleCallCalls(handler("h2"))
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h2 connected")
-		close(conn2)
+		wg.Done()
 	})
 
 	rpc1 := Handle(NewPacker(c1), &fh1)
@@ -499,9 +485,6 @@ func TestBothwayDuplex(t *testing.T) {
 
 	go serve(ctx, rpc1.(Server), errc)
 	go serve(ctx, rpc2.(Server), errc)
-
-	var wg sync.WaitGroup
-	wg.Add(2)
 
 	go func() {
 		src, sink, err := rpc1.Duplex(ctx, "str", Method{"whoami"})
@@ -561,7 +544,7 @@ func TestBothwayDuplex(t *testing.T) {
 	i := 0
 	for err := range errc {
 		if err != nil {
-			t.Fatalf("err#%d from goroutine: %+v", i, err)
+			t.Fatalf("err#%d from goroutine:\n%+v", i, err)
 			i++
 		}
 	}

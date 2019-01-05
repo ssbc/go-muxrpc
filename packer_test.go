@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
 )
@@ -25,11 +26,13 @@ func TestPacker(t *testing.T) {
 		Body: []byte("wat"),
 	}
 
+	errc := make(chan error)
 	go func() {
 		err := pkr1.Pour(ctx, &pkt)
 		if err != nil {
-			t.Fatal(err)
+			errc <- errors.Wrap(err, "failed to send test packet (wat)")
 		}
+		close(errc)
 	}()
 
 	v, err := pkr2.Next(ctx)
@@ -66,6 +69,11 @@ func TestPacker(t *testing.T) {
 	err = pkr1.Pour(ctx, pkt_)
 	if err == nil {
 		t.Fatal("expected write-to-close-conn error, got nil")
+	}
+
+	sendErr, ok := <-errc
+	if ok {
+		t.Fatal(sendErr)
 	}
 
 	t.Log("this error should be about pouring to a closed sink:", err)

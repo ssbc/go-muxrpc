@@ -181,7 +181,8 @@ func (str *stream) Close() error {
 	defer str.l.Unlock()
 
 	if str.closed {
-		log.Println("muxrpc: stream already closed")
+		// logs way to much on a live system - legacy replicate does lots of requests
+		// log.Printf("muxrpc: stream(%d) already closed", str.req)
 		return nil
 	}
 	var err error
@@ -191,7 +192,9 @@ func (str *stream) Close() error {
 		str.closed = true
 
 		// sorry not sorry
-		err = str.pktSink.Pour(context.TODO(), pkt)
+		toLong, cancel := context.WithTimeout(context.TODO(), time.Second*10) //time.Minute/2)
+		defer cancel()
+		err = str.pktSink.Pour(toLong, pkt)
 	})
 
 	return errors.Wrapf(err, "failed to close stream (%d)", str.req)
@@ -221,7 +224,9 @@ func (str *stream) CloseWithError(closeErr error) error {
 		// unbuffered.  This shouldn't block too long and returns (a) when the
 		// packet is sent, (b) if the connection is closed or some other error
 		// occurs, which at some point will happen.
-		err = str.pktSink.Pour(context.TODO(), pkt)
+		toLong, cancel := context.WithTimeout(context.TODO(), time.Second*10) //time.Minute/2)
+		defer cancel()
+		err = str.pktSink.Pour(toLong, pkt)
 	})
 
 	return errors.Wrapf(err, "muxrpc: failed to close stream (%d) with err: %s", str.req, closeErr)

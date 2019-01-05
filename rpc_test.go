@@ -374,7 +374,7 @@ func TestDuplex(t *testing.T) {
 	c1, c2 := net.Pipe()
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(3)
 
 	errc := make(chan error)
 	ckFatal := mkCheck(errc)
@@ -384,7 +384,6 @@ func TestDuplex(t *testing.T) {
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h1 connected")
 		// I think this _should_ terminate e?
-
 		wg.Done()
 	})
 
@@ -409,7 +408,7 @@ func TestDuplex(t *testing.T) {
 
 			err := req.Stream.Close()
 			ckFatal(err)
-
+			wg.Done()
 		}
 	})
 

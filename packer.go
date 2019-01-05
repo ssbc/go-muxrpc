@@ -82,19 +82,30 @@ func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
 		return errors.Errorf("packer sink expected type *codec.Packet, got %T", v)
 	}
 
-	err := pkr.w.WritePacket(pkt)
-	if err != nil {
-		select {
-		case <-pkr.closing:
-			return errSinkClosed
-		default:
+	errc := make(chan error)
+	go func() {
+		err := pkr.w.WritePacket(pkt)
+		if err != nil {
+			errc <- err
 		}
+		close(errc)
+	}()
+
+	var err error
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	case <-pkr.closing:
+		err = errSinkClosed
+	case err = <-errc:
 	}
-	return errors.Wrap(err, "error writing packet")
+
+	return errors.Wrap(err, "muxrpc: error writing packet")
 }
 
 var errSinkClosed = stderr.New("muxrpc: pour to closed sink")
 
+// IsSinkClosed should be moved to luigi to gether with the error
 func IsSinkClosed(err error) bool {
 	if err := errors.Cause(err); err == errSinkClosed {
 		return true
