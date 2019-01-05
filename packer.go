@@ -2,6 +2,7 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
+	stderr "errors"
 	"io"
 	"sync"
 
@@ -92,7 +93,7 @@ func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
 	return errors.Wrap(err, "error writing packet")
 }
 
-var errSinkClosed = errors.New("pour to closed sink")
+var errSinkClosed = stderr.New("muxrpc: pour to closed sink")
 
 func IsSinkClosed(err error) bool {
 	if err := errors.Cause(err); err == errSinkClosed {
