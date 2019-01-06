@@ -2,18 +2,38 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/cryptix/go/logging/logtest"
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/luigi/mfr"
 
 	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/debug"
 )
+
+/*
+	_, jsLog := initLogging(t, "js")
+	muxdbg, _ := initLogging(t, "packets")
+*/
+
+func initLogging(t *testing.T, pref string) (l log.Logger, w io.Writer) {
+	w = logtest.Logger(pref, t)
+	if testing.Verbose() {
+		w = io.MultiWriter(w, os.Stderr)
+	}
+	l = log.NewLogfmtLogger(w)
+	return
+}
 
 // for some reason you can't use t.Fatal // t.Error in goroutines... :-/
 func serve(ctx context.Context, r Server, errc chan<- error, done ...chan<- struct{}) {
@@ -32,6 +52,23 @@ func mkCheck(errc chan<- error) func(err error) {
 			errc <- err
 		}
 	}
+}
+
+func rewrap(l log.Logger, p Packer) Packer {
+	ip, ok := p.(*packer)
+	if !ok {
+		l.Log(
+			"rewrap", "warn: wrong internal packer type",
+			"t", fmt.Sprintf("%T", p))
+		return p
+	}
+
+	rwc, ok := ip.c.(io.ReadWriteCloser)
+	if !ok {
+		panic(fmt.Sprintf("expected RWC: %T", ip.c))
+	}
+
+	return NewPacker(debug.Wrap(l, rwc))
 }
 
 func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
@@ -66,6 +103,13 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 			t.Log("h2 connected")
 			close(conn2)
 		})
+
+		if testing.Verbose() {
+			muxlog1, _ := initLogging(t, "p1")
+			muxlog2, _ := initLogging(t, "p2")
+			pkr1 = rewrap(muxlog1, pkr1)
+			pkr2 = rewrap(muxlog2, pkr2)
+		}
 
 		rpc1 := Handle(pkr1, &fh1)
 		rpc2 := Handle(pkr2, &fh2)
@@ -116,30 +160,40 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 }
 
 func TestAsync(t *testing.T) {
-	pkrgens := []func() (string, Packer, Packer){
+	type duplex struct {
+		luigi.Source
+		luigi.Sink
+	}
+
+	negReqMapFunc := func(ctx context.Context, v interface{}) (interface{}, error) {
+		pkt := v.(*codec.Packet)
+		pkt.Req = -pkt.Req
+		return pkt, nil
+	}
+	type makerFunc func() (string, Packer, Packer)
+	pkrgens := []makerFunc{
 		func() (string, Packer, Packer) {
 			c1, c2 := net.Pipe()
-			return "NetPipe", NewPacker(c1), NewPacker(c2)
+			p1, p2 := NewPacker(c1), NewPacker(c2)
+			return "NetPipe", p1, p2
 		},
 		func() (string, Packer, Packer) {
 			rxSrc, rxSink := luigi.NewPipe(luigi.WithBuffer(5))
 			txSrc, txSink := luigi.NewPipe(luigi.WithBuffer(5))
 
-			type duplex struct {
-				luigi.Source
-				luigi.Sink
-			}
+			rxSrc = mfr.SourceMap(rxSrc, negReqMapFunc)
+			txSrc = mfr.SourceMap(txSrc, negReqMapFunc)
 
-			negReqMapFunc := func(ctx context.Context, v interface{}) (interface{}, error) {
-				pkt := v.(*codec.Packet)
-				pkt.Req = -pkt.Req
-				return pkt, nil
-			}
+			return "LuigiPipes (buffered)", duplex{rxSrc, txSink}, duplex{txSrc, rxSink}
+		},
+		func() (string, Packer, Packer) {
+			rxSrc, rxSink := luigi.NewPipe()
+			txSrc, txSink := luigi.NewPipe()
 
 			rxSrc = mfr.SourceMap(rxSrc, negReqMapFunc)
 			txSrc = mfr.SourceMap(txSrc, negReqMapFunc)
 
-			return "LuigiPipes", duplex{rxSrc, txSink}, duplex{txSrc, rxSink}
+			return "LuigiPipes (unbuffered)", duplex{rxSrc, txSink}, duplex{txSrc, rxSink}
 		},
 	}
 
@@ -172,7 +226,7 @@ func TestSource(t *testing.T) {
 	var fh1 FakeHandler
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Log("h1 called")
-		t.Errorf("unexpected call to rpc1: %#v", req)
+		errc <- errors.Errorf("unexpected call to rpc1: %#v", req)
 	})
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h1 connected")

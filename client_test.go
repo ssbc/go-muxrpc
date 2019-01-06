@@ -26,19 +26,16 @@ import (
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/debug"
 
-	"github.com/cryptix/go/logging/logtest"
 	"github.com/cryptix/go/proc"
-	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
 func TestJSGettingCalledSource(t *testing.T) {
 	r := require.New(t)
-	logOut := logtest.Logger("js", t)
-	logger := log.NewLogfmtLogger(logOut)
 
-	serv, err := proc.StartStdioProcess("node", logOut, "client_test.js")
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	gotCall := make(chan struct{})
@@ -67,7 +64,9 @@ func TestJSGettingCalledSource(t *testing.T) {
 		ckFatal(errors.Wrap(err, "stream close failed"))
 		close(callServed)
 	})
-	packer := NewPacker(debug.Wrap(logger, serv))
+
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
@@ -95,9 +94,6 @@ func TestJSGettingCalledSource(t *testing.T) {
 
 func TestJSGettingCalledAsync(t *testing.T) {
 	r := require.New(t)
-	logOut := logtest.Logger("js", t)
-	//logOut := os.Stderr
-	logger := log.NewLogfmtLogger(logOut)
 
 	errc := make(chan error)
 	ckFatal := mkCheck(errc)
@@ -109,6 +105,7 @@ func TestJSGettingCalledAsync(t *testing.T) {
 		close(errc)
 	}()
 
+	_, logOut := initLogging(t, "js")
 	serv, err := proc.StartStdioProcess("node", logOut, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
@@ -122,7 +119,9 @@ func TestJSGettingCalledAsync(t *testing.T) {
 		err := req.Return(ctx, "meow")
 		ckFatal(err)
 	})
-	packer := NewPacker(debug.Wrap(logger, serv))
+
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
@@ -158,14 +157,14 @@ sbot.whoami((err, who) => {
 */
 func TestJSSyncString(t *testing.T) {
 	r := require.New(t)
-	logger := log.NewLogfmtLogger(logtest.Logger(t.Name(), t))
-	//logOut := os.Stderr
-	logOut := logtest.Logger("client_test.js", t)
-	serv, err := proc.StartStdioProcess("node", logOut, "client_test.js")
+
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
-	packer := NewPacker(debug.Wrap(logger, serv))
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
@@ -203,13 +202,14 @@ func TestJSSyncString(t *testing.T) {
 
 func TestJSAsyncString(t *testing.T) {
 	r := require.New(t)
-	logger := log.NewLogfmtLogger(logtest.Logger("TestJSAsyncString()", t))
 
-	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
-	packer := NewPacker(debug.Wrap(logger, serv))
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
 	errc := make(chan error)
@@ -242,14 +242,14 @@ func TestJSAsyncString(t *testing.T) {
 
 func TestJSAsyncObject(t *testing.T) {
 	r := require.New(t)
-	logger := log.NewLogfmtLogger(logtest.Logger("TestJSAsyncObject()", t))
 
-	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
-	// TODO: inject logger into Handle and/or packer?
-	packer := NewPacker(debug.Wrap(logger, serv))
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
@@ -285,13 +285,14 @@ func TestJSAsyncObject(t *testing.T) {
 
 func TestJSSource(t *testing.T) {
 	r := require.New(t)
-	logger := log.NewLogfmtLogger(logtest.Logger("TestJSSource()", t))
 
-	serv, err := proc.StartStdioProcess("node", logtest.Logger("client_test.js", t), "client_test.js")
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
-	packer := NewPacker(debug.Wrap(logger, serv))
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
