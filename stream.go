@@ -94,12 +94,12 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 
 	vpkt, err := str.pktSrc.Next(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "error reading from packet source")
+		return nil, errors.Wrap(err, "muxrpc: error reading from packet source")
 	}
 
 	pkt, ok := vpkt.(*codec.Packet)
 	if !ok {
-		return nil, errors.Errorf("unexpected vpkt value: %v %T", vpkt, vpkt)
+		return nil, errors.Errorf("muxrpc: unexpected vpkt value: %v %T", vpkt, vpkt)
 	}
 
 	if pkt.Flag.Get(codec.FlagEndErr) {
