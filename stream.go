@@ -14,6 +14,12 @@ import (
 	"github.com/pkg/errors"
 )
 
+var (
+	ErrStreamNotReadable = errors.New("muxrpc: this stream can not be read from")
+	ErrStreamNotWritable = errors.New("muxrpc: this stream can not be written to")
+	ErrStreamNotClosable = errors.New("muxrpc: this stream can not be closed")
+)
+
 // Stream is a muxrpc stream for the general duplex case.
 type Stream interface {
 	luigi.Source
@@ -74,6 +80,10 @@ func (str *stream) WithReq(req int32) {
 
 // Next returns the next incoming value on the stream
 func (str *stream) Next(ctx context.Context) (interface{}, error) {
+	if !str.inStream {
+		return nil, ErrStreamNotReadable
+	}
+
 	// TODO: for some reason the streams are not getting closed when a
 	// connection closes, and thus the context returned by withCloseCtx
 	// is not cancelled.  As a temporary fix we cancel after five
@@ -149,6 +159,10 @@ func (str *stream) Pour(ctx context.Context, v interface{}) error {
 		err error
 	)
 
+	if !str.outStream {
+		return ErrStreamNotWritable
+	}
+
 	// cancellation
 	ctx, cancel := withError(ctx, errSinkClosed)
 	defer cancel()
@@ -177,6 +191,10 @@ func (str *stream) Pour(ctx context.Context, v interface{}) error {
 
 // Close closes the stream and sends the EndErr message.
 func (str *stream) Close() error {
+	if !str.outStream {
+		return ErrStreamNotClosable
+	}
+
 	str.l.Lock()
 	defer str.l.Unlock()
 

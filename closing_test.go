@@ -4,9 +4,23 @@ import (
 	"context"
 	"testing"
 
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
+)
+
+type streamConfig struct {
+	name    string
+	in, out bool
+}
+
+var (
+	streamConfAsync  streamConfig = streamConfig{"async", false, false}
+	streamConfSource streamConfig = streamConfig{"source", true, false}
+	streamConfSink   streamConfig = streamConfig{"sink", false, true}
+	streamConfDuplex streamConfig = streamConfig{"duplex", true, true}
 )
 
 func TestStreamClosing(t *testing.T) {
@@ -16,15 +30,15 @@ func TestStreamClosing(t *testing.T) {
 	 */
 
 	type tcase struct {
-		dir    string
+		conf   streamConfig
 		expErr error
 	}
 
 	testCases := []tcase{
-		{"async", nil},   // function call. returns with the endErr packet
-		{"source", nil},  // read from / can't be closed
-		{"sink", nil},    // write to / has to be closed
-		{"douplex", nil}, // write both ends / has to be closed
+		{streamConfAsync, nil},  // function call. returns with the endErr packet
+		{streamConfSource, nil}, // read from / can't be closed
+		{streamConfSink, nil},   // write to / has to be closed
+		{streamConfDuplex, nil}, // write both ends / has to be closed
 	}
 
 	ctx := context.Background()
@@ -32,33 +46,21 @@ func TestStreamClosing(t *testing.T) {
 	tmsg := "test message"
 
 	for i, tc := range testCases {
-		t.Run(tc.dir, func(t *testing.T) {
+		t.Run(tc.conf.name, func(t *testing.T) {
 
 			r := require.New(t)
 
 			iSrc, iSink := luigi.NewPipe(luigi.WithBuffer(1))
 			oSrc, oSink := luigi.NewPipe(luigi.WithBuffer(1))
 
-			var inStream, outStream bool
-			switch tc.dir {
-			case "async":
-				inStream, outStream = true, false
-			case "sink":
-				inStream, outStream = true, false
-			case "source":
-				inStream, outStream = false, true
-			case "douplex":
-				inStream, outStream = true, true
-			default:
-				t.Fatal("unhandled direction:", tc.dir)
-			}
+			inStream, outStream := tc.conf.in, tc.conf.out
 
 			str := NewStream(iSrc, oSink, int32(i), inStream, outStream)
 
 			// try to pour into the stream
 			err := str.Pour(ctx, tmsg)
-			if inStream {
-				r.NoError(err, "should be able to pour into an inStream")
+			if outStream {
+				r.NoError(err, "should be able to pour into an outStream")
 
 				v, err := oSrc.Next(ctx)
 				r.NoError(err, "should be able to get the poured message")
@@ -66,8 +68,9 @@ func TestStreamClosing(t *testing.T) {
 				r.True(ok, "not a codec packet")
 				r.Equal(tmsg, string(pkt.Body))
 			} else {
-				r.EqualError(err, "can't pour", "shouldn't be able to pour")
+				r.Equal(errors.Cause(err), ErrStreamNotWritable, "shouldn't be able to pour")
 			}
+
 			pkt := codec.Packet{
 				Flag: codec.FlagString,
 				Req:  int32(i),
@@ -77,18 +80,18 @@ func TestStreamClosing(t *testing.T) {
 			r.NoError(pourErr, "should be able to send to an outStream")
 
 			v, err := str.Next(ctx)
-			if outStream {
-				r.NoError(err, "should be able to get message from an outStream")
+			if inStream {
+				r.NoError(err, "should be able to get message from an inStream")
 				r.Equal(tmsg, v)
 			} else {
-				r.EqualError(err, "can't get", "shouldn't be able to drain")
+				r.Equal(errors.Cause(err), ErrStreamNotReadable, "shouldn't be able to drain")
 			}
 
 			err = str.Close()
-			if inStream {
+			if outStream {
 				r.NoError(err, "should be able to close an inStream")
 			} else {
-				r.EqualError(err, "can't close", "shouldn't be able to close")
+				r.Equal(errors.Cause(err), ErrStreamNotClosable, "shouldn't be able to close")
 			}
 		})
 

@@ -89,7 +89,7 @@ func (r *rpc) Async(ctx context.Context, tipe interface{}, method Method, args .
 
 	req := &Request{
 		Type:   "async",
-		Stream: NewStream(inSrc, r.pkr, 0, false, false),
+		Stream: NewStream(inSrc, r.pkr, 0, false, true),
 		in:     inSink,
 
 		Method: method,
@@ -317,14 +317,14 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		// read next packet from connection
 		doRet := func() bool {
 			vpkt, err = r.pkr.Next(ctx)
-
-			r.tLock.Lock()
-			defer r.tLock.Unlock()
-
 			if luigi.IsEOS(err) {
 				err = nil
 				return true
 			}
+
+			r.tLock.Lock()
+			defer r.tLock.Unlock()
+
 			if err != nil {
 				if r.terminated {
 					err = nil
@@ -349,6 +349,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 		pkt := vpkt.(*codec.Packet)
 
+		// error handling and cleanup
 		var req *Request
 		if pkt.Flag.Get(codec.FlagEndErr) {
 			getReq := func(req int32) (*Request, bool) {
@@ -379,6 +380,8 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 								log.Println("this is fine - closed os pipe")
 							case ec == errSinkClosed:
 								log.Println("this is fine - closed sink")
+							case ec == ErrStreamNotClosable:
+								log.Println("this is fine - stream not closable")
 							default:
 								return errors.Wrapf(err, "error closing stream(%d) %v", pkt.Req, req.Method)
 							}

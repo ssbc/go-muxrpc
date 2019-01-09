@@ -2,6 +2,7 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -100,8 +101,11 @@ func TestBothwaysAsync(t *testing.T) {
 		close(term2)
 	}()
 
+	fmt.Println("big for loop")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil && term1 != nil || term2 != nil {
 		select {
+		case err := <-errc:
+			t.Error(err)
 		case <-conn1:
 			t.Log("conn1 closed")
 			conn1 = nil
@@ -186,8 +190,11 @@ func TestBohwaysSource(t *testing.T) {
 		close(conn2)
 	})
 
+	fmt.Println("handle1")
 	rpc1 := Handle(NewPacker(c1), &fh1)
+	fmt.Println("handle2")
 	rpc2 := Handle(NewPacker(c2), &fh2)
+	fmt.Println("handler registered")
 
 	ctx := context.Background()
 
@@ -235,9 +242,10 @@ func TestBohwaysSource(t *testing.T) {
 			}
 		}
 
-		val, err := src.Next(ctx)
+		_, err = src.Next(ctx)
 		if !luigi.IsEOS(err) {
-			t.Errorf("expected end of stream, got value %v and error %+v", val, err)
+			ckFatal(err)
+			// t.Errorf("expected end of stream, got value %v and error %+v", val, err)
 		}
 
 		close(call2)
@@ -247,9 +255,12 @@ func TestBohwaysSource(t *testing.T) {
 		close(term2)
 	}()
 
+	fmt.Println("starting waiting for loop")
 	t.Log("waiting for everything to shut down")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil && term1 != nil || term2 != nil {
 		select {
+		case err := <-errc:
+			t.Error("an error occurred:", err)
 		case <-conn1:
 			t.Log("conn1 closed")
 			conn1 = nil
@@ -270,6 +281,7 @@ func TestBohwaysSource(t *testing.T) {
 			term2 = nil
 		}
 	}
+	fmt.Println("waiting for loop done")
 }
 
 func TestBothwaysSink(t *testing.T) {
