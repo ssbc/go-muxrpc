@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"net"
-	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -175,14 +174,6 @@ func (r *rpc) Terminate() error {
 	return r.pkr.Close()
 }
 
-func (r *rpc) finish(ctx context.Context, reqID int32) error {
-	req := r.reqs[reqID]
-	delete(r.reqs, reqID)
-	isStream := req.Type.Flags() != 0
-	err := r.pkr.Pour(ctx, newEndOkayPacket(reqID, isStream))
-	return errors.Wrap(err, "error pouring done message")
-}
-
 // Do executes a generic call
 func (r *rpc) Do(ctx context.Context, req *Request) error {
 	var (
@@ -350,9 +341,11 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			defer r.rLock.Unlock()
 			if n := len(r.reqs); n > 0 {
 				log.Println("muxrpc: serve loop returning - closing open reqs:", n)
-				for _, req := range r.reqs {
-					unexpected := errors.Errorf("muxrpc: unexpected end of session")
-					req.Stream.CloseWithError(unexpected)
+				for id, req := range r.reqs {
+					unexpected := errors.Wrap(err, "muxrpc: unexpected end of session")
+					if err := req.CloseWithError(unexpected); err != nil && !luigi.IsEOS(errors.Cause(err)) {
+						log.Printf("muxrpc: failed to close dangling request(%d) %v: %s", id, req.Method, err)
+					}
 				}
 			}
 			shutdown = true
@@ -414,33 +407,10 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 }
 
 func (r *rpc) closeStream(req *Request, streamErr error) error {
-	var err error
 
-	if streamErr == nil {
-		err = req.in.Close()
-		if err != nil {
-			return errors.Wrap(err, "error closing pipe sink")
-		}
-	} else {
-		err = req.in.(luigi.ErrorCloser).CloseWithError(streamErr)
-		if err != nil {
-			return errors.Wrap(err, "error closing pipe sink with error")
-		}
-	}
-
-	err = req.Stream.Close()
+	err := req.CloseWithError(streamErr)
 	if err != nil {
-		ec := errors.Cause(err)
-		switch {
-		case strings.Contains(ec.Error(), "closed pipe"):
-			// log.Println("this is fine - closed os pipe")
-		case ec == errSinkClosed:
-			// log.Println("this is fine - closed sink")
-		case ec == ErrStreamNotClosable:
-			// log.Println("this is fine - stream not closable")
-		default:
-			log.Println(errors.Wrapf(err, "muxrpc: error closing stream(%d) %v", req.pkt.Req, req.Method))
-		}
+		log.Printf("closeStream(%d) %v - %v", req.pkt.Req, req.Method, err)
 	}
 
 	r.rLock.Lock()

@@ -54,6 +54,24 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 	return nil
 }
 
+func (req *Request) CloseWithError(cerr error) error {
+	var inErr error
+	if luigi.IsEOS(cerr) {
+		inErr = req.in.Close()
+	} else {
+		inErr = req.in.(luigi.ErrorCloser).CloseWithError(cerr)
+	}
+	if inErr != nil {
+		return errors.Wrap(inErr, "failed to close request input")
+	}
+
+	return errors.Wrap(req.Stream.Close(), "muxrpc: failed to close request stream")
+}
+
+func (req *Request) Close() error {
+	return req.CloseWithError(luigi.EOS{})
+}
+
 // CallType is the type of a call
 type CallType string
 
