@@ -3,6 +3,7 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -281,7 +282,10 @@ func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bo
 			return nil, false, errors.Wrap(err, "error parsing request")
 		}
 		r.reqs[pkt.Req] = req
-
+		// TODO:
+		// buffer new requests to not mindlessly spawn goroutines
+		// and prioritize exisitng requests to unblock the connection time
+		// maybe use two maps
 		go r.root.HandleCall(ctx, req, r)
 	}
 
@@ -431,7 +435,7 @@ type CallError struct {
 }
 
 func (e *CallError) Error() string {
-	return e.Message
+	return fmt.Sprintf("muxrpc CallError: %s - %s", e.Name, e.Message)
 }
 
 func parseError(data []byte) (*CallError, error) {
@@ -442,9 +446,10 @@ func parseError(data []byte) (*CallError, error) {
 		return nil, errors.Wrap(err, "error unmarshaling error packet")
 	}
 
-	if e.Name != "Error" {
-		return nil, errors.New(`name is not "Error"`)
-	}
+	// There are also TypeErrors and numerous other things we might get from this..
+	// if e.Name != "Error" {
+	// 	return nil, errors.Errorf(`name is not "Error" but %q`, e.Name)
+	// }
 
 	return &e, nil
 }
