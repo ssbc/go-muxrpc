@@ -167,7 +167,7 @@ func TestJSSyncString(t *testing.T) {
 
 	var fh FakeHandler
 	muxdbg, _ := initLogging(t, "packets")
-	packer := NewPacker(debug.Wrap(muxdbg, serv))
+	packer := NewPacker(debug.Wrap(muxdbg, debug.Dump(t.Name(), serv)))
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
@@ -181,7 +181,7 @@ func TestJSSyncString(t *testing.T) {
 
 	v, err = rpc1.Async(ctx, "string", Method{"version"}, "wrong", "params", 42)
 	r.Error(err, "rcp sync call")
-	r.Nil(v, "expected call result")
+	r.Nil(v, "unexpected call result")
 
 	v, err = rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
