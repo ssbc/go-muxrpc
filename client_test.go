@@ -21,12 +21,14 @@ package muxrpc
 
 import (
 	"context"
+	stdlog "log"
 	"testing"
 
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/debug"
 
 	"github.com/cryptix/go/proc"
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -64,6 +66,10 @@ func TestJSGettingCalledSource(t *testing.T) {
 		ckFatal(errors.Wrap(err, "stream close failed"))
 		close(callServed)
 	})
+
+	// pktDump, err := os.Create(t.Name() + ".pkt")
+	// jsonLog := log.NewJSONLogger(pktDump)
+	// r.NoError(err, "new logger")
 
 	muxdbg, _ := initLogging(t, "packets")
 	packer := NewPacker(debug.Wrap(muxdbg, serv))
@@ -161,6 +167,9 @@ sbot.whoami((err, who) => {
 func TestJSSyncString(t *testing.T) {
 	r := require.New(t)
 
+	stdL, _ := initLogging(t, "std")
+	stdlog.SetOutput(log.NewStdlibAdapter(stdL))
+
 	_, jsLog := initLogging(t, "js")
 	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
 	r.NoError(err, "nodejs startup")
@@ -183,7 +192,7 @@ func TestJSSyncString(t *testing.T) {
 	r.Error(err, "rcp sync call")
 	r.Nil(v, "unexpected call result")
 
-	v, err = rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	v, err = rpc1.Async(ctx, "string", Method{"finalCall"}, 2000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal(v, "ty", "expected call result")
 
