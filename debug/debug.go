@@ -80,7 +80,7 @@ func (lw *logWriter) work() (func(), chan error) {
 			}
 			if pkt.Flag.Get(codec.FlagJSON) {
 
-				lw.l.Log("req", pkt.Req, "flag", pkt.Flag, "body", bytes.Replace(pkt.Body, []byte(`"`), []byte{}, -1))
+				lw.l.Log("req", pkt.Req, "flag", pkt.Flag, "body", bytes.Replace(pkt.Body, []byte(`"`), []byte("'"), -1))
 			} else {
 				lw.l.Log("req", pkt.Req, "flag", pkt.Flag, "body", pkt.Body)
 			}

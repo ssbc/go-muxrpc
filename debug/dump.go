@@ -4,6 +4,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 
 	"github.com/cryptix/go/logging"
 )
@@ -11,10 +12,11 @@ import (
 // Dump decodes every packet that passes through it and logs it
 // TODO: add timestmaps to individual packets
 // TODO: maybe make it one file - something like pcap would be rat but it's also quite the beast
-func Dump(name string, rwc io.ReadWriteCloser) io.ReadWriteCloser {
-	rx, err := os.Create(name + ".rx")
+func Dump(path string, rwc io.ReadWriteCloser) io.ReadWriteCloser {
+	os.MkdirAll(path, 0700)
+	rx, err := os.Create(filepath.Join(path, "rx"))
 	logging.CheckFatal(err)
-	tx, err := os.Create(name + ".tx")
+	tx, err := os.Create(filepath.Join(path, "tx"))
 	logging.CheckFatal(err)
 	return struct {
 		io.Reader
@@ -32,6 +34,6 @@ func Dump(name string, rwc io.ReadWriteCloser) io.ReadWriteCloser {
 
 }
 
-func WrapDump(c net.Conn) (net.Conn, error) {
-	return &wrappedConn{c, Dump(c.RemoteAddr().String(), c)}, nil
+func WrapDump(path string, c net.Conn) (net.Conn, error) {
+	return &wrappedConn{c, Dump(path, c)}, nil
 }
