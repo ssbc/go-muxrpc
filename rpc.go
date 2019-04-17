@@ -68,8 +68,18 @@ func handle(pkr Packer, handler Handler, remote net.Addr) Endpoint {
 		root:   handler,
 	}
 
+	ctx := context.TODO()
+	if cn, ok := pkr.(CloseNotifier); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		go func() {
+			<-cn.Closed()
+			cancel()
+		}()
+	}
+
 	go func() {
-		handler.HandleConnect(context.TODO(), r)
+		handler.HandleConnect(ctx, r)
 	}()
 
 	return r
@@ -310,6 +320,15 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			log.Printf("muxrpc: Serve closed.\nHandle Err: %+v\nPacker Close Err: %+v", err, cerr)
 		}
 	}()
+
+	if cn, ok := r.pkr.(CloseNotifier); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		go func() {
+			<-cn.Closed()
+			cancel()
+		}()
+	}
 
 	for {
 		var vpkt interface{}
