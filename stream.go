@@ -130,6 +130,7 @@ func (str *stream) Next(ctx context.Context) (interface{}, error) {
 
 	if pkt.Flag.Get(codec.FlagEndErr) {
 		// TODO: return error body?
+		// log.Println("muxrpc: stream %d got error: %q", pkt.Req, string(pkt.Body))
 		return nil, luigi.EOS{}
 	}
 
