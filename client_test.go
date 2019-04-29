@@ -22,7 +22,6 @@ package muxrpc
 import (
 	"context"
 	"fmt"
-	stdlog "log"
 	"testing"
 	"time"
 
@@ -30,7 +29,6 @@ import (
 	"go.cryptoscope.co/muxrpc/debug"
 
 	"github.com/cryptix/go/proc"
-	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -168,9 +166,6 @@ sbot.whoami((err, who) => {
 */
 func TestJSSyncString(t *testing.T) {
 	r := require.New(t)
-
-	stdL, _ := initLogging(t, "std")
-	stdlog.SetOutput(log.NewStdlibAdapter(stdL))
 
 	_, jsLog := initLogging(t, "js")
 	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
