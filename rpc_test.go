@@ -773,10 +773,8 @@ func TestDuplexHandlerStr(t *testing.T) {
 	err = sink.Close()
 	r.NoError(err, "error closing stream")
 
-	go func() {
-		wg.Wait()
-		close(errc)
-	}()
+	wg.Wait()
+	close(errc)
 
 	r.Len(h2.rxvals, len(expRx))
 	for i, v := range h2.rxvals {
@@ -882,10 +880,8 @@ func TestDuplexHandlerJSON(t *testing.T) {
 	err = sink.Close()
 	r.NoError(err, "error closing stream")
 
-	go func() {
-		wg.Wait()
-		close(errc)
-	}()
+	wg.Wait()
+	close(errc)
 
 	for err := range errc {
 		r.NoError(err)
