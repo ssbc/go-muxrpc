@@ -444,7 +444,7 @@ func TestJSDuplexToUs(t *testing.T) {
 
 	r.NoError(<-h.failed)
 
-	v, err := rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	v, err := rpc1.Async(ctx, "string", Method{"finalCall"}, 2000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal(v, "ty", "expected call result")
 

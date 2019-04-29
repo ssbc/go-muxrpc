@@ -38,9 +38,13 @@ var api = {
 var server = MRPC(api, api)({
   finalCall: function(delay, cb) {
     setTimeout(() => {
+      cb(null, "ty")
+
       server.close()
-    },delay)
-    cb(null, "ty")
+      setTimeout(() => {
+        process.exit(0)
+      },1000)
+    }, delay)
   },
   version: function(some, args, i) {
     console.warn(arguments)
