@@ -101,7 +101,6 @@ func TestBothwaysAsync(t *testing.T) {
 		close(term2)
 	}()
 
-	fmt.Println("big for loop")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil && term1 != nil || term2 != nil {
 		select {
 		case err := <-errc:
@@ -309,16 +308,16 @@ func TestBothwaysSink(t *testing.T) {
 
 	handler := func(name string) func(context.Context, *Request, Endpoint) {
 		return func(ctx context.Context, req *Request, edp Endpoint) {
-			t.Logf("%s called %+v\n", name, req)
+			fmt.Printf("bothwaysSink: %s called %+v\n", name, req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for i, exp := range expRx {
-					t.Log("calling Next()", i)
+					fmt.Printf("bothwaysSink: calling Next() %d", i)
 					v, err := req.Stream.Next(ctx)
 					if err != nil {
 						errc <- errors.Wrapf(err, "stream next errored")
 						return
 					}
-					t.Log("Next()", i, "returned", v)
+					fmt.Println("Next()", i, "returned", v)
 
 					if v != exp {
 						errc <- errors.Errorf("expected value %v, got %v", exp, v)

@@ -3,6 +3,7 @@ package muxrpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/pkg/errors"
@@ -40,7 +41,7 @@ func TestHandlerMux(t *testing.T) {
 		close(call)
 	})
 	fh.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
-		t.Log("h connected")
+		fmt.Println("mux: h connected")
 		close(connect)
 	})
 
@@ -48,12 +49,12 @@ func TestHandlerMux(t *testing.T) {
 
 	go func() {
 		mux.HandleConnect(todo, nil)
-		t.Log("ran connect")
+		fmt.Println("mux: ran connect")
 
 		mux.HandleCall(todo, notexp, nil)
-		t.Log("sent notexp")
+		fmt.Println("mux: sent notexp")
 		mux.HandleCall(todo, exp, nil)
-		t.Log("sent exp")
+		fmt.Println("mux: sent exp")
 	}()
 
 	vErrPkt, err := src2.Next(todo)

@@ -21,14 +21,14 @@ package muxrpc
 
 import (
 	"context"
-	stdlog "log"
+	"fmt"
 	"testing"
+	"time"
 
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/debug"
 
 	"github.com/cryptix/go/proc"
-	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -166,9 +166,6 @@ sbot.whoami((err, who) => {
 */
 func TestJSSyncString(t *testing.T) {
 	r := require.New(t)
-
-	stdL, _ := initLogging(t, "std")
-	stdlog.SetOutput(log.NewStdlibAdapter(stdL))
 
 	_, jsLog := initLogging(t, "js")
 	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
@@ -354,4 +351,102 @@ func TestJSSource(t *testing.T) {
 
 	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
+}
+
+func TestJSDuplex(t *testing.T) {
+	r := require.New(t)
+
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
+	r.NoError(err, "nodejs startup")
+
+	var fh FakeHandler
+	muxdbg, _ := initLogging(t, "packets")
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
+	rpc1 := Handle(packer, &fh)
+
+	ctx := context.Background()
+	errc := make(chan error)
+	done := make(chan struct{})
+
+	go func() {
+		<-done
+		close(errc)
+	}()
+
+	go serve(ctx, rpc1.(Server), errc, done)
+
+	src, snk, err := rpc1.Duplex(ctx, 0, Method{"magic"})
+	r.NoError(err, "rcp Async call")
+	fmt.Println("command started")
+	i := 0
+	var str = []string{"a", "b", "c", "d", "e"}
+	send := luigi.FuncSource(func(_ context.Context) (interface{}, error) {
+		defer func() { i++ }()
+		if i < len(str) {
+			// fmt.Println("to snk", str[i])
+			time.Sleep(time.Second * 1)
+			return str[i], nil
+
+		}
+		r.NoError(snk.Close())
+		return nil, luigi.EOS{}
+	})
+	r.NoError(luigi.Pump(ctx, snk, send))
+	fmt.Println("filled sink")
+
+	print := luigi.FuncSink(func(_ context.Context, v interface{}, err error) error {
+		fmt.Println("from src:", v.(int), err)
+		return err
+	})
+	r.NoError(luigi.Pump(ctx, print, src))
+	fmt.Println("draind src")
+	// r.NoError(packer.Close())
+	// close(errc)
+	// for err := range errc {
+	// 	if err != nil {
+	// 		t.Fatal(err)
+	// 	}
+	// }
+}
+
+func TestJSDuplexToUs(t *testing.T) {
+	r := require.New(t)
+
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
+	r.NoError(err, "nodejs startup")
+
+	var h hDuplex
+	h.failed = make(chan error)
+
+	muxdbg, _ := initLogging(t, "packets")
+	h.logger = muxdbg
+
+	h.txvals = []interface{}{"a", "b", "c", "d", "e", struct{ RXJS int }{9}}
+
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
+	rpc1 := Handle(packer, &h)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := make(chan error)
+
+	go serve(ctx, rpc1.(Server), errc)
+
+	ret, err := rpc1.Async(ctx, "foo", Method{"callme", "magic"})
+	r.NoError(err, "nodejs startup")
+	r.EqualValues(ret, "yey")
+
+	r.NoError(<-h.failed)
+
+	v, err := rpc1.Async(ctx, "string", Method{"finalCall"}, 2000)
+	r.NoError(err, "rcp shutdown call")
+	r.Equal(v, "ty", "expected call result")
+
+	cancel()
+	rpc1.Terminate()
+	close(errc)
+	for err := range errc {
+		r.NoError(err)
+	}
 }

@@ -611,3 +611,289 @@ func XTestErrorAsync(t *testing.T) {
 	}
 	t.Log("done")
 }
+
+type testStruct struct {
+	A   int
+	N   int
+	Str string
+}
+type hDuplex struct {
+	logger         log.Logger
+	txvals, rxvals []interface{}
+	failed         chan error
+}
+
+func (h *hDuplex) HandleConnect(ctx context.Context, e Endpoint) {
+	h.logger.Log("connect:", e.Remote())
+}
+
+func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
+	defer close(h.failed)
+
+	if req.Method.String() != "magic" {
+		edp.Terminate()
+		return
+	}
+
+	if req.Type != "duplex" {
+		edp.Terminate()
+		return
+	}
+	h.logger.Log("correct", "signature")
+
+	go func() {
+		for i, tx := range h.txvals {
+			err := req.Stream.Pour(ctx, tx)
+			if err != nil {
+				h.failed <- errors.Wrapf(err, "failed to tx val %d", i)
+				return
+			}
+			h.logger.Log("event", "sent", "err", err, "i", i, "tx", fmt.Sprintf("%+v", tx))
+			time.Sleep(250 * time.Millisecond)
+		}
+		// req.Stream.Close()
+	}()
+
+	j := 0
+	for {
+		v, err := req.Stream.Next(ctx)
+		if err != nil {
+			if luigi.IsEOS(err) {
+				break
+			}
+			h.failed <- errors.Wrap(err, "drined input stream")
+			return
+		}
+		switch rv := v.(type) {
+		case float64:
+			h.rxvals = append(h.rxvals, rv)
+		case string:
+			h.rxvals = append(h.rxvals, rv)
+		case map[string]interface{}:
+			var v testStruct
+			v.A = int(rv["A"].(float64))
+			v.N = int(rv["N"].(float64))
+			v.Str = rv["Str"].(string)
+			h.rxvals = append(h.rxvals, v)
+		default:
+			h.failed <- errors.Errorf("got unhandled duplex msg type: %T", v)
+			return
+		}
+		j++
+	}
+	// req.Stream.Close()
+}
+func TestDuplexHandlerStr(t *testing.T) {
+	dbg, w := logtest.KitLogger("dph", t)
+	if testing.Verbose() {
+
+		dbg = log.NewLogfmtLogger(io.MultiWriter(w, os.Stderr))
+
+	}
+	r := require.New(t)
+	expRx := []string{
+		"you are a test",
+		"you're a test",
+		"your a test",
+		"ur a test",
+		"u test",
+	}
+
+	expTx := []string{
+		"wow",
+		"that's like",
+		"ugh",
+		"really?",
+		"is this supposed to be funny?",
+	}
+
+	c1, c2 := net.Pipe()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	errc := make(chan error)
+	// ckFatal := mkCheck(errc)
+
+	var fh1 FakeHandler
+	// todo: check call count (there is a 2nd case of this)
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		// I think this _should_ terminate e?
+		wg.Done()
+	})
+
+	var h2 hDuplex
+	h2.logger = dbg
+	h2.failed = make(chan error)
+
+	h2.txvals = make([]interface{}, len(expTx))
+	for i, v := range expTx {
+		h2.txvals[i] = v
+	}
+	go func() {
+		err := <-h2.failed
+		if err != nil {
+			errc <- err
+		}
+		wg.Done()
+	}()
+
+	rpc1 := Handle(NewPacker(debug.Wrap(dbg, c1)), &fh1)
+	rpc2 := Handle(NewPacker(c2), &h2)
+
+	ctx := context.Background()
+
+	go serve(ctx, rpc1.(Server), errc)
+	go serve(ctx, rpc2.(Server), errc)
+
+	src, sink, err := rpc1.Duplex(ctx, "str", Method{"magic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, v := range expRx {
+		err := sink.Pour(ctx, v)
+		if err != nil {
+			t.Error(err)
+		}
+	}
+
+	for _, exp := range expTx {
+		v, err := src.Next(ctx)
+		if err != nil {
+			t.Error(err)
+		}
+
+		if v != exp {
+			t.Errorf("expected %v, got %v", exp, v)
+		}
+	}
+
+	err = sink.Close()
+	r.NoError(err, "error closing stream")
+
+	wg.Wait()
+	close(errc)
+
+	r.Len(h2.rxvals, len(expRx))
+	for i, v := range h2.rxvals {
+		r.EqualValues(expRx[i], v, "value %d", i)
+	}
+
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	r.Equal(0, fh1.HandleCallCallCount(), "peer h1 did call unexpectedly")
+}
+
+func TestDuplexHandlerJSON(t *testing.T) {
+
+	// dbg, _ := logtest.KitLogger("dph", t)
+	dbg := log.NewLogfmtLogger(os.Stderr)
+	r := require.New(t)
+	expRx := []string{
+		"you are a test",
+		"you're a test",
+		"your a test",
+		"ur a test",
+		"u test",
+	}
+
+	expTx := []string{
+		"wow",
+		"that's like",
+		"ugh",
+		"really?",
+		"is this supposed to be funny?",
+	}
+
+	c1, c2 := net.Pipe()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	errc := make(chan error, 2)
+
+	var fh1 FakeHandler
+	// todo: check call count (there is a 2nd case of this)
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		// I think this _should_ terminate e?
+		wg.Done()
+	})
+
+	var h2 hDuplex
+	h2.logger = dbg
+	h2.failed = make(chan error)
+
+	h2.txvals = make([]interface{}, len(expTx))
+	for i, v := range expTx {
+		h2.txvals[i] = testStruct{
+			A:   i,
+			N:   len(expTx),
+			Str: v,
+		}
+	}
+
+	go func() {
+		err := <-h2.failed
+		if err != nil {
+			dbg.Log("warning", "error from handler", "err", err)
+			errc <- err
+		}
+		wg.Done()
+	}()
+
+	rpc1 := Handle(NewPacker(debug.Wrap(dbg, c1)), &fh1)
+	rpc2 := Handle(NewPacker(c2), &h2)
+
+	ctx := context.Background()
+
+	go serve(ctx, rpc1.(Server), errc)
+	go serve(ctx, rpc2.(Server), errc)
+
+	var v interface{}
+	src, sink, err := rpc1.Duplex(ctx, v, Method{"magic"})
+	r.NoError(err)
+
+	for i, v := range expRx {
+		err := sink.Pour(ctx, testStruct{
+			A:   i,
+			N:   len(expRx),
+			Str: v,
+		})
+		r.NoError(err)
+	}
+
+	for _, exp := range expTx {
+		v, err := src.Next(ctx)
+		r.NoError(err)
+		mv, ok := v.(map[string]interface{})
+		r.True(ok)
+		r.EqualValues(exp, mv["Str"])
+	}
+
+	err = sink.Close()
+	r.NoError(err, "error closing stream")
+
+	wg.Wait()
+	close(errc)
+
+	for err := range errc {
+		r.NoError(err)
+	}
+
+	r.Len(h2.rxvals, len(expRx))
+	for i, v := range h2.rxvals {
+		ts := v.(testStruct)
+		r.EqualValues(i, ts.A, "value %d", i)
+		r.EqualValues(expRx[i], ts.Str, "value %d", i)
+	}
+
+	r.Equal(0, fh1.HandleCallCallCount(), "peer h1 did call unexpectedly")
+
+}
