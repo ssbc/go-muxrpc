@@ -101,7 +101,6 @@ func TestBothwaysAsync(t *testing.T) {
 		close(term2)
 	}()
 
-	fmt.Println("big for loop")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil && term1 != nil || term2 != nil {
 		select {
 		case err := <-errc:

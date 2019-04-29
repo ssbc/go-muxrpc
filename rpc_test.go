@@ -891,7 +891,6 @@ func TestDuplexHandlerJSON(t *testing.T) {
 		r.NoError(err)
 	}
 
-	// r.Equal(expRx, h2.rxvals)
 	r.Len(h2.rxvals, len(expRx))
 	for i, v := range h2.rxvals {
 		ts := v.(testStruct)
