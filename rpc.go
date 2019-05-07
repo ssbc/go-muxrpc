@@ -211,7 +211,7 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 		req.Stream.WithReq(pkt.Req)
 		req.Stream.WithType(req.tipe)
 
-		req.pkt = &pkt
+		req.id = pkt.Req
 	}()
 	if err != nil {
 		return err
@@ -237,7 +237,7 @@ func (r *rpc) ParseRequest(pkt *codec.Packet) (*Request, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "error decoding packet")
 	}
-	req.pkt = pkt
+	req.id = pkt.Req
 
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
@@ -437,12 +437,12 @@ func (r *rpc) closeStream(req *Request, streamErr error) error {
 
 	err := req.CloseWithError(streamErr)
 	if err != nil {
-		log.Printf("closeStream(%d) %v - %v", req.pkt.Req, req.Method, err)
+		log.Printf("closeStream(%d) %v - %v", req.id, req.Method, err)
 	}
 
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
-	delete(r.reqs, req.pkt.Req)
+	delete(r.reqs, req.id)
 	return nil
 }
 
