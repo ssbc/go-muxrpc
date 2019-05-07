@@ -180,8 +180,23 @@ func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args 
 func (r *rpc) Terminate() error {
 	r.tLock.Lock()
 	defer r.tLock.Unlock()
-
 	r.terminated = true
+	return r.terminate(nil)
+}
+
+func (r *rpc) terminate(err error) error {
+	if n := len(r.reqs); n > 0 {
+		if err == nil {
+			err = errors.Errorf("muxrpc: unexpected end of session")
+		} else {
+			log.Printf("muxrpc(%v): serve loop terminated (%v) - closing open reqs: %d", r.remote, err, n)
+		}
+		for id, req := range r.reqs {
+			if err := req.CloseWithError(err); err != nil && !luigi.IsEOS(errors.Cause(err)) {
+				log.Printf("muxrpc: failed to close dangling request(%d) %v: %s", id, req.Method, err)
+			}
+		}
+	}
 	return r.pkr.Close()
 }
 
@@ -356,25 +371,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			return false
 		}()
 		if doRet {
-			cerr := r.pkr.Close()
-			if cerr != nil {
-				log.Printf("muxrpc: Packer Close Err: %+v", cerr)
-			}
-			r.rLock.Lock()
-			defer r.rLock.Unlock()
-			if n := len(r.reqs); n > 0 {
-				if err == nil {
-					cerr = errors.Errorf("muxrpc: unexpected end of session")
-				} else {
-					log.Printf("muxrpc(%v): serve loop returning (%v) - closing open reqs: %d", r.remote, err, n)
-					cerr = err
-				}
-				for id, req := range r.reqs {
-					if err := req.CloseWithError(cerr); err != nil && !luigi.IsEOS(errors.Cause(err)) {
-						log.Printf("muxrpc: failed to close dangling request(%d) %v: %s", id, req.Method, err)
-					}
-				}
-			}
+			r.terminate(err)
 			shutdown = true
 			return
 		}

@@ -1,0 +1,115 @@
+==================
+WARNING: DATA RACE
+Read at 0x00c000089f68 by goroutine 98:
+  go.cryptoscope.co/muxrpc.(*packer).Close.func1()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/packer.go:133 +0x82
+  sync.(*Once).Do()
+      /Users/cryptix/go.src/src/sync/once.go:44 +0xde
+  go.cryptoscope.co/muxrpc.(*packer).Close()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/packer.go:131 +0x7d
+  go.cryptoscope.co/muxrpc.(*rpc).Terminate()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc.go:185 +0xb4
+  go.cryptoscope.co/muxrpc.BuildTestAsync.func1()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc_test.go:123 +0xa85
+  testing.tRunner()
+      /Users/cryptix/go.src/src/testing/testing.go:865 +0x163
+
+Previous write at 0x00c000089f68 by goroutine 20:
+  go.cryptoscope.co/muxrpc.(*packer).Closed()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/packer.go:58 +0x136
+  go.cryptoscope.co/muxrpc.(*rpc).Serve.func2()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc.go:328 +0x3e
+
+Goroutine 98 (running) created at:
+  testing.(*T).Run()
+      /Users/cryptix/go.src/src/testing/testing.go:916 +0x65a
+  go.cryptoscope.co/muxrpc.TestAsync()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc_test.go:197 +0x1b4
+  testing.tRunner()
+      /Users/cryptix/go.src/src/testing/testing.go:865 +0x163
+
+Goroutine 20 (running) created at:
+  go.cryptoscope.co/muxrpc.(*rpc).Serve()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc.go:327 +0xec2
+  go.cryptoscope.co/muxrpc.serve()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc_test.go:35 +0x56
+==================
+
+
+==================
+WARNING: DATA RACE
+Read at 0x00c00014f3a8 by goroutine 98:
+  go.cryptoscope.co/muxrpc.(*packer).Close.func1()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/packer.go:133 +0xaf
+  sync.(*Once).Do()
+      /Users/cryptix/go.src/src/sync/once.go:44 +0xde
+  go.cryptoscope.co/muxrpc.(*packer).Close()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/packer.go:131 +0x7d
+  go.cryptoscope.co/muxrpc.(*rpc).Terminate()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc.go:185 +0xb4
+  go.cryptoscope.co/muxrpc.BuildTestAsync.func1()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc_test.go:123 +0xa85
+  testing.tRunner()
+      /Users/cryptix/go.src/src/testing/testing.go:865 +0x163
+
+Previous write at 0x00c00014f3a8 by goroutine 20:
+  go.cryptoscope.co/muxrpc.(*packer).Closed()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/packer.go:58 +0x108
+  go.cryptoscope.co/muxrpc.(*rpc).Serve.func2()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc.go:328 +0x3e
+
+Goroutine 98 (running) created at:
+  testing.(*T).Run()
+      /Users/cryptix/go.src/src/testing/testing.go:916 +0x65a
+  go.cryptoscope.co/muxrpc.TestAsync()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc_test.go:197 +0x1b4
+  testing.tRunner()
+      /Users/cryptix/go.src/src/testing/testing.go:865 +0x163
+
+Goroutine 20 (running) created at:
+  go.cryptoscope.co/muxrpc.(*rpc).Serve()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc.go:327 +0xec2
+  go.cryptoscope.co/muxrpc.serve()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc_test.go:35 +0x56
+==================
+
+==================
+WARNING: DATA RACE
+Read at 0x00c000195343 by goroutine 289:
+  testing.(*common).logDepth()
+      /Users/cryptix/go.src/src/testing/testing.go:621 +0x94
+  testing.(*common).Logf()
+      /Users/cryptix/go.src/src/testing/testing.go:614 +0x90
+  github.com/cryptix/go/logging/logtest.Logger.func1()
+      /Users/cryptix/go-verse/src/github.com/cryptix/go/logging/logtest/logger.go:17 +0x1ce
+
+Previous write at 0x00c000195343 by goroutine 295:
+  testing.tRunner.func1()
+      /Users/cryptix/go.src/src/testing/testing.go:856 +0x354
+  testing.tRunner()
+      /Users/cryptix/go.src/src/testing/testing.go:869 +0x17f
+
+Goroutine 289 (running) created at:
+  github.com/cryptix/go/logging/logtest.Logger()
+      /Users/cryptix/go-verse/src/github.com/cryptix/go/logging/logtest/logger.go:14 +0x245
+  go.cryptoscope.co/muxrpc.initLogging()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/rpc_test.go:25 +0x5f
+  go.cryptoscope.co/muxrpc.TestJSGettingCalledSource()
+      /Users/cryptix/go-verse/src/go.cryptoscope.co/muxrpc/client_test.go:74 +0x43d
+  testing.tRunner()
+      /Users/cryptix/go.src/src/testing/testing.go:865 +0x163
+
+Goroutine 295 (running) created at:
+  testing.(*T).Run()
+      /Users/cryptix/go.src/src/testing/testing.go:916 +0x65a
+  testing.runTests.func1()
+      /Users/cryptix/go.src/src/testing/testing.go:1157 +0xa8
+  testing.tRunner()
+      /Users/cryptix/go.src/src/testing/testing.go:865 +0x163
+  testing.runTests()
+      /Users/cryptix/go.src/src/testing/testing.go:1155 +0x523
+  testing.(*M).Run()
+      /Users/cryptix/go.src/src/testing/testing.go:1072 +0x2eb
+  main.main()
+      _testmain.go:88 +0x222
+==================
