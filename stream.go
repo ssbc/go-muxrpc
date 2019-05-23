@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"reflect"
 	"sync"
 	"time"
@@ -248,7 +249,7 @@ func (str *stream) doCloseWithError(closeErr error) error {
 	if str.closed {
 		// TODO: should return ErrAlreadyClosed
 		// but adds a lot of unecessary noise right now that needs to be handled better
-		return nil
+		return os.ErrClosed
 	}
 
 	var (

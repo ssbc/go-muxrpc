@@ -4,6 +4,7 @@ import (
 	"context"
 	stderr "errors"
 	"io"
+	"os"
 	"sync"
 
 	"go.cryptoscope.co/luigi"
@@ -26,7 +27,8 @@ func NewPacker(rwc io.ReadWriteCloser) Packer {
 		w: codec.NewWriter(rwc),
 		c: rwc,
 
-		closing: make(chan struct{}),
+		closing:  make(chan struct{}),
+		closeLis: make([]chan struct{}, 0),
 	}
 }
 
@@ -106,8 +108,10 @@ func (pkr *packer) Pour(_ context.Context, v interface{}) error {
 			err = errSinkClosed
 		default:
 		}
-		if cerr := pkr.Close(); cerr != nil {
-			return errors.Wrapf(cerr, "error closing connection on write err:%v", err)
+		if !IsSinkClosed(err) {
+			if cerr := pkr.Close(); cerr != nil {
+				return errors.Wrapf(cerr, "error closing connection on write err:%v", err)
+			}
 		}
 	}
 
@@ -126,11 +130,15 @@ func IsSinkClosed(err error) bool {
 
 // Close closes the packer.
 func (pkr *packer) Close() error {
+	pkr.cl.Lock()
+	defer pkr.cl.Unlock()
+	if pkr.closeLis == nil {
+		return os.ErrClosed
+	}
+
 	var err error
 
 	pkr.closeOnce.Do(func() {
-		pkr.cl.Lock()
-		defer pkr.cl.Unlock()
 		close(pkr.closing)
 		for _, ch := range pkr.closeLis {
 			close(ch)
