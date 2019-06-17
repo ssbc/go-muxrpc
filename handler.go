@@ -27,10 +27,13 @@ func ApplyHandlerWrappers(h Handler, hws ...HandlerWrapper) Handler {
 }
 
 type HandlerMux struct {
+	regLock  sync.Mutex // protects the map
 	handlers map[string]Handler
 }
 
 func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
+	hm.regLock.Lock()
+	defer hm.regLock.Unlock()
 	for i := len(req.Method); i > 0; i-- {
 		m := req.Method[:i]
 		h, ok := hm.handlers[m.String()]
@@ -44,6 +47,8 @@ func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request, edp Endpoint
 }
 
 func (hm *HandlerMux) HandleConnect(ctx context.Context, edp Endpoint) {
+	hm.regLock.Lock()
+	defer hm.regLock.Unlock()
 	var wg sync.WaitGroup
 	wg.Add(len(hm.handlers))
 
@@ -59,9 +64,29 @@ func (hm *HandlerMux) HandleConnect(ctx context.Context, edp Endpoint) {
 }
 
 func (hm *HandlerMux) Register(m Method, h Handler) {
+	hm.regLock.Lock()
+	defer hm.regLock.Unlock()
 	if hm.handlers == nil {
 		hm.handlers = make(map[string]Handler)
 	}
 
 	hm.handlers[m.String()] = h
+}
+
+type NamedHandler struct {
+	Method  Method
+	Handler Handler
+}
+
+func (hm *HandlerMux) RegisterAll(handlers ...NamedHandler) {
+	hm.regLock.Lock()
+	defer hm.regLock.Unlock()
+	if hm.handlers == nil {
+		hm.handlers = make(map[string]Handler)
+	}
+
+	for _, hn := range handlers {
+		hm.handlers[hn.Method.String()] = hn.Handler
+	}
+
 }
