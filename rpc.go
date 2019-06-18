@@ -180,7 +180,7 @@ func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args 
 func (r *rpc) Terminate() error {
 	r.tLock.Lock()
 	defer r.tLock.Unlock()
-
+	// TODO: needs to cancel open requests
 	r.terminated = true
 	return r.pkr.Close()
 }
@@ -336,7 +336,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		// read next packet from connection
 		doRet := func() bool {
 			vpkt, err = r.pkr.Next(ctx)
-			if luigi.IsEOS(err) {
+			if luigi.IsEOS(err) || IsSinkClosed(err) {
 				err = nil
 				return true
 			}
@@ -349,7 +349,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 					err = nil
 					return true
 				}
-				err = errors.Wrap(err, "error reading from packer source")
+				err = errors.Wrap(err, "serve failed to read from packer")
 				return true
 			}
 

@@ -7,7 +7,6 @@ import (
 	"os"
 	"reflect"
 	"sync"
-	"time"
 
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
@@ -247,9 +246,7 @@ func (str *stream) doCloseWithError(closeErr error) error {
 	defer str.l.Unlock()
 
 	if str.closed {
-		// TODO: should return ErrAlreadyClosed
-		// but adds a lot of unecessary noise right now that needs to be handled better
-		return os.ErrClosed
+		return errors.Wrapf(os.ErrClosed, "muxrpc/stream(%d): already closed", str.req)
 	}
 
 	var (
@@ -270,9 +267,7 @@ func (str *stream) doCloseWithError(closeErr error) error {
 		close(str.closeCh)
 		str.closed = true
 
-		toLong, cancel := context.WithTimeout(context.TODO(), time.Second*10)
-		defer cancel()
-		err = str.pktSink.Pour(toLong, pkt)
+		err = str.pktSink.Pour(context.TODO(), pkt)
 	})
 
 	if IsSinkClosed(errors.Cause(err)) {
@@ -280,7 +275,7 @@ func (str *stream) doCloseWithError(closeErr error) error {
 		return nil
 	}
 
-	return errors.Wrapf(err, "muxrpc: failed to close stream (%d) with err: %s", str.req, closeErr)
+	return errors.Wrapf(err, "muxrpc/stream(%d): failed to close with err: %s", str.req, closeErr)
 }
 
 // newRawPacket crafts a packet with a byte slice as payload

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -469,7 +470,9 @@ func TestBothwayDuplex(t *testing.T) {
 					ckFatal(errors.Wrap(err, "err pouring to stream"))
 				}
 				err := req.Stream.Close()
-				ckFatal(errors.Wrap(err, "failed to close stream"))
+				if err != nil && !IsSinkClosed(err) {
+					ckFatal(errors.Wrap(err, "failed to close stream"))
+				}
 				wg.Done()
 			}
 		}
@@ -554,8 +557,8 @@ func TestBothwayDuplex(t *testing.T) {
 
 	i := 0
 	for err := range errc {
-		if err != nil {
-			t.Fatalf("err#%d from goroutine:\n%+v", i, err)
+		if err != nil && errors.Cause(err) != os.ErrClosed {
+			t.Errorf("err#%d from goroutine:\n%+v", i, err)
 			i++
 		}
 	}

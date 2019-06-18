@@ -2,6 +2,7 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -67,7 +68,11 @@ func (req *Request) CloseWithError(cerr error) error {
 	// we really need to make sure we close the streams
 	// "you can't" doesn't work here
 	s := req.Stream.(*stream)
-	return errors.Wrap(s.doCloseWithError(cerr), "muxrpc: failed to close request stream")
+	err := s.doCloseWithError(cerr)
+	if errors.Cause(err) == os.ErrClosed || IsSinkClosed(err) {
+		return nil
+	}
+	return errors.Wrap(err, "muxrpc: failed to close request stream")
 }
 
 func (req *Request) Close() error {

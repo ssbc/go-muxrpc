@@ -125,8 +125,9 @@ func TestJSGettingCalledAsync(t *testing.T) {
 		ckFatal(err)
 	})
 
-	muxdbg, _ := initLogging(t, "packets")
-	packer := NewPacker(debug.Wrap(muxdbg, serv))
+	// muxdbg, _ := initLogging(t, "packets")
+	// debug.Wrap(muxdbg, serv)
+	packer := NewPacker(serv)
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
@@ -148,7 +149,7 @@ func TestJSGettingCalledAsync(t *testing.T) {
 
 	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 	r.Equal(1, fh.HandleCallCallCount(), "peer did not call")
-	r.NoError(packer.Close())
+	// r.NoError(packer.Close())
 }
 
 /*see that we can do sync as async calls
@@ -249,7 +250,7 @@ func TestJSAsyncString(t *testing.T) {
 	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
 
-	r.NoError(packer.Close())
+	// r.NoError(packer.Close())
 }
 
 func TestJSAsyncObject(t *testing.T) {
@@ -296,7 +297,7 @@ func TestJSAsyncObject(t *testing.T) {
 	r.Equal(1, fh.HandleConnectCallCount(), "peer did not call 'connect'")
 	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
 
-	r.NoError(packer.Close())
+	// r.NoError(packer.Close())
 }
 
 func TestJSSource(t *testing.T) {
@@ -311,7 +312,7 @@ func TestJSSource(t *testing.T) {
 	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 	errc := make(chan error)
 	done := make(chan struct{})
 
@@ -341,11 +342,16 @@ func TestJSSource(t *testing.T) {
 	val, err := src.Next(ctx)
 	r.True(luigi.IsEOS(err), "expected EOS but got %+v", val)
 
+	v, err := rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	r.NoError(err, "rcp shutdown call")
+	r.Equal(v, "ty", "expected call result")
+
+	cancel()
 	r.NoErrorf(packer.Close(), "%+s %s", "error closing packer")
 
 	for err := range errc {
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
 	}
 
