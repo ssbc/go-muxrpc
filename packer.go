@@ -3,7 +3,6 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 import (
 	"context"
 	stderr "errors"
-	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -132,18 +131,25 @@ func IsSinkClosed(err error) bool {
 	if causeErr == errSinkClosed {
 		return true
 	}
+	return false
+}
 
+func isAlreadyClosed(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	causeErr := errors.Cause(err)
 	if causeErr == os.ErrClosed {
 		return true
 	}
 
-	fmt.Printf("debug: found syscall err: %T\n", causeErr)
-	if sysErr, ok := (causeErr).(*os.SyscallError); ok {
+	if sysErr, ok := (causeErr).(*os.PathError); ok {
 		if sysErr.Err == os.ErrClosed {
+			// fmt.Printf("debug: found syscall err: %T) %s\n", causeErr, causeErr)
 			return true
 		}
 	}
-
 	return false
 }
 

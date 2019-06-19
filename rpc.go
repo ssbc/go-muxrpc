@@ -336,7 +336,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		// read next packet from connection
 		doRet := func() bool {
 			vpkt, err = r.pkr.Next(ctx)
-			if luigi.IsEOS(err) || IsSinkClosed(err) {
+			if luigi.IsEOS(err) || isAlreadyClosed(err) {
 				err = nil
 				return true
 			}
@@ -363,13 +363,15 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			r.rLock.Lock()
 			defer r.rLock.Unlock()
 			if n := len(r.reqs); n > 0 {
-				if err == nil {
-					cerr = errors.Errorf("muxrpc: unexpected end of session")
-				} else {
-					log.Printf("muxrpc(%v): serve loop returning (%v) - closing open reqs: %d", r.remote, err, n)
-					cerr = err
-				}
 				for id, req := range r.reqs {
+					if err == nil {
+						if err := req.Close(); err != nil && !luigi.IsEOS(errors.Cause(err)) {
+							log.Printf("muxrpc: failed to close dangling request(%d) %v: %s", id, req.Method, err)
+						}
+					} else {
+						log.Printf("muxrpc(%v): serve loop returning (%v) - closing open reqs: %d", r.remote, err, n)
+						cerr = err
+					}
 					if err := req.CloseWithError(cerr); err != nil && !luigi.IsEOS(errors.Cause(err)) {
 						log.Printf("muxrpc: failed to close dangling request(%d) %v: %s", id, req.Method, err)
 					}

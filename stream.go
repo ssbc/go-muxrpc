@@ -246,7 +246,7 @@ func (str *stream) doCloseWithError(closeErr error) error {
 	defer str.l.Unlock()
 
 	if str.closed {
-		return errors.Wrapf(os.ErrClosed, "muxrpc/stream(%d): already closed", str.req)
+		return errors.Wrapf(os.ErrClosed, "muxrpc/stream(%d): already closed (wanted to close with: %v)", str.req, closeErr)
 	}
 
 	var (
@@ -270,7 +270,7 @@ func (str *stream) doCloseWithError(closeErr error) error {
 		err = str.pktSink.Pour(context.TODO(), pkt)
 	})
 
-	if IsSinkClosed(errors.Cause(err)) {
+	if IsSinkClosed(err) {
 		// log.Printf("muxrpc: stream(%d) sink closed", str.req)
 		return nil
 	}

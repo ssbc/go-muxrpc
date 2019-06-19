@@ -69,7 +69,7 @@ func (req *Request) CloseWithError(cerr error) error {
 	// "you can't" doesn't work here
 	s := req.Stream.(*stream)
 	err := s.doCloseWithError(cerr)
-	if errors.Cause(err) == os.ErrClosed || IsSinkClosed(err) {
+	if errors.Cause(err) == os.ErrClosed || isAlreadyClosed(err) {
 		return nil
 	}
 	return errors.Wrap(err, "muxrpc: failed to close request stream")
