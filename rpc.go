@@ -310,14 +310,10 @@ type Server interface {
 
 // Serve handles the RPC session
 func (r *rpc) Serve(ctx context.Context) (err error) {
-	var shutdown bool
 	defer func() {
-		if shutdown {
-			return
-		}
 		cerr := r.pkr.Close()
 		if err != nil {
-			log.Printf("muxrpc: Serve closed.\nHandle Err: %+v\nPacker Close Err: %+v", err, cerr)
+			log.Printf("muxrpc: %s closed [Handle Err: %v] [pkr Close %v]", r.remote.String(), err, cerr)
 		}
 	}()
 
@@ -346,6 +342,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 			if err != nil {
 				if r.terminated {
+					log.Printf("muxrpc %s: ignoring err because terminated: %v", r.remote.String(), err)
 					err = nil
 					return true
 				}
@@ -356,28 +353,21 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			return false
 		}()
 		if doRet {
-			cerr := r.pkr.Close()
-			if cerr != nil {
-				log.Printf("muxrpc: Packer Close Err: %+v", cerr)
-			}
 			r.rLock.Lock()
 			defer r.rLock.Unlock()
-			if n := len(r.reqs); n > 0 {
+			if n := len(r.reqs); n > 0 { // close active requests
 				for id, req := range r.reqs {
+					var closeErr error
 					if err == nil {
-						if err := req.Close(); err != nil && !luigi.IsEOS(errors.Cause(err)) {
-							log.Printf("muxrpc: failed to close dangling request(%d) %v: %s", id, req.Method, err)
-						}
+						closeErr = req.Close()
 					} else {
-						log.Printf("muxrpc(%v): serve loop returning (%v) - closing open reqs: %d", r.remote, err, n)
-						cerr = err
+						closeErr = req.CloseWithError(err)
 					}
-					if err := req.CloseWithError(cerr); err != nil && !luigi.IsEOS(errors.Cause(err)) {
-						log.Printf("muxrpc: failed to close dangling request(%d) %v: %s", id, req.Method, err)
+					if closeErr != nil && !luigi.IsEOS(closeErr) {
+						log.Printf("muxrpc: failed to close dangling request(%d) %v: %s", id, req.Method, closeErr)
 					}
 				}
 			}
-			shutdown = true
 			return
 		}
 
