@@ -2,6 +2,7 @@ package muxrpc // import "go.cryptoscope.co/muxrpc"
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -24,7 +25,7 @@ type Request struct {
 	// Method is the name of the called function
 	Method Method `json:"name"`
 	// Args contains the call arguments
-	Args []interface{} `json:"args"`
+	RawArgs json.RawMessage `json:"args"`
 	// Type is the type of the call, i.e. async, sink, source or duplex
 	Type CallType `json:"type"`
 
@@ -38,6 +39,13 @@ type Request struct {
 	// tipe is a value that has the type of data we expect to receive.
 	// This is needed for unmarshaling JSON.
 	tipe interface{}
+}
+
+// Legacy
+func (req *Request) Args() []interface{} {
+	var v []interface{}
+	json.Unmarshal(req.RawArgs, &v)
+	return v
 }
 
 // Return is a helper that returns on an async call

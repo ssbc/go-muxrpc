@@ -89,19 +89,23 @@ func handle(pkr Packer, handler Handler, remote net.Addr) Endpoint {
 func (r *rpc) Async(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (interface{}, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
+	argData, err := json.Marshal(args)
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshaling request arguments")
+	}
+
 	req := &Request{
 		Type:   "async",
 		Stream: newStream(inSrc, r.pkr, 0, streamCapOnce, streamCapNone),
 		in:     inSink,
 
-		Method: method,
-		Args:   args,
+		Method:  method,
+		RawArgs: argData,
 
 		tipe: tipe,
 	}
 
-	err := r.Do(ctx, req)
-	if err != nil {
+	if err := r.Do(ctx, req); err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
 
@@ -113,19 +117,23 @@ func (r *rpc) Async(ctx context.Context, tipe interface{}, method Method, args .
 func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (luigi.Source, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
+	argData, err := json.Marshal(args)
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshaling request arguments")
+	}
+
 	req := &Request{
 		Type:   "source",
 		Stream: newStream(inSrc, r.pkr, 0, streamCapMultiple, streamCapNone),
 		in:     inSink,
 
-		Method: method,
-		Args:   args,
+		Method:  method,
+		RawArgs: argData,
 
 		tipe: tipe,
 	}
 
-	err := r.Do(ctx, req)
-	if err != nil {
+	if err := r.Do(ctx, req); err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
 
@@ -136,17 +144,21 @@ func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args 
 func (r *rpc) Sink(ctx context.Context, method Method, args ...interface{}) (luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
+	argData, err := json.Marshal(args)
+	if err != nil {
+		return nil, errors.Wrap(err, "error marshaling request arguments")
+	}
+
 	req := &Request{
 		Type:   "sink",
 		Stream: newStream(inSrc, r.pkr, 0, streamCapNone, streamCapMultiple),
 		in:     inSink,
 
-		Method: method,
-		Args:   args,
+		Method:  method,
+		RawArgs: argData,
 	}
 
-	err := r.Do(ctx, req)
-	if err != nil {
+	if err := r.Do(ctx, req); err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
 
@@ -157,19 +169,23 @@ func (r *rpc) Sink(ctx context.Context, method Method, args ...interface{}) (lui
 func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (luigi.Source, luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
+	argData, err := json.Marshal(args)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "error marshaling request arguments")
+	}
+
 	req := &Request{
 		Type:   "duplex",
 		Stream: newStream(inSrc, r.pkr, 0, streamCapMultiple, streamCapMultiple),
 		in:     inSink,
 
-		Method: method,
-		Args:   args,
+		Method:  method,
+		RawArgs: argData,
 
 		tipe: tipe,
 	}
 
-	err := r.Do(ctx, req)
-	if err != nil {
+	if err := r.Do(ctx, req); err != nil {
 		return nil, nil, errors.Wrap(err, "error sending request")
 	}
 
@@ -192,8 +208,8 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 		err error
 	)
 
-	if req.Args == nil {
-		req.Args = []interface{}{}
+	if req.RawArgs == nil {
+		req.RawArgs = []byte("[]")
 	}
 
 	func() {
