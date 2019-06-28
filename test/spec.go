@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/pkg/errors"
 	"go.cryptoscope.co/muxrpc"
 	"go.cryptoscope.co/muxrpc/codec"
 )
@@ -295,11 +296,15 @@ func CallPacketSpec(stream bool, flagJSON bool, method muxrpc.Method, tipe muxrp
 	if args == nil {
 		args = []interface{}{}
 	}
+	argData, err := json.Marshal(args)
+	if err != nil {
+		panic(errors.Wrap(err, "error marshaling request arguments"))
+	}
 
 	callBody, err := json.Marshal(muxrpc.Request{
-		Method: method,
-		Type:   tipe,
-		Args:   args,
+		Method:  method,
+		Type:    tipe,
+		RawArgs: argData,
 	})
 
 	if err != nil {
