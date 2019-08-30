@@ -63,7 +63,7 @@ func (pkr *packer) Closed() <-chan struct{} {
 }
 
 // Next returns the next packet from the underlying stream.
-func (pkr *packer) Next(_ context.Context) (interface{}, error) {
+func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 	pkr.rl.Lock()
 	defer pkr.rl.Unlock()
 
@@ -73,6 +73,8 @@ func (pkr *packer) Next(_ context.Context) (interface{}, error) {
 		if err != nil {
 			return nil, luigi.EOS{}
 		}
+	case <-ctx.Done():
+		return nil, errors.Wrap(ctx.Err(), "muxrpc/packer: read packet canceled")
 	default:
 	}
 

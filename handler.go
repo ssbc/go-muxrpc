@@ -32,8 +32,8 @@ type HandlerMux struct {
 }
 
 func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
-	hm.regLock.Lock()
-	defer hm.regLock.Unlock()
+	// hm.regLock.Lock()
+	// defer hm.regLock.Unlock()
 	for i := len(req.Method); i > 0; i-- {
 		m := req.Method[:i]
 		h, ok := hm.handlers[m.String()]
@@ -47,8 +47,8 @@ func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request, edp Endpoint
 }
 
 func (hm *HandlerMux) HandleConnect(ctx context.Context, edp Endpoint) {
-	hm.regLock.Lock()
-	defer hm.regLock.Unlock()
+	// hm.regLock.Lock()
+	// defer hm.regLock.Unlock()
 	var wg sync.WaitGroup
 	wg.Add(len(hm.handlers))
 

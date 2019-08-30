@@ -43,7 +43,7 @@ type rpc struct {
 	tLock      sync.Mutex
 }
 
-const bufSize = 5
+const bufSize = 100
 
 // Handle handles the connection of the packer using the specified handler.
 func Handle(pkr Packer, handler Handler) Endpoint {
@@ -90,6 +90,7 @@ func handle(pkr Packer, handler Handler, remote net.Addr, logger log.Logger) End
 		go func() {
 			<-cn.Closed()
 			cancel()
+			r.Terminate()
 		}()
 	}
 
@@ -194,6 +195,7 @@ func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args 
 func (r *rpc) Terminate() error {
 	r.tLock.Lock()
 	defer r.tLock.Unlock()
+	level.Info(r.logger).Log("event", "terminated")
 	// TODO: needs to cancel open requests
 	r.terminated = true
 	return r.pkr.Close()
@@ -230,8 +232,8 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 
 		req.id = pkt.Req
 	}()
-	dbg.Log("event", "request created", "reqID", req.id, "err", err)
 	if err != nil {
+		dbg.Log("event", "request create failed", "reqID", req.id, "err", err)
 		return err
 	}
 
@@ -318,7 +320,10 @@ func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bo
 		// buffer new requests to not mindlessly spawn goroutines
 		// and prioritize exisitng requests to unblock the connection time
 		// maybe use two maps
-		go r.root.HandleCall(ctx, req, r)
+		go func() {
+			r.root.HandleCall(ctx, req, r)
+			level.Debug(r.logger).Log("call", "returned", "method", req.Method, "reqID", req.id)
+		}()
 	}
 
 	return req, !ok, nil
@@ -332,6 +337,7 @@ type Server interface {
 
 // Serve handles the RPC session
 func (r *rpc) Serve(ctx context.Context) (err error) {
+	level.Info(r.logger).Log("event", "serving")
 	defer func() {
 		cerr := r.pkr.Close()
 		if err != nil {
