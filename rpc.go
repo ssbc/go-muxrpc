@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
+	"os"
 	"sync"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
@@ -20,6 +22,8 @@ var (
 
 // rpc implements an Endpoint, but also implements Server
 type rpc struct {
+	logger log.Logger
+
 	remote net.Addr
 
 	// pkr is the Sink and Source of the network connection
@@ -43,25 +47,36 @@ const bufSize = 5
 
 // Handle handles the connection of the packer using the specified handler.
 func Handle(pkr Packer, handler Handler) Endpoint {
-	var raddr net.Addr
-
-	if pkr, ok := pkr.(*packer); ok {
-		if ra, ok := pkr.c.(interface{ RemoteAddr() net.Addr }); ok {
-			raddr = ra.RemoteAddr()
-		}
-	}
-
-	return handle(pkr, handler, raddr)
+	return handle(pkr, handler, nil, nil)
 }
 
 // HandleWithRemote also sets the remote address the endpoint is connected to
 // TODO: better passing through packer maybe?!
 func HandleWithRemote(pkr Packer, handler Handler, addr net.Addr) Endpoint {
-	return handle(pkr, handler, addr)
+	return handle(pkr, handler, addr, nil)
 }
 
-func handle(pkr Packer, handler Handler, remote net.Addr) Endpoint {
+// HandleWithLogger same as Handle but let's you overwrite the stderr logger
+func HandleWithLogger(pkr Packer, handler Handler, logger log.Logger) Endpoint {
+	return handle(pkr, handler, nil, logger)
+}
+
+func handle(pkr Packer, handler Handler, remote net.Addr, logger log.Logger) Endpoint {
+	if remote == nil {
+		if pkr, ok := pkr.(*packer); ok {
+			if ra, ok := pkr.c.(interface{ RemoteAddr() net.Addr }); ok {
+				remote = ra.RemoteAddr()
+			}
+		}
+	}
+	if logger == nil {
+		logger = log.NewLogfmtLogger(os.Stderr)
+		logger = level.NewFilter(logger, level.AllowInfo()) // only log info and above
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "unit", "muxrpc")
+	}
+
 	r := &rpc{
+		logger: logger,
 		remote: remote,
 		pkr:    pkr,
 		reqs:   make(map[int32]*Request),
@@ -104,7 +119,6 @@ func (r *rpc) Async(ctx context.Context, tipe interface{}, method Method, args .
 	if err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
-
 	v, err := req.Stream.Next(ctx)
 	return v, errors.Wrap(err, "error reading response from request source")
 }
@@ -187,6 +201,9 @@ func (r *rpc) Terminate() error {
 
 // Do executes a generic call
 func (r *rpc) Do(ctx context.Context, req *Request) error {
+	dbg := level.Debug(r.logger)
+	dbg = log.With(dbg, "call", req.Type, "method", req.Method.String())
+
 	var (
 		pkt codec.Packet
 		err error
@@ -213,11 +230,14 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 
 		req.id = pkt.Req
 	}()
+	dbg.Log("event", "request created", "reqID", req.id, "err", err)
 	if err != nil {
 		return err
 	}
 
-	return r.pkr.Pour(ctx, &pkt)
+	err = r.pkr.Pour(ctx, &pkt)
+	dbg.Log("event", "request sent", "reqID", req.id, "err", err)
+	return err
 }
 
 // ParseRequest parses the first packet of a stream and parses the contained request
@@ -266,6 +286,8 @@ func (r *rpc) ParseRequest(pkt *codec.Packet) (*Request, error) {
 	req.Stream = newStream(inSrc, r.pkr, pkt.Req, inStream, outStream)
 	req.in = inSink
 
+	level.Debug(r.logger).Log("event", "got request", "reqID", req.id, "method", req.Method, "type", req.Type)
+
 	return &req, nil
 }
 
@@ -313,7 +335,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 	defer func() {
 		cerr := r.pkr.Close()
 		if err != nil {
-			log.Printf("muxrpc: %s closed [Handle Err: %v] [pkr Close %v]", r.remote.String(), err, cerr)
+			level.Info(r.logger).Log("event", "closed", "handleErr", err, "closeErr", cerr)
 		}
 	}()
 
@@ -342,7 +364,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 			if err != nil {
 				if r.terminated {
-					log.Printf("muxrpc %s: ignoring err because terminated: %v", r.remote.String(), err)
+					level.Warn(r.logger).Log("event", "terminaterd", "nextErr", err)
 					err = nil
 					return true
 				}
@@ -364,7 +386,9 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 						closeErr = req.CloseWithError(err)
 					}
 					if closeErr != nil && !luigi.IsEOS(closeErr) {
-						log.Printf("muxrpc: failed to close dangling request(%d) %v: %s", id, req.Method, closeErr)
+						level.Warn(r.logger).Log("event", "failed to close dangling request",
+							"closeErr", closeErr,
+							"reqID", id, "method", req.Method)
 					}
 				}
 			}
@@ -395,14 +419,9 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 						return errors.Wrap(err, "error parsing error packet")
 					}
 				}
-				go func() {
-					err := r.closeStream(req, streamErr)
-					if err != nil {
-						log.Println(errors.Wrapf(err, "muxrpc: failed to handle pkt of stream %d", pkt.Req))
-					}
-				}()
+				go r.closeStream(req, streamErr)
 			} else {
-				log.Printf("warning: unhandled packet for request %d", pkt.Req)
+				level.Warn(r.logger).Log("event", "unhandled packet", "reqID", pkt.Req)
 			}
 			continue
 		}
@@ -425,17 +444,17 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 	}
 }
 
-func (r *rpc) closeStream(req *Request, streamErr error) error {
+func (r *rpc) closeStream(req *Request, streamErr error) {
 
 	err := req.CloseWithError(streamErr)
 	if err != nil {
-		log.Printf("closeStream(%d) %v - %v", req.id, req.Method, err)
+		level.Warn(r.logger).Log("event", "close stream failed", "reqID", req.id, "method", req.Method.String(), "err", err)
 	}
 
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
 	delete(r.reqs, req.id)
-	return nil
+	return
 }
 
 func (r *rpc) Remote() net.Addr {
