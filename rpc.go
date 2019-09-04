@@ -62,6 +62,11 @@ func HandleWithLogger(pkr Packer, handler Handler, logger log.Logger) Endpoint {
 }
 
 func handle(pkr Packer, handler Handler, remote net.Addr, logger log.Logger) Endpoint {
+	if logger == nil {
+		logger = log.NewLogfmtLogger(os.Stderr)
+		logger = level.NewFilter(logger, level.AllowInfo()) // only log info and above
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "unit", "muxrpc")
+	}
 	if remote == nil {
 		if pkr, ok := pkr.(*packer); ok {
 			if ra, ok := pkr.c.(interface{ RemoteAddr() net.Addr }); ok {
@@ -69,10 +74,8 @@ func handle(pkr Packer, handler Handler, remote net.Addr, logger log.Logger) End
 			}
 		}
 	}
-	if logger == nil {
-		logger = log.NewLogfmtLogger(os.Stderr)
-		logger = level.NewFilter(logger, level.AllowInfo()) // only log info and above
-		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "unit", "muxrpc")
+	if remote != nil {
+		logger = log.With(logger, "remote", remote.String())
 	}
 
 	r := &rpc{
@@ -337,7 +340,7 @@ type Server interface {
 
 // Serve handles the RPC session
 func (r *rpc) Serve(ctx context.Context) (err error) {
-	level.Info(r.logger).Log("event", "serving")
+	level.Debug(r.logger).Log("event", "serving")
 	defer func() {
 		cerr := r.pkr.Close()
 		if err != nil {
