@@ -198,9 +198,16 @@ func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args 
 func (r *rpc) Terminate() error {
 	r.tLock.Lock()
 	defer r.tLock.Unlock()
-	level.Info(r.logger).Log("event", "terminated")
+	level.Debug(r.logger).Log("event", "terminated")
 	// TODO: needs to cancel open requests
 	r.terminated = true
+	r.rLock.Lock()
+	defer r.rLock.Unlock()
+	if n := len(r.reqs); n > 0 { // close active requests
+		for _, req := range r.reqs {
+			req.CloseWithError(errors.New("muxrpc: session terminated"))
+		}
+	}
 	return r.pkr.Close()
 }
 
@@ -373,7 +380,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 			if err != nil {
 				if r.terminated {
-					level.Warn(r.logger).Log("event", "terminaterd", "nextErr", err)
+					level.Warn(r.logger).Log("event", "terminated", "nextErr", err)
 					err = nil
 					return true
 				}
@@ -384,23 +391,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			return false
 		}()
 		if doRet {
-			r.rLock.Lock()
-			defer r.rLock.Unlock()
-			if n := len(r.reqs); n > 0 { // close active requests
-				for id, req := range r.reqs {
-					var closeErr error
-					if err == nil {
-						closeErr = req.Close()
-					} else {
-						closeErr = req.CloseWithError(err)
-					}
-					if closeErr != nil && !luigi.IsEOS(closeErr) {
-						level.Warn(r.logger).Log("event", "failed to close dangling request",
-							"closeErr", closeErr,
-							"reqID", id, "method", req.Method)
-					}
-				}
-			}
+			r.Terminate()
 			return
 		}
 

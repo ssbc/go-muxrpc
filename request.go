@@ -65,8 +65,9 @@ func (req *Request) CloseWithError(cerr error) error {
 		return errors.Wrap(inErr, "failed to close request input")
 	}
 
-	// we really need to make sure we close the streams
-	// "you can't" doesn't work here
+	// we really need to make sure we shut down the streams.
+	// "you can't" only applies for high-level abstractions.
+	// this makes sure the resources go away.
 	s := req.Stream.(*stream)
 	err := s.doCloseWithError(cerr)
 	if errors.Cause(err) == os.ErrClosed || isAlreadyClosed(err) {
