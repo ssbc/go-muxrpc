@@ -4,8 +4,10 @@ import (
 	"context"
 	stderr "errors"
 	"io"
+	"net"
 	"os"
 	"sync"
+	"syscall"
 
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
@@ -150,6 +152,16 @@ func isAlreadyClosed(err error) bool {
 		if sysErr.Err == os.ErrClosed {
 			// fmt.Printf("debug: found syscall err: %T) %s\n", causeErr, causeErr)
 			return true
+		}
+	}
+
+	if opErr, ok := causeErr.(*net.OpError); ok {
+		if syscallErr, ok := opErr.Err.(*os.SyscallError); ok {
+			if errNo, ok := syscallErr.Err.(syscall.Errno); ok {
+				if errNo == syscall.EPIPE {
+					return true
+				}
+			}
 		}
 	}
 	return false
