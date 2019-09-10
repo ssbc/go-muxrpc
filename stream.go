@@ -223,7 +223,6 @@ func (str *stream) Close() error {
 // Close closes the stream and sends the EndErr message.
 func (str *stream) CloseWithError(closeErr error) error {
 	if str.outCap == streamCapOnce && !str.closed {
-		// TODO
 		return str.doCloseWithError(closeErr)
 	}
 
@@ -273,7 +272,7 @@ func (str *stream) doCloseWithError(closeErr error) error {
 		err = str.pktSink.Pour(context.TODO(), pkt)
 	})
 
-	if IsSinkClosed(err) {
+	if IsSinkClosed(err) || isAlreadyClosed(err) {
 		// log.Printf("muxrpc: stream(%d) sink closed", str.req)
 		return nil
 	}

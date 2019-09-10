@@ -199,7 +199,6 @@ func (r *rpc) Terminate() error {
 	r.tLock.Lock()
 	defer r.tLock.Unlock()
 	level.Debug(r.logger).Log("event", "terminated")
-	// TODO: needs to cancel open requests
 	r.terminated = true
 	r.rLock.Lock()
 	defer r.rLock.Unlock()

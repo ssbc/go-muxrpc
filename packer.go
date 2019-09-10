@@ -142,7 +142,7 @@ func isAlreadyClosed(err error) bool {
 	}
 
 	causeErr := errors.Cause(err)
-	if causeErr == os.ErrClosed {
+	if causeErr == os.ErrClosed || causeErr == io.ErrClosedPipe {
 		return true
 	}
 
