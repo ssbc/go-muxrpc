@@ -81,9 +81,6 @@ func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 	}
 
 	if err != nil {
-		if cerr := pkr.Close(); cerr != nil {
-			return nil, errors.Wrapf(cerr, "error closing connection on read error %v", err)
-		}
 
 		if errors.Cause(err) == io.EOF {
 			return nil, luigi.EOS{}
@@ -115,9 +112,6 @@ func (pkr *packer) Pour(_ context.Context, v interface{}) error {
 	err := pkr.w.WritePacket(pkt)
 	if err != nil {
 
-		if cerr := pkr.Close(); cerr != nil {
-			return errors.Wrapf(cerr, "error closing connection on write err:%v", err)
-		}
 
 	}
 

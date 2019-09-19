@@ -194,6 +194,8 @@ func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args 
 	return req.Stream, req.Stream, nil
 }
 
+var ErrSessionTerminated = errors.New("muxrpc: session terminated")
+
 // Terminate ends the RPC session
 func (r *rpc) Terminate() error {
 	r.tLock.Lock()
@@ -204,7 +206,7 @@ func (r *rpc) Terminate() error {
 	defer r.rLock.Unlock()
 	if n := len(r.reqs); n > 0 { // close active requests
 		for _, req := range r.reqs {
-			req.CloseWithError(errors.New("muxrpc: session terminated"))
+			req.CloseWithError(ErrSessionTerminated)
 		}
 	}
 	return r.pkr.Close()

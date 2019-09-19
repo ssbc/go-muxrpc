@@ -251,6 +251,12 @@ func (str *stream) doCloseWithError(closeErr error) error {
 		return errors.Wrapf(os.ErrClosed, "muxrpc/stream(%d): already closed (wanted to close with: %v)", str.req, closeErr)
 	}
 
+	if closeErr == ErrSessionTerminated {
+		close(str.closeCh)
+		str.closed = true
+		return nil
+	}
+
 	var (
 		pkt *codec.Packet
 		err error
