@@ -109,13 +109,28 @@ func handle(pkr Packer, handler Handler, remote net.Addr, logger log.Logger) End
 	return r
 }
 
+// no args should be handled as empty array not args: null
+func marshalCallArgs(args []interface{}) ([]byte, error) {
+	var argData []byte
+	if len(args) == 0 {
+		argData = []byte("[]")
+	} else {
+		var err error
+		argData, err = json.Marshal(args)
+		if err != nil {
+			return nil, errors.Wrap(err, "error marshaling request arguments")
+		}
+	}
+	return argData, nil
+}
+
 // Async does an aync call on the remote.
 func (r *rpc) Async(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (interface{}, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
-	argData, err := json.Marshal(args)
+	argData, err := marshalCallArgs(args)
 	if err != nil {
-		return nil, errors.Wrap(err, "error marshaling request arguments")
+		return nil, err
 	}
 
 	req := &Request{
@@ -140,9 +155,9 @@ func (r *rpc) Async(ctx context.Context, tipe interface{}, method Method, args .
 func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (luigi.Source, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
-	argData, err := json.Marshal(args)
+	argData, err := marshalCallArgs(args)
 	if err != nil {
-		return nil, errors.Wrap(err, "error marshaling request arguments")
+		return nil, err
 	}
 
 	req := &Request{
@@ -167,9 +182,9 @@ func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args 
 func (r *rpc) Sink(ctx context.Context, method Method, args ...interface{}) (luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
-	argData, err := json.Marshal(args)
+	argData, err := marshalCallArgs(args)
 	if err != nil {
-		return nil, errors.Wrap(err, "error marshaling request arguments")
+		return nil, err
 	}
 
 	req := &Request{
@@ -192,9 +207,9 @@ func (r *rpc) Sink(ctx context.Context, method Method, args ...interface{}) (lui
 func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (luigi.Source, luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
 
-	argData, err := json.Marshal(args)
+	argData, err := marshalCallArgs(args)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "error marshaling request arguments")
+		return nil, nil, err
 	}
 
 	req := &Request{
