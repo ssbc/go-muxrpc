@@ -1,4 +1,6 @@
-package muxrpc // import "go.cryptoscope.co/muxrpc"
+// SPDX-License-Identifier: MIT
+
+package muxrpc
 
 import (
 	"context"
@@ -45,7 +47,7 @@ type rpc struct {
 
 // this sets the buffer size of individual request streams
 // if the other side of stream doesn't read it's messages
-// the read loop stops draining and all other replies might deadlock 
+// the read loop stops draining and all other replies might deadlock
 const bufSize = 5000
 
 // Handle handles the connection of the packer using the specified handler.

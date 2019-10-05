@@ -1,9 +1,11 @@
-package muxrpc // import "go.cryptoscope.co/muxrpc"
+// SPDX-License-Identifier: MIT
+
+package muxrpc
 
 import (
 	"context"
-	"os"
 	"encoding/json"
+	"os"
 	"strings"
 
 	"github.com/pkg/errors"

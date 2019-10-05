@@ -1,4 +1,6 @@
-package muxrpc // import "go.cryptoscope.co/muxrpc"
+// SPDX-License-Identifier: MIT
+
+package muxrpc
 
 import (
 	"context"
@@ -111,7 +113,6 @@ func (pkr *packer) Pour(_ context.Context, v interface{}) error {
 	defer pkr.wl.Unlock()
 	err := pkr.w.WritePacket(pkt)
 	if err != nil {
-
 
 	}
 
