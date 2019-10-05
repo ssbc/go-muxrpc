@@ -22,13 +22,13 @@ pull(
   pull.collect(function (err, got) {
     if (err) throw err
     var n = got.length
-    if (n != want.length) {
+    if (n !== want.length) {
       throw Error('test data length missmatch. got:' + n + ' wanted:' + want.length)
     }
     for (var idx = 0; idx < n; idx++) {
       var gotObj = got[idx]
       var wantObj = want[idx]
-      if (JSON.stringify(gotObj) != JSON.stringify(wantObj)) {
+      if (JSON.stringify(gotObj) !== JSON.stringify(wantObj)) {
         throw Error('test data divergent. idx[' + idx + ']' + JSON.stringify(gotObj))
       }
     }

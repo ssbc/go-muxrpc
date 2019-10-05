@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-
-
 var MRPC = require('muxrpc')
 var pull = require('pull-stream')
 var toPull = require('stream-to-pull-stream')
@@ -18,7 +16,7 @@ pull(a, toPull.sink(process.stdout))
 pull(toPull.source(process.stdin), a)
 
 var cnt = 0
-var helloInt = setInterval(function () {
+setInterval(function () {
   client.hello('world' + cnt, function (err, value) {
     if (err) {
       console.error('hello:failed')

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-
-
 // a simple RPC server for client tests
 var MRPC = require('muxrpc')
 var pull = require('pull-stream')
@@ -13,9 +11,9 @@ var api = {
   version: 'sync',
   hello: 'async',
   callme: { // start calling back
-    'async': 'async',
-    'source': 'async',
-    'magic': 'async'
+    async: 'async',
+    source: 'async',
+    magic: 'async'
   },
   object: 'async',
   stuff: 'source',
@@ -23,48 +21,48 @@ var api = {
 }
 
 var server = MRPC(api, api)({
-  finalCall: function(delay, cb) {
+  finalCall: function (delay, cb) {
     setTimeout(() => {
-      cb(null, "ty")
+      cb(null, 'ty')
 
       server.close()
       setTimeout(() => {
         process.exit(0)
-      },1000)
+      }, 1000)
     }, delay)
   },
-  version: function(some, args, i) {
+  version: function (some, args, i) {
     console.warn(arguments)
-    if (some === "wrong" && i === 42) {
-      throw new Error("oh wow - sorry")
+    if (some === 'wrong' && i === 42) {
+      throw new Error('oh wow - sorry')
     }
-    return "some/version@1.2.3"
+    return 'some/version@1.2.3'
   },
   hello: function (name, name2, cb) {
     console.error('hello:ok')
     cb(null, 'hello, ' + name + ' and ' + name2 + '!')
   },
   callme: {
-    'source': function (cb) {
+    source: function (cb) {
       pull(server.stuff(), pull.collect(function (err, vals) {
         if (err) {
           console.error(err)
           throw err
         }
         console.error('callme:source:ok vals:', vals)
-        cb(err, "call done")
+        cb(err, 'call done')
       }))
     },
-    'async': function (cb) {
+    async: function (cb) {
       server.hello(function (err, greet) {
         console.error('callme:async:ok')
-        cb(err, "call done")
+        cb(err, 'call done')
       })
     },
-    'magic': function(cb) {
+    magic: function (cb) {
       console.error('callme:magic:starting')
       var p = pushable()
-      var i  = 0
+      var i = 0
       setInterval(() => {
         p.push(i)
         i++
@@ -72,15 +70,15 @@ var server = MRPC(api, api)({
         //   p.end()
         // }
       }, 150)
-      
+
       pull(
         p,
         server.magic(function (err) {
           console.error('duplex cb err:', err)
-          cb(err, "yey")
+          cb(err, 'yey')
         }),
         pull.drain(function (value) {
-          console.error("node got:", value)
+          console.error('node got:', value)
           if (value && value.RXJS && value.RXJS === 9) {
             p.end()
           }
@@ -94,23 +92,22 @@ var server = MRPC(api, api)({
   },
   stuff: function () {
     console.error('stuff called')
-    return pull.values([{ "a": 1 }, { "a": 2 }, { "a": 3 }, { "a": 4 }])
+    return pull.values([{ a: 1 }, { a: 2 }, { a: 3 }, { a: 4 }])
   },
   magic: function () {
-
     // normally, we'd use pull.values and pull.collect
     // however, pull.values sends 'end' onto the stream, which closes the muxrpc stream immediately
     // ...and we need the stream to stay open for the drain to collect
     var p = pushable()
-    var i  = 0
+    var i = 0
     setInterval(() => {
       p.push(i)
       i++
-    },150)
+    }, 150)
     return {
       source: p,
-      sink: pull.drain(function(value) {
-        if (value == 'e') {
+      sink: pull.drain(function (value) {
+        if (value === 'e') {
           // server.close()
           // process.exit(1)
           p.end()
