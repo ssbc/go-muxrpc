@@ -48,7 +48,10 @@ type rpc struct {
 // this sets the buffer size of individual request streams
 // if the other side of stream doesn't read it's messages
 // the read loop stops draining and all other replies might deadlock
-const bufSize = 5000
+// BUG: too big settings can accumulate lot's of memory!
+// think blobs.get, the whole blob might be held in memory before it's drained to the store
+// (which might decide it's too big, at that point it was already received though....)
+const bufSize = 150
 
 // Handle handles the connection of the packer using the specified handler.
 func Handle(pkr Packer, handler Handler) Endpoint {
