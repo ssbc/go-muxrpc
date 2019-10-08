@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/go-kit/kit/log"
@@ -390,7 +391,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 	level.Debug(r.logger).Log("event", "serving")
 	defer func() {
 		cerr := r.pkr.Close()
-		if err != nil {
+		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 			level.Info(r.logger).Log("event", "closed", "handleErr", err, "closeErr", cerr)
 		}
 	}()
