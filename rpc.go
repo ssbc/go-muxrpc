@@ -240,7 +240,6 @@ var ErrSessionTerminated = errors.New("muxrpc: session terminated")
 func (r *rpc) Terminate() error {
 	r.tLock.Lock()
 	defer r.tLock.Unlock()
-	level.Debug(r.logger).Log("event", "terminated")
 	r.terminated = true
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
@@ -421,7 +420,6 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 			if err != nil {
 				if r.terminated {
-					level.Warn(r.logger).Log("event", "terminated", "nextErr", err)
 					err = nil
 					return true
 				}

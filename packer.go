@@ -168,6 +168,9 @@ func (pkr *packer) Close() error {
 	defer pkr.cl.Unlock()
 	select {
 	case <-pkr.closing:
+		if isAlreadyClosed(pkr.closeErr) {
+			return nil
+		}
 		return errors.Wrap(pkr.closeErr, "packer: already closed")
 	default:
 	}
