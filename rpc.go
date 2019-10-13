@@ -95,16 +95,8 @@ func handle(pkr Packer, handler Handler, remote net.Addr, logger log.Logger) End
 		root:   handler,
 	}
 
+    // TODO: rpc root context!? serve context?!
 	ctx := context.TODO()
-	if cn, ok := pkr.(CloseNotifier); ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(ctx)
-		go func() {
-			<-cn.Closed()
-			cancel()
-			r.Terminate()
-		}()
-	}
 
 	go func() {
 		handler.HandleConnect(ctx, r)
@@ -394,15 +386,6 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			level.Info(r.logger).Log("event", "closed", "handleErr", err, "closeErr", cerr)
 		}
 	}()
-
-	if cn, ok := r.pkr.(CloseNotifier); ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(ctx)
-		go func() {
-			<-cn.Closed()
-			cancel()
-		}()
-	}
 
 	for {
 		var vpkt interface{}
