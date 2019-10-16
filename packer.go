@@ -31,7 +31,7 @@ func NewPacker(rwc io.ReadWriteCloser) Packer {
 		w: codec.NewWriter(rwc),
 		c: rwc,
 
-		closing:  make(chan struct{}),
+		closing: make(chan struct{}),
 	}
 }
 

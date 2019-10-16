@@ -95,7 +95,7 @@ func handle(pkr Packer, handler Handler, remote net.Addr, logger log.Logger) End
 		root:   handler,
 	}
 
-    // TODO: rpc root context!? serve context?!
+	// TODO: rpc root context!? serve context?!
 	ctx := context.TODO()
 
 	go func() {
