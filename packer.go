@@ -114,6 +114,15 @@ func IsSinkClosed(err error) bool {
 	if causeErr == errSinkClosed {
 		return true
 	}
+
+	if causeErr == ErrSessionTerminated {
+		return true
+	}
+
+	if isAlreadyClosed(err) {
+		return true
+	}
+
 	return false
 }
 
