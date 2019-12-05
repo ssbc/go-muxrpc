@@ -116,6 +116,10 @@ func IsSinkClosed(err error) bool {
 		return true
 	}
 
+	if isAlreadyClosed(err) {
+		return true
+	}
+
 	return false
 }
 
