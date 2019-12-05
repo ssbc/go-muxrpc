@@ -80,7 +80,7 @@ func (req *Request) CloseWithError(cerr error) error {
 	// this makes sure the resources go away.
 	s := req.Stream.(*stream)
 	err := s.doCloseWithError(cerr)
-	if errors.Cause(err) == os.ErrClosed || isAlreadyClosed(err) {
+	if errors.Cause(err) == os.ErrClosed || IsSinkClosed(err) {
 		return nil
 	}
 	return errors.Wrap(err, "muxrpc: failed to close request stream")
