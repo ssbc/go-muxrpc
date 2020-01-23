@@ -5,6 +5,7 @@ package muxrpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 
@@ -69,7 +70,13 @@ func (req *Request) CloseWithError(cerr error) error {
 	if cerr == nil || luigi.IsEOS(errors.Cause(cerr)) {
 		inErr = req.in.Close()
 	} else {
-		inErr = req.in.(luigi.ErrorCloser).CloseWithError(cerr)
+		closer, ok := req.in.(luigi.ErrorCloser)
+		if ok {
+			inErr = closer.CloseWithError(cerr)
+		} else {
+			inErr = fmt.Errorf("muxrpc/request%d: req.in(%T) not a closer! %v", req.id, req.in, cerr)
+		}
+
 	}
 	if inErr != nil {
 		return errors.Wrap(inErr, "failed to close request input")
