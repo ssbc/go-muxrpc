@@ -305,6 +305,133 @@ func TestSource(t *testing.T) {
 	r.Equal(0, fh1.HandleCallCallCount(), "peer did not call 'connect'")
 }
 
+func TestSunkenSource(t *testing.T) {
+	r := require.New(t)
+	expRx := []string{
+		"you are a test",
+		"no! you're a test",
+		"your a test",
+		"ur a test",
+		"u test",
+		"u mad?",
+	}
+
+	c1, c2 := net.Pipe()
+
+	conn1 := make(chan struct{})
+	conn2 := make(chan struct{})
+	serve1 := make(chan struct{})
+	serve2 := make(chan struct{})
+
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
+
+	var fh1 FakeHandler
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Log("h1 called")
+		errc <- errors.Errorf("unexpected call to rpc1: %#v", req)
+	})
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1)
+	})
+
+	var fh2 FakeHandler
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("h2 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+			for _, v := range expRx {
+				err := req.Stream.Pour(ctx, v)
+				ckFatal(errors.Wrap(err, "h2 pour errored"))
+			}
+			err := req.Stream.Close()
+			ckFatal(errors.Wrap(err, "h2 end pour errored"))
+		}
+	})
+
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
+
+	rpc1 := Handle(NewPacker(c1), &fh1)
+	rpc2 := Handle(NewPacker(c2), &fh2)
+
+	ctx := context.Background()
+
+	go serve(ctx, rpc1.(Server), errc, serve1)
+	go serve(ctx, rpc2.(Server), errc, serve2)
+
+	var rxStrings []interface{}
+	snk := luigi.NewSliceSink(&rxStrings)
+
+	mappedSnk := mfr.SinkMap(snk, func(ctx context.Context, val interface{}) (interface{}, error) {
+		pkt, ok := val.(*codec.Packet)
+		if !ok {
+			return nil, errors.Errorf("muxrpc: unexpected vpkt value: %v %T", val, val)
+		}
+
+		if pkt.Flag.Get(codec.FlagEndErr) {
+			return nil, luigi.EOS{}
+		}
+
+		if !pkt.Flag.Get(codec.FlagString) {
+			return nil, errors.Errorf("muxtest: expected string packet")
+		}
+
+		return string(pkt.Body), nil
+	})
+
+	err := rpc1.SunkenSource(ctx, mappedSnk, "strings", Method{"whoami"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(time.Second / 100)
+
+	if len(expRx) != len(rxStrings) {
+		t.Fatal("rx len is off")
+	}
+	for i, exp := range expRx {
+		rxi := rxStrings[i]
+		sv, ok := rxi.(string)
+		if !ok {
+			t.Fatalf("elem %d nt a string: %T", i, rxi)
+		}
+
+		if sv != exp {
+			t.Errorf("elem %d unexpected response message %q, expected %v", i, sv, exp)
+		}
+	}
+
+	time.Sleep(time.Millisecond)
+	err = rpc1.Terminate()
+	r.NoError(err)
+	t.Log("waiting for everything to shut down")
+	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
+		select {
+		case err := <-errc:
+			if err != nil {
+				t.Fatalf("from errc: %+v", err)
+			}
+		case <-conn1:
+			t.Log("conn1 closed")
+			conn1 = nil
+		case <-conn2:
+			t.Log("conn2 closed")
+			conn2 = nil
+		case <-serve1:
+			t.Log("serve1 closed")
+			serve1 = nil
+		case <-serve2:
+			t.Log("serve2 closed")
+			serve2 = nil
+		}
+	}
+
+	r.Equal(0, fh1.HandleCallCallCount(), "peer did not call 'connect'")
+}
+
 func TestSink(t *testing.T) {
 	r := require.New(t)
 	expRx := []string{

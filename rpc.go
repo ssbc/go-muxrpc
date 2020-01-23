@@ -174,6 +174,31 @@ func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args 
 	return req.Stream, nil
 }
 
+// SunkenSource still does a "Source() call" but takes a sink to write to when receiveing a packet instead of returning a source that can be read from
+func (r *rpc) SunkenSource(ctx context.Context, snk luigi.Sink, tipe interface{}, method Method, args ...interface{}) error {
+	argData, err := marshalCallArgs(args)
+	if err != nil {
+		return err
+	}
+
+	req := &Request{
+		Type:   "source",
+		Stream: newStream(nil, r.pkr, 0, streamCapMultiple, streamCapNone),
+		in:     snk,
+
+		Method:  method,
+		RawArgs: argData,
+
+		tipe: tipe,
+	}
+
+	if err := r.Do(ctx, req); err != nil {
+		return errors.Wrap(err, "error sending request")
+	}
+
+	return nil
+}
+
 // Sink does a sink call on the remote.
 func (r *rpc) Sink(ctx context.Context, method Method, args ...interface{}) (luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
@@ -474,8 +499,8 @@ func (r *rpc) closeStream(req *Request, streamErr error) {
 	}
 
 	r.rLock.Lock()
-	defer r.rLock.Unlock()
 	delete(r.reqs, req.id)
+	r.rLock.Unlock()
 	return
 }
 
