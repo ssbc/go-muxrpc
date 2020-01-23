@@ -175,7 +175,7 @@ func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args 
 }
 
 // SunkenSource still does a "Source() call" but takes a sink to write to when receiveing a packet instead of returning a source that can be read from
-func (r *rpc) SunkenSource(ctx context.Context, snk luigi.Sink, tipe interface{}, method Method, args ...interface{}) error {
+func (r *rpc) SunkenSource(ctx context.Context, snk luigi.Sink, method Method, args ...interface{}) error {
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return err
@@ -188,8 +188,6 @@ func (r *rpc) SunkenSource(ctx context.Context, snk luigi.Sink, tipe interface{}
 
 		Method:  method,
 		RawArgs: argData,
-
-		tipe: tipe,
 	}
 
 	if err := r.Do(ctx, req); err != nil {

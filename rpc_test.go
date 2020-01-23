@@ -382,7 +382,7 @@ func TestSunkenSource(t *testing.T) {
 		return string(pkt.Body), nil
 	})
 
-	err := rpc1.SunkenSource(ctx, mappedSnk, "strings", Method{"whoami"})
+	err := rpc1.SunkenSource(ctx, mappedSnk, Method{"whoami"})
 	if err != nil {
 		t.Fatal(err)
 	}
