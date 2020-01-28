@@ -405,7 +405,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 	defer func() {
 		cerr := r.pkr.Close()
-		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
+		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") && errors.Cause(err) != context.Canceled {
 			level.Info(r.logger).Log("event", "closed", "handleErr", err, "closeErr", cerr)
 		}
 	}()

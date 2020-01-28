@@ -74,7 +74,7 @@ func (req *Request) CloseWithError(cerr error) error {
 		if ok {
 			inErr = closer.CloseWithError(cerr)
 		} else {
-			inErr = fmt.Errorf("muxrpc/request%d: req.in(%T) not a closer! %v", req.id, req.in, cerr)
+			fmt.Fprintf(os.Stderr, "muxrpc/request%d: req.in(%T) not a closer! %v", req.id, req.in, cerr)
 		}
 
 	}
