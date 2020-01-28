@@ -41,6 +41,8 @@ type rpc struct {
 
 	root Handler
 
+	rootServed sync.Once
+
 	// terminated indicates that the rpc session is being terminated
 	terminated bool
 	tLock      sync.Mutex
@@ -94,13 +96,6 @@ func handle(pkr Packer, handler Handler, remote net.Addr, logger log.Logger) End
 		reqs:   make(map[int32]*Request),
 		root:   handler,
 	}
-
-	// TODO: rpc root context!? serve context?!
-	ctx := context.TODO()
-
-	go func() {
-		handler.HandleConnect(ctx, r)
-	}()
 
 	return r
 }
@@ -403,6 +398,11 @@ type Server interface {
 // Serve handles the RPC session
 func (r *rpc) Serve(ctx context.Context) (err error) {
 	level.Debug(r.logger).Log("event", "serving")
+
+	r.rootServed.Do(func() {
+		go r.root.HandleConnect(ctx, r)
+	})
+
 	defer func() {
 		cerr := r.pkr.Close()
 		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
