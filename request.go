@@ -17,6 +17,22 @@ import (
 
 type Method []string
 
+func (m *Method) UnmarshalJSON(d []byte) error {
+	var newM []string
+
+	err := json.Unmarshal(d, &newM)
+	if err != nil {
+		var meth string
+		err := json.Unmarshal(d, &meth)
+		if err != nil {
+			return errors.Wrap(err, "muxrpc/method: error decoding packet")
+		}
+		newM = Method{meth}
+	}
+	*m = newM
+
+	return nil
+}
 func (m Method) String() string {
 	return strings.Join(m, ".")
 }
