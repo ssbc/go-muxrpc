@@ -483,8 +483,12 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 		err = req.in.Pour(ctx, pkt)
 		if err != nil {
-			err = errors.Wrap(err, "muxrpc: error pouring data to handler")
-			return
+			if !luigi.IsEOS(err) {
+				err = errors.Wrap(err, "muxrpc: error pouring data to handler")
+				return
+			}
+
+			req.in = noopSink{}
 		}
 	}
 }
@@ -532,3 +536,8 @@ func parseError(data []byte) (*CallError, error) {
 
 	return &e, nil
 }
+
+type noopSink struct{}
+
+func (noopSink) Pour(ctx context.Context, v interface{}) error { return nil }
+func (noopSink) Close() error                                  { return nil }
