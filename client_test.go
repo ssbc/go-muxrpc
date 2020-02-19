@@ -297,7 +297,8 @@ func TestJSSource(t *testing.T) {
 	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx := context.Background()
+
 	errc := make(chan error)
 	done := make(chan struct{})
 
@@ -331,7 +332,6 @@ func TestJSSource(t *testing.T) {
 	r.NoError(err, "rcp shutdown call")
 	r.Equal(v, "ty", "expected call result")
 
-	cancel()
 	r.NoErrorf(packer.Close(), "%+s %s", "error closing packer")
 
 	for err := range errc {

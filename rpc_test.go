@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"sync"
@@ -24,10 +25,10 @@ import (
 )
 
 func initLogging(t *testing.T, pref string) (l log.Logger, w io.Writer) {
-	w = logtest.Logger(pref, t)
-	if testing.Verbose() {
-		w = io.MultiWriter(w, os.Stderr)
+	if !testing.Verbose() {
+		return log.NewNopLogger(), ioutil.Discard
 	}
+	w = os.Stderr
 	l = log.NewLogfmtLogger(w)
 	return
 }
@@ -644,8 +645,7 @@ func TestDuplex(t *testing.T) {
 	r.Equal(1, fh2.HandleCallCallCount(), "peer h2 did call unexpectedly")
 }
 
-// TODO: soome weirdness - see TestJSSyncString for error handling
-func XTestErrorAsync(t *testing.T) {
+func TestErrorAsync(t *testing.T) {
 	c1, c2 := net.Pipe()
 
 	conn1 := make(chan struct{})
@@ -695,13 +695,17 @@ func XTestErrorAsync(t *testing.T) {
 		v, err := rpc1.Async(ctx, "string", Method{"whoami"})
 		if err == nil {
 			ckFatal(fmt.Errorf("expected an error"))
-		} else if errors.Cause(err).Error() != "omg an error!" {
-			ckFatal(fmt.Errorf("expected error %q, got %q", "omg an error!", errors.Cause(err)))
+			return
+		}
+		ce := errors.Cause(err)
+		if ce.Error() != "muxrpc CallError: Error - omg an error!" {
+			ckFatal(fmt.Errorf("expected error, got %q", ce))
+			return
 		}
 
-		e, ok := errors.Cause(err).(*CallError)
+		e, ok := ce.(CallError)
 		if !ok {
-			t.Fatalf("not a callerror!")
+			t.Fatalf("not a callerror! %T", ce)
 		}
 
 		if e.Message != "omg an error!" {
@@ -715,6 +719,10 @@ func XTestErrorAsync(t *testing.T) {
 		if v != nil {
 			ckFatal(fmt.Errorf("unexpected response message %q, expected nil", v))
 		}
+		t.Log("error compared")
+
+		rpc1.Terminate()
+		rpc2.Terminate()
 	}()
 
 	t.Log("waiting for closes")
@@ -868,7 +876,8 @@ func TestDuplexHandlerStr(t *testing.T) {
 		wg.Done()
 	}()
 
-	rpc1 := Handle(NewPacker(debug.Wrap(dbg, c1)), &fh1)
+	// debug.Wrap(dbg, c1)
+	rpc1 := Handle(NewPacker(c1), &fh1)
 	rpc2 := Handle(NewPacker(c2), &h2)
 
 	ctx := context.Background()
