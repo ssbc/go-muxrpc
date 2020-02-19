@@ -10,16 +10,17 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-
 	"go.cryptoscope.co/luigi"
+
 	"go.cryptoscope.co/muxrpc/codec"
 )
 
+// Method defines the a call endpoint by name.
+// The convention is to have an array to namespace or group handlers.
+// eg. ["blobs", "get"] or ["gossip", "connect"]
 type Method []string
 
-func (m Method) String() string {
-	return strings.Join(m, ".")
-}
+func (m Method) String() string { return strings.Join(m, ".") }
 
 // Request assembles the state of an RPC call
 type Request struct {
@@ -44,7 +45,8 @@ type Request struct {
 	tipe interface{}
 }
 
-// Legacy
+// Args is an adapter for the legacy API, doing the unmarshal autoamtically.
+// sometimes we need to access the RawMessage without decoding it first (See Request.RawArgs)
 func (req *Request) Args() []interface{} {
 	var v []interface{}
 	json.Unmarshal(req.RawArgs, &v)
@@ -65,6 +67,8 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 	return nil
 }
 
+// CloseWithError can be used to let the caller now the request couldn't be handled correctly.
+// luigi.EOS is a special error value to indicate the end of a stream.
 func (req *Request) CloseWithError(cerr error) error {
 	var inErr error
 	if cerr == nil || luigi.IsEOS(errors.Cause(cerr)) {
@@ -74,7 +78,7 @@ func (req *Request) CloseWithError(cerr error) error {
 		if ok {
 			inErr = closer.CloseWithError(cerr)
 		} else {
-			fmt.Fprintf(os.Stderr, "muxrpc/request%d: req.in(%T) not a closer! %v", req.id, req.in, cerr)
+			fmt.Fprintf(os.Stderr, "muxrpc/request%d: req.in(%T) not a closer! %v\n", req.id, req.in, cerr)
 		}
 
 	}
@@ -93,6 +97,7 @@ func (req *Request) CloseWithError(cerr error) error {
 	return errors.Wrap(err, "muxrpc: failed to close request stream")
 }
 
+// Close writes luigi.EOS to the underlying stream.
 func (req *Request) Close() error {
 	return req.CloseWithError(luigi.EOS{})
 }
