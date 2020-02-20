@@ -135,18 +135,29 @@ func isAlreadyClosed(err error) bool {
 
 	if sysErr, ok := (causeErr).(*os.PathError); ok {
 		if sysErr.Err == os.ErrClosed {
-			// fmt.Printf("debug: found syscall err: %T) %s\n", causeErr, causeErr)
 			return true
 		}
 	}
 
-	if opErr, ok := causeErr.(*net.OpError); ok {
-		if syscallErr, ok := opErr.Err.(*os.SyscallError); ok {
-			if errNo, ok := syscallErr.Err.(syscall.Errno); ok {
-				if errNo == syscall.EPIPE {
-					return true
-				}
+	if isConnBrokenErr(causeErr) {
+		return true
+	}
+
+	return false
+}
+
+func isConnBrokenErr(err error) bool {
+	netErr := new(net.OpError)
+	if stderr.As(err, &netErr) {
+		var sysCallErr = new(os.SyscallError)
+		if stderr.As(netErr.Err, &sysCallErr) {
+			action := sysCallErr.Unwrap()
+			if action == syscall.ECONNRESET || action == syscall.EPIPE {
+				return true
 			}
+		}
+		if netErr.Err.Error() == "use of closed network connection" {
+			return true
 		}
 	}
 	return false
