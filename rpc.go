@@ -403,7 +403,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 	defer func() {
 		cerr := r.pkr.Close()
 		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") && errors.Cause(err) != context.Canceled {
-			level.Info(r.logger).Log("event", "closed", "handleErr", err, "closeErr", cerr)
+			level.Debug(r.logger).Log("event", "closed", "handleErr", err, "closeErr", cerr)
 		}
 	}()
 
@@ -511,3 +511,4 @@ type noopSink struct{}
 
 func (noopSink) Pour(ctx context.Context, v interface{}) error { return nil }
 func (noopSink) Close() error                                  { return nil }
+func (noopSink) CloseWithError(_ error) error                  { return nil }
