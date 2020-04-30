@@ -41,6 +41,10 @@ type Request struct {
 	// tipe is a value that has the type of data we expect to receive.
 	// This is needed for unmarshaling JSON.
 	tipe interface{}
+
+	// used to stop producing more data on this request
+	// the calling sight might tell us they had enough of this stream
+	abort context.CancelFunc
 }
 
 // Legacy

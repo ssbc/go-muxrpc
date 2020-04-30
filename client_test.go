@@ -14,6 +14,7 @@ import (
 	"go.cryptoscope.co/muxrpc/debug"
 
 	"github.com/cryptix/go/proc"
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -440,4 +441,83 @@ func TestJSDuplexToUs(t *testing.T) {
 	for err := range errc {
 		r.NoError(err)
 	}
+}
+
+func TestJSSupportAbort(t *testing.T) {
+	r := require.New(t)
+
+	_, jsLog := initLogging(t, "js")
+	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
+	r.NoError(err, "nodejs startup")
+
+	var h hAbortMe
+	h.want = 20
+
+	handlerErrors := make(chan error)
+	h.failed = handlerErrors
+
+	muxdbg, _ := initLogging(t, "packets")
+	h.logger = muxdbg
+
+	packer := NewPacker(debug.Wrap(muxdbg, serv))
+	rpc1 := Handle(packer, &h)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := make(chan error)
+
+	go serve(ctx, rpc1.(Server), errc)
+
+	ret, err := rpc1.Async(ctx, "foo", Method{"callme", "withAbort"}, h.want)
+	r.NoError(err, "call failed")
+	r.EqualValues(ret, "thanks!")
+
+	r.NoError(<-handlerErrors)
+
+	v, err := rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	r.NoError(err, "rcp shutdown call")
+	r.Equal(v, "ty", "expected call result")
+
+	cancel()
+	rpc1.Terminate()
+	close(errc)
+	for err := range errc {
+		r.NoError(err)
+	}
+}
+
+type hAbortMe struct {
+	want   int
+	logger log.Logger
+	failed chan<- error
+}
+
+func (h *hAbortMe) HandleConnect(ctx context.Context, e Endpoint) {
+	h.logger.Log("connect:", e.Remote())
+}
+
+func (h *hAbortMe) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
+	if req.Method.String() != "takeSome" {
+		err := fmt.Errorf("wrong method: %s", req.Method.String())
+		h.failed <- err
+		req.Stream.CloseWithError(err)
+		return
+	}
+
+	var i int
+	for ; i < h.want+10; i++ {
+		err := req.Stream.Pour(ctx, i)
+		if err != nil {
+			h.logger.Log("evt", "failed to pour", "i", i, "err", err)
+			if errors.Cause(err) == context.Canceled {
+				break
+			}
+			h.failed <- err
+			break
+		}
+		time.Sleep(time.Second / 100)
+	}
+	if i != h.want {
+		h.failed <- fmt.Errorf("expected %d but sent %d packets", h.want, i)
+	}
+	close(h.failed)
 }

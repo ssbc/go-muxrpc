@@ -81,8 +81,10 @@ func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
 }
 
 // Pour sends a packet to the underlying stream.
-func (pkr *packer) Pour(_ context.Context, v interface{}) error {
+func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
 	select {
+	case <-ctx.Done():
+		return ctx.Err()
 	case <-pkr.closing:
 		return errSinkClosed
 	default:

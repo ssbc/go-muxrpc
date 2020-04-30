@@ -25,9 +25,6 @@ import (
 
 func initLogging(t *testing.T, pref string) (l log.Logger, w io.Writer) {
 	w = logtest.Logger(pref, t)
-	if testing.Verbose() {
-		w = io.MultiWriter(w, os.Stderr)
-	}
 	l = log.NewLogfmtLogger(w)
 	return
 }
@@ -35,7 +32,7 @@ func initLogging(t *testing.T, pref string) (l log.Logger, w io.Writer) {
 // for some reason you can't use t.Fatal // t.Error in goroutines... :-/
 func serve(ctx context.Context, r Server, errc chan<- error, done ...chan<- struct{}) {
 	err := r.Serve(ctx)
-	if err != nil {
+	if err != nil && errors.Cause(err) != context.Canceled {
 		errc <- errors.Wrap(err, "Serve failed")
 	}
 	if len(done) > 0 { // might want to use a waitGroup here instead?
