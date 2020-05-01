@@ -1,0 +1,9 @@
+image: alpine/latest
+packages:
+  - go
+sources:
+  - https://git.sr.ht/~cryptix/go-muxrpc
+tasks:
+  - test: |
+      cd go-muxrpc
+      go test ./...
