@@ -107,7 +107,9 @@ func TestBothwaysAsync(t *testing.T) {
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil && term1 != nil || term2 != nil {
 		select {
 		case err := <-errc:
-			t.Fatalf("from error chan:\n%+v", err)
+			if err != nil {
+				t.Fatalf("from error chan:\n%+v", err)
+			}
 		case <-conn1:
 			t.Log("conn1 closed")
 			conn1 = nil
@@ -262,7 +264,9 @@ func TestBohwaysSource(t *testing.T) {
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil && term1 != nil || term2 != nil {
 		select {
 		case err := <-errc:
-			t.Error("an error occurred:", err)
+			if err != nil {
+				t.Error("an error occurred:", err)
+			}
 		case <-conn1:
 			t.Log("conn1 closed")
 			conn1 = nil
