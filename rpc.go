@@ -177,6 +177,33 @@ func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args 
 	return req.Stream, nil
 }
 
+func (r *rpc) ByteSource(ctx context.Context, method Method, args ...interface{}) (ByteSource, error) {
+
+	argData, err := marshalCallArgs(args)
+	if err != nil {
+		return nil, err
+	}
+
+	var bs byteSource
+
+	req := &Request{
+		Type:   "source",
+		Stream: bs.AsStream(),
+
+		consume: bs.consume,
+		done:    bs.Cancel,
+
+		Method:  method,
+		RawArgs: argData,
+	}
+
+	if err := r.Do(ctx, req); err != nil {
+		return nil, errors.Wrap(err, "error sending request")
+	}
+
+	return &bs, nil
+}
+
 // Sink does a sink call on the remote.
 func (r *rpc) Sink(ctx context.Context, method Method, args ...interface{}) (luigi.Sink, error) {
 	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
@@ -467,10 +494,18 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			continue
 		}
 
-		err = req.in.Pour(ctx, pkt)
-		if err != nil {
-			err = errors.Wrap(err, "muxrpc: error pouring data to handler")
-			return
+		if req.in == nil {
+			err = req.consume(pkt)
+			if err != nil {
+				err = errors.Wrap(err, "muxrpc: error pouring data to handler")
+				return
+			}
+		} else {
+			err = req.in.Pour(ctx, pkt)
+			if err != nil {
+				err = errors.Wrap(err, "muxrpc: error pouring data to handler")
+				return
+			}
 		}
 	}
 }

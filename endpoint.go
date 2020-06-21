@@ -14,7 +14,11 @@ import (
 type Endpoint interface {
 	// The different call types:
 	Async(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (interface{}, error)
+
 	Source(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (luigi.Source, error)
+
+	ByteSource(ctx context.Context, method Method, args ...interface{}) (ByteSource, error)
+
 	Sink(ctx context.Context, method Method, args ...interface{}) (luigi.Sink, error)
 	Duplex(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (luigi.Source, luigi.Sink, error)
 

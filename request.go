@@ -51,6 +51,10 @@ type Request struct {
 	// in is the sink that incoming packets are passed to
 	in luigi.Sink
 
+	// if in is nil, these funcs have to be set
+	consume func(pkt *codec.Packet) error
+	done    func(error)
+
 	// same as packet.Req - the numerical identifier for the stream
 	id int32
 
@@ -87,9 +91,17 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 func (req *Request) CloseWithError(cerr error) error {
 	var inErr error
 	if cerr == nil || luigi.IsEOS(errors.Cause(cerr)) {
-		inErr = req.in.Close()
+		if req.in == nil {
+			req.done(nil)
+		} else {
+			inErr = req.in.Close()
+		}
 	} else {
-		inErr = req.in.(luigi.ErrorCloser).CloseWithError(cerr)
+		if req.in == nil {
+			req.done(cerr)
+		} else {
+			inErr = req.in.(luigi.ErrorCloser).CloseWithError(cerr)
+		}
 	}
 	if inErr != nil {
 		return errors.Wrap(inErr, "failed to close request input")
@@ -98,7 +110,10 @@ func (req *Request) CloseWithError(cerr error) error {
 	// we really need to make sure we shut down the streams.
 	// "you can't" only applies for high-level abstractions.
 	// this makes sure the resources go away.
-	s := req.Stream.(*stream)
+	s, ok := req.Stream.(*stream)
+	if !ok {
+		return nil
+	}
 	err := s.doCloseWithError(cerr)
 	if errors.Cause(err) == os.ErrClosed || IsSinkClosed(err) {
 		return nil
