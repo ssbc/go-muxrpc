@@ -188,11 +188,12 @@ func (r *rpc) ByteSource(ctx context.Context, method Method, args ...interface{}
 		return nil, err
 	}
 
-	bs := NewByteSource(ctx)
+	//bs := NewByteSource(ctx)
+	var bs = newByteSource()
 
 	req := &Request{
 		Type:   "source",
-		Stream: bs.AsStream(),
+		Stream: bs.AsStream(), // stub for legacy interfaces
 
 		consume: bs.consume,
 		done:    bs.Cancel,

@@ -37,6 +37,8 @@ type ByteSource interface {
 type byteSource struct {
 	buf frameWriter
 
+	mu     sync.Mutex
+	closed chan struct{}
 	failed error
 
 	requestID int32
@@ -44,6 +46,12 @@ type byteSource struct {
 
 	streamCtx context.Context
 	cancel    context.CancelFunc
+}
+
+func newByteSource() *byteSource {
+	return &byteSource{
+		closed: make(chan struct{}),
+	}
 }
 
 var _ ByteSource = (*byteSource)(nil)
@@ -57,15 +65,36 @@ func NewByteSource(ctx context.Context) *byteSource {
 }
 
 func (bs *byteSource) Cancel(err error) {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
+	// fmt.Println("muxrpc: byte source canceled with", err)
+
+	if bs.failed != nil {
+		// fmt.Println("muxrpc: byte source already canceld", bs.failed)
+		return
+	}
 	// TODO: send EndErr packet back on stream
-	fmt.Println("muxrpc: byte source canceled with", err)
+	bs.CloseWithError(err)
+}
+
+func (bs *byteSource) CloseWithError(err error) error {
 	if err == nil {
 		bs.failed = luigi.EOS{}
+	} else {
+		bs.failed = err
 	}
-	bs.cancel()
+	close(bs.closed)
+	return nil
+}
+
+func (bs *byteSource) Close() error {
+	return bs.CloseWithError(nil)
 }
 
 func (bs *byteSource) Err() error {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
+
 	if luigi.IsEOS(bs.failed) || errors.Is(bs.failed, context.Canceled) {
 		return nil
 	}
@@ -75,9 +104,17 @@ func (bs *byteSource) Err() error {
 
 // TODO: might need to add size to size
 func (bs *byteSource) Next(ctx context.Context) bool {
-	if bs.failed != nil { // TODO: what if a stream is canceled before everything was read?
+	bs.mu.Lock()
+	if bs.failed != nil && bs.buf.frames == 0 {
+		bs.mu.Unlock()
 		return false
 	}
+	if bs.buf.frames > 0 {
+		bs.mu.Unlock()
+		return true
+	}
+	bs.mu.Unlock()
+
 	select {
 	case <-bs.streamCtx.Done():
 		bs.failed = bs.streamCtx.Err()
@@ -87,6 +124,9 @@ func (bs *byteSource) Next(ctx context.Context) bool {
 		bs.failed = ctx.Err()
 		return false
 
+	case <-bs.closed:
+		return bs.buf.frames > 0
+
 	case <-bs.buf.waitForMore():
 		return true
 	}
@@ -94,24 +134,17 @@ func (bs *byteSource) Next(ctx context.Context) bool {
 
 // TODO: might not be a good iead, easy to missuse (call twice and get two packates)
 func (bs *byteSource) Read(b []byte) (int, error) {
-	rd, sz, err := bs.buf.readFrame()
+	sz, err := bs.buf.readFrame(b)
 	if err != nil {
-		return 0, err
+		return sz, err
 	}
-
-	n, err := rd.Read(b)
-	if err != nil {
-		return n, err
-	}
-
-	if n < sz {
-		return n, fmt.Errorf("muxrpc: buffer too small, only read partial frame (%d vs %d)", n, sz)
-	}
-
-	return n, nil
+	return sz, nil
 }
 
 func (bs *byteSource) consume(pkt *codec.Packet) error {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
+
 	if bs.failed != nil {
 		return fmt.Errorf("muxrpc: byte source canceled: %w", bs.failed)
 	}
@@ -124,6 +157,7 @@ func (bs *byteSource) consume(pkt *codec.Packet) error {
 		if isTrue(pkt.Body) {
 			return fmt.Errorf("TODO: close stream")
 		}
+		return fmt.Errorf("muxrpc: call error? %s", string(pkt.Body))
 	}
 
 	bs.pkgFlag = pkt.Flag
@@ -205,13 +239,13 @@ func (stream *bsStream) CloseWithError(e error) error {
 
 // WithType tells the stream in what type JSON data should be unmarshalled into
 func (stream *bsStream) WithType(tipe interface{}) {
-	fmt.Printf("muxrpc: chaging marshal type to %T\n", tipe)
+	// fmt.Printf("muxrpc: chaging marshal type to %T\n", tipe)
 	stream.tipe = tipe
 }
 
 // WithReq tells the stream what request number should be used for sent messages
 func (stream *bsStream) WithReq(req int32) {
-	fmt.Printf("muxrpc: chaging request ID to %d\n", req)
+	// fmt.Printf("muxrpc: chaging request ID to %d\n", req)
 	stream.source.requestID = req
 }
 
@@ -273,16 +307,28 @@ func (fw *frameWriter) waitForMore() <-chan struct{} {
 	return ch
 }
 
-func (fw *frameWriter) readFrame() (io.Reader, int, error) {
+func (fw *frameWriter) readFrame(buf []byte) (int, error) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
 	_, err := fw.store.Read(fw.lenBuf[:])
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 
 	pktLen := binary.LittleEndian.Uint32(fw.lenBuf[:])
+
+	if uint32(len(buf)) < pktLen {
+		return 0, fmt.Errorf("muxrpc: buffer to small to hold frame")
+	}
+
+	rd := io.LimitReader(&fw.store, int64(pktLen))
+
+	n, err := rd.Read(buf)
+	if err != nil {
+		return n, err
+	}
+
 	fw.frames--
-	return io.LimitReader(&fw.store, int64(pktLen)), int(pktLen), nil
+	return n, nil
 }
