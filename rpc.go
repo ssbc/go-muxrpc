@@ -166,7 +166,7 @@ func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args 
 		return nil, err
 	}
 
-	bs := NewByteSource(ctx)
+	bs := newByteSource(r.bpool)
 
 	req := &Request{
 		Type:    "source",

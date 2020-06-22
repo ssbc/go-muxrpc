@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/karrick/bufpool"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
@@ -19,7 +20,9 @@ import (
 func TestSourceBytesFill(t *testing.T) {
 	r := require.New(t)
 
-	var bs byteSource
+	bpool, err := bufpool.NewLockPool()
+	r.NoError(err)
+	var bs = newByteSource(bpool)
 	bs.requestID = 23
 
 	var exp = [][]byte{
@@ -48,7 +51,9 @@ func TestSourceBytesFill(t *testing.T) {
 func TestSourceBytesOneByOne(t *testing.T) {
 	r := require.New(t)
 
-	var bs byteSource
+	bpool, err := bufpool.NewLockPool()
+	r.NoError(err)
+	var bs = newByteSource(bpool)
 	bs.requestID = 23
 
 	var exp = [][]byte{

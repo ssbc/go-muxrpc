@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/karrick/bufpool"
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
 )
@@ -35,7 +36,8 @@ type ByteSource interface {
 }
 
 type byteSource struct {
-	buf frameWriter
+	bpool bufpool.FreeList
+	buf   frameBuffer
 
 	mu     sync.Mutex
 	closed chan struct{}
@@ -48,15 +50,12 @@ type byteSource struct {
 	cancel    context.CancelFunc
 }
 
-// func newByteSource() *byteSource {
-// 	return &byteSource{}
-// }
-
-var _ ByteSource = (*byteSource)(nil)
-
-func NewByteSource(ctx context.Context) *byteSource {
-
-	bs := byteSource{
+func newByteSource(pool bufpool.FreeList) *byteSource {
+	return &byteSource{
+		bpool: pool,
+		buf: frameBuffer{
+			store: pool.Get(),
+		},
 		closed: make(chan struct{}),
 	}
 	bs.streamCtx, bs.cancel = context.WithCancel(ctx)
@@ -78,6 +77,7 @@ func (bs *byteSource) Cancel(err error) {
 }
 
 func (bs *byteSource) CloseWithError(err error) error {
+	// cant lock here because we might block in next
 	if err == nil {
 		bs.failed = luigi.EOS{}
 	} else {
@@ -107,6 +107,7 @@ func (bs *byteSource) Next(ctx context.Context) bool {
 	bs.mu.Lock()
 	if bs.failed != nil && bs.buf.frames == 0 {
 		bs.mu.Unlock()
+		bs.bpool.Put(bs.buf.store)
 		return false
 	}
 	if bs.buf.frames > 0 {
@@ -149,20 +150,6 @@ func (bs *byteSource) consume(pktLen uint32, r io.Reader) error {
 		return fmt.Errorf("muxrpc: byte source canceled: %w", bs.failed)
 	}
 
-	/* already happens in rpc.Serve
-	if pkt.Req != bs.requestID {
-		return fmt.Errorf("muxrpc: unexpected packet request ID: %d", pkt.Req)
-	}
-
-	if pkt.Flag.Get(codec.FlagEndErr) {
-		if isTrue(pkt.Body) {
-			return fmt.Errorf("TODO: close stream")
-		}
-		return fmt.Errorf("muxrpc: call error? %s", string(pkt.Body))
-	}
-	*/
-
-	// bs.pkgFlag = pkt.Flag
 	err := bs.buf.copyBody(pktLen, r)
 	if err != nil {
 		return err
@@ -248,9 +235,9 @@ func (stream *bsStream) WithReq(req int32) {
 }
 
 // utils
-type frameWriter struct {
+type frameBuffer struct {
 	mu    sync.Mutex
-	store bytes.Buffer
+	store *bytes.Buffer
 
 	waiting chan<- struct{}
 
@@ -270,18 +257,18 @@ func (fw *frameWriter) copyBody(pktLen uint32, rd io.Reader) error {
 	binary.LittleEndian.PutUint32(fw.lenBuf[:], uint32(pktLen))
 	fw.store.Write(fw.lenBuf[:])
 
-	copied, err := io.Copy(&fw.store, rd)
+	copied, err := io.Copy(fw.store, rd)
 	if err != nil {
 		return err
 	}
 
 	if uint32(copied) != pktLen {
-		return fmt.Errorf("frameWriter: failed to consume whole body")
+		return fmt.Errorf("frameBuffer: failed to consume whole body")
 	}
 
 	fw.frames++
 
-	// fmt.Printf("frameWriter(%d) stored %q (len:%d)\n", fw.frames, buf, pktLen)
+	// fmt.Printf("frameBuffer(%d) stored %q (len:%d)\n", fw.frames, buf, pktLen)
 
 	if fw.waiting != nil {
 		close(fw.waiting)
@@ -290,13 +277,13 @@ func (fw *frameWriter) copyBody(pktLen uint32, rd io.Reader) error {
 	return nil
 }
 
-func (fw *frameWriter) writeBody(buf []byte) (int, error) {
+func (fw *frameBuffer) writeBody(buf []byte) (int, error) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
 	pktLen := len(buf)
 	if pktLen > math.MaxUint32 {
-		return 0, fmt.Errorf("frameWriter: packet too large")
+		return 0, fmt.Errorf("frameBuffer: packet too large")
 	}
 	binary.LittleEndian.PutUint32(fw.lenBuf[:], uint32(pktLen))
 
@@ -313,7 +300,7 @@ func (fw *frameWriter) writeBody(buf []byte) (int, error) {
 	return pktLen, nil
 }
 
-func (fw *frameWriter) waitForMore() <-chan struct{} {
+func (fw *frameBuffer) waitForMore() <-chan struct{} {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
@@ -332,7 +319,7 @@ func (fw *frameWriter) waitForMore() <-chan struct{} {
 	return ch
 }
 
-func (fw *frameWriter) readFrame(buf []byte) (int, error) {
+func (fw *frameBuffer) readFrame(buf []byte) (int, error) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
@@ -347,7 +334,7 @@ func (fw *frameWriter) readFrame(buf []byte) (int, error) {
 		return 0, fmt.Errorf("muxrpc: buffer to small to hold frame")
 	}
 
-	rd := io.LimitReader(&fw.store, int64(pktLen))
+	rd := io.LimitReader(fw.store, int64(pktLen))
 
 	n, err := rd.Read(buf)
 	if err != nil {
