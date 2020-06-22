@@ -1,6 +1,7 @@
 package muxrpc
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"reflect"
@@ -44,16 +45,25 @@ func TestPacker(t *testing.T) {
 		close(errc)
 	}()
 
-	v, err := pkr2.Next(ctx)
+	var hdr codec.Header
+	err := pkr2.NextHeader(ctx, &hdr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkt_, ok := v.(*codec.Packet)
-	if !ok {
-		t.Fatalf("expected a %T, got %v(%T)", pkt_, v, v)
+
+	var buf = new(bytes.Buffer)
+	err = pkr2.r.ReadBodyInto(buf, hdr.Len)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	pkt.Req = -123
+	var pkt_ = codec.Packet{
+		Flag: hdr.Flag,
+		Req:  hdr.Req,
+		Body: buf.Bytes(),
+	}
+
+	// pkt.Req = -123
 
 	if !reflect.DeepEqual(pkt_, &pkt) {
 		t.Log("Req matches:", reflect.DeepEqual(pkt.Req, pkt_.Req))
@@ -70,9 +80,9 @@ func TestPacker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	hdr, err := pkr2.NextHeader(ctx)
+	// hdr, err := pkr2.NextHeader(ctx)
 
-	_, err = pkr2.Next(ctx)
+	err = pkr2.NextHeader(ctx, &hdr)
 	if !luigi.IsEOS(err) {
 		t.Fatal("expected EOS, got:", err)
 	}
