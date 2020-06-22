@@ -3,7 +3,9 @@
 package muxrpc
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"testing"
 
 	"go.cryptoscope.co/luigi"
@@ -20,9 +22,11 @@ func TestStreamDuplex(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
 	iSrc, iSink := luigi.NewPipe(luigi.WithBuffer(2))
-	oSrc, oSink := luigi.NewPipe(luigi.WithBuffer(4))
 
-	str := newStream(iSrc, oSink, req, streamCapMultiple, streamCapMultiple)
+	var oBuff = &bytes.Buffer{}
+	var oWriter = codec.NewWriter(oBuff)
+
+	str := newStream(iSrc, oWriter, req, streamCapMultiple, streamCapMultiple)
 
 	ctx := context.Background()
 
@@ -54,22 +58,21 @@ func TestStreamDuplex(t *testing.T) {
 	err = str.Pour(ctx, "bar")
 	a.Equal(errSinkClosed, errors.Cause(err), "expected error pouring")
 
-	v, err := oSrc.Next(ctx)
-	r.NoError(err, "error reading packet from oSrc")
-	r.Equal("foo", string(v.(*codec.Packet).Body), "wrong value: %+v", v.(*codec.Packet))
+	wantHex := "090000000300000017666f6f09000000030000001762617209000000030000001762617a0e000000040000001774727565"
+	wantBytes, err := hex.DecodeString(wantHex)
+	r.NoError(err)
+	got := oBuff.Bytes()
+	r.Equal(wantBytes, got)
 
-	v, err = oSrc.Next(ctx)
-	r.NoError(err, "error reading packet from oSrc")
-	r.Equal("bar", string(v.(*codec.Packet).Body), "wrong value: %+v", v.(*codec.Packet))
+	gotReader := codec.NewReader(bytes.NewReader(got))
+	pkts, err := codec.ReadAllPackets(gotReader)
+	r.NoError(err)
+	r.Len(pkts, 4)
 
-	v, err = oSrc.Next(ctx)
-	r.NoError(err, "error reading packet from oSrc")
-	r.Equal("baz", string(v.(*codec.Packet).Body), "wrong value: %+v", v.(*codec.Packet))
-
-	v, err = oSrc.Next(ctx)
-	r.NoError(err, "error reading packet from oSrc")
-	r.Equal(codec.FlagEndErr|codec.FlagStream|codec.FlagJSON, v.(*codec.Packet).Flag, "wrong value")
-
+	r.Equal("foo", string(pkts[0].Body))
+	r.Equal("bar", string(pkts[1].Body))
+	r.Equal("baz", string(pkts[2].Body))
+	r.Equal(codec.FlagEndErr|codec.FlagStream|codec.FlagJSON, pkts[3].Flag)
 }
 
 func TestStreamAsyncErr(t *testing.T) {
@@ -79,9 +82,11 @@ func TestStreamAsyncErr(t *testing.T) {
 	ctx := context.Background()
 
 	iSrc, iSink := luigi.NewPipe(luigi.WithBuffer(2))
-	_, oSink := luigi.NewPipe(luigi.WithBuffer(4))
 
-	str := newStream(iSrc, oSink, req, streamCapOnce, streamCapNone)
+	var oBuff = &bytes.Buffer{}
+	var oWriter = codec.NewWriter(oBuff)
+
+	str := newStream(iSrc, oWriter, req, streamCapOnce, streamCapNone)
 
 	err := iSink.(luigi.ErrorCloser).CloseWithError(errors.Errorf("some error"))
 	r.NoError(err)

@@ -73,31 +73,6 @@ func (pkr *Packer) NextHeader(ctx context.Context, hdr *codec.Header) error {
 	return nil
 }
 
-// Pour sends a packet to the underlying stream.
-func (pkr *Packer) Pour(ctx context.Context, v interface{}) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-pkr.closing:
-		return errSinkClosed
-	default:
-	}
-
-	pkt, ok := v.(*codec.Packet)
-	if !ok {
-		return errors.Errorf("packer sink expected type *codec.Packet, got %T", v)
-	}
-
-	pkr.wl.Lock()
-	defer pkr.wl.Unlock()
-	err := pkr.w.WritePacket(pkt)
-	if err != nil {
-
-	}
-
-	return errors.Wrap(err, "muxrpc: error writing packet")
-}
-
 var errSinkClosed = stderr.New("muxrpc: pour to closed sink")
 
 // IsSinkClosed should be moved to luigi to gether with the error

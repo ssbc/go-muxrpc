@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/karrick/bufpool"
@@ -142,7 +143,7 @@ func (r *rpc) Async(ctx context.Context, tipe interface{}, method Method, args .
 
 	req := &Request{
 		Type:   "async",
-		Stream: newStream(inSrc, r.pkr, 0, streamCapOnce, streamCapNone),
+		Stream: newStream(inSrc, r.pkr.w, 0, streamCapOnce, streamCapNone),
 		in:     inSink,
 
 		Method:  method,
@@ -196,8 +197,7 @@ func (r *rpc) ByteSource(ctx context.Context, method Method, args ...interface{}
 		return nil, err
 	}
 
-	//bs := NewByteSource(ctx)
-	var bs = newByteSource()
+	bs := NewByteSource(ctx)
 
 	req := &Request{
 		Type:   "source",
@@ -228,7 +228,7 @@ func (r *rpc) Sink(ctx context.Context, method Method, args ...interface{}) (lui
 
 	req := &Request{
 		Type:   "sink",
-		Stream: newStream(inSrc, r.pkr, 0, streamCapNone, streamCapMultiple),
+		Stream: newStream(inSrc, r.pkr.w, 0, streamCapNone, streamCapMultiple),
 		in:     inSink,
 
 		Method:  method,
@@ -253,7 +253,7 @@ func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args 
 
 	req := &Request{
 		Type:   "duplex",
-		Stream: newStream(inSrc, r.pkr, 0, streamCapMultiple, streamCapMultiple),
+		Stream: newStream(inSrc, r.pkr.w, 0, streamCapMultiple, streamCapMultiple),
 		in:     inSink,
 
 		Method:  method,
@@ -326,7 +326,7 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 		return err
 	}
 
-	err = r.pkr.Pour(ctx, &pkt)
+	err = r.pkr.w.WritePacket(&pkt)
 	dbg.Log("event", "request sent", "reqID", req.id, "err", err)
 	return err
 }
@@ -344,10 +344,19 @@ func (r *rpc) ParseRequest(pkt *codec.Header) (*Request, error) {
 		return nil, errors.New("expected negative request id")
 	}
 
+	// buf := r.bpool.Get()
+	reqBody := make([]byte, pkt.Len)
 	rd := r.pkr.r.NextBodyReader(pkt.Len)
 
-	err := json.NewDecoder(rd).Decode(&req)
+	_, err := io.ReadFull(rd, reqBody)
 	if err != nil {
+		return nil, errors.Wrap(err, "error copying request body")
+	}
+
+	err = json.Unmarshal(reqBody, &req)
+	// err := json.NewDecoder(rd).Decode(&req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\nSPEW\n%s", spew.Sdump(reqBody))
 		return nil, errors.Wrap(err, "error decoding packet")
 	}
 	req.id = pkt.Req
@@ -376,7 +385,7 @@ func (r *rpc) ParseRequest(pkt *codec.Header) (*Request, error) {
 		inStream, outStream = streamCapNone, streamCapOnce
 
 	}
-	req.Stream = newStream(inSrc, r.pkr, pkt.Req, inStream, outStream)
+	req.Stream = newStream(inSrc, r.pkr.w, pkt.Req, inStream, outStream)
 	req.in = inSink
 
 	level.Debug(r.logger).Log("event", "got request", "reqID", req.id, "method", req.Method, "type", req.Type)
@@ -428,10 +437,13 @@ type Server interface {
 	Serve(context.Context) error
 }
 
-// Serve handles the RPC session
+// Serve drains the incoming packets and handles the RPC session
 func (r *rpc) Serve(ctx context.Context) (err error) {
 	level.Debug(r.logger).Log("event", "serving")
 	defer func() {
+		if luigi.IsEOS(err) || isAlreadyClosed(err) {
+			err = nil
+		}
 		cerr := r.pkr.Close()
 		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 			level.Info(r.logger).Log("event", "closed", "handleErr", err, "closeErr", cerr)
@@ -519,19 +531,17 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			continue
 		}
 
-		if req.in == nil { // legacy sink
+		if req.in == nil {
 			err = req.consume(hdr.Len, r.pkr.r.NextBodyReader(hdr.Len))
 			if err != nil {
 				err = errors.Wrap(err, "muxrpc: error pouring data to handler")
 				return
 			}
-		} else {
+		} else { // legacy sink
 			var pkt = new(codec.Packet)
 
 			pkt.Flag = hdr.Flag
 			pkt.Req = hdr.Req
-
-			// buf := r.bpool.Get()
 			pkt.Body = make([]byte, hdr.Len)
 
 			_, err = io.ReadFull(r.pkr.r.NextBodyReader(hdr.Len), pkt.Body)

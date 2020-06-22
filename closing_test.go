@@ -1,6 +1,7 @@
 package muxrpc
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -50,12 +51,15 @@ func TestStreamClosing(t *testing.T) {
 
 			r := require.New(t)
 
+			var b = &bytes.Buffer{}
+			var w = codec.NewWriter(b)
+
 			iSrc, iSink := luigi.NewPipe(luigi.WithBuffer(1))
-			oSrc, oSink := luigi.NewPipe(luigi.WithBuffer(1))
+			oSrc, _ := luigi.NewPipe(luigi.WithBuffer(1))
 
 			inStream, outStream := tc.conf.in, tc.conf.out
 
-			str := newStream(iSrc, oSink, int32(i), inStream, outStream)
+			str := newStream(iSrc, w, int32(i), inStream, outStream)
 
 			// try to pour into the stream
 			err := str.Pour(ctx, tmsg)

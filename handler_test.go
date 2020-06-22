@@ -1,34 +1,41 @@
 package muxrpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"sync"
 	"testing"
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
 )
 
 func TestHandlerMux(t *testing.T) {
 	mux := &HandlerMux{}
 	r := require.New(t)
-	call := make(chan struct{})
-	connect := make(chan struct{})
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+
 	todo := context.TODO()
 
-	src1, sink1 := luigi.NewPipe()
-	src2, sink2 := luigi.NewPipe()
+	var b1 = &bytes.Buffer{}
+	var w1 = codec.NewWriter(b1)
+
+	var b2 = &bytes.Buffer{}
+	var w2 = codec.NewWriter(b2)
 
 	exp := &Request{
 		Method: Method{"foo", "bar"},
-		Stream: newStream(nil, sink1, 1, streamCapMultiple, streamCapMultiple),
+		Stream: newStream(nil, w1, 1, streamCapMultiple, streamCapMultiple),
 	}
 	notexp := &Request{
 		Method: Method{"goo", "bar"},
-		Stream: newStream(nil, sink2, 2, streamCapMultiple, streamCapMultiple),
+		Stream: newStream(nil, w2, 2, streamCapMultiple, streamCapMultiple),
 	}
 
 	var fh FakeHandler
@@ -38,11 +45,11 @@ func TestHandlerMux(t *testing.T) {
 		} else {
 			req.Stream.CloseWithError(errors.Errorf("test failed"))
 		}
-		close(call)
+		wg.Done()
 	})
 	fh.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		fmt.Println("mux: h connected")
-		close(connect)
+		wg.Done()
 	})
 
 	mux.Register(Method{"foo", "bar"}, &fh)
@@ -55,29 +62,37 @@ func TestHandlerMux(t *testing.T) {
 		fmt.Println("mux: sent notexp")
 		mux.HandleCall(todo, exp, nil)
 		fmt.Println("mux: sent exp")
+		wg.Done()
 	}()
 
-	vErrPkt, err := src2.Next(todo)
-	r.Error(luigi.EOS{}, err)
-	errPkt, ok := vErrPkt.(*codec.Packet)
-	r.True(ok)
+	wg.Wait() // checking
+
+	var endHdr codec.Header
+	var err error
+
+	rd2 := codec.NewReader(b2)
+	err = rd2.ReadHeader(&endHdr)
+	r.NoError(err)
+	r.NotEqual(uint32(4), endHdr.Len, "should not be a plain true")
+
+	body, err := ioutil.ReadAll(rd2.NextBodyReader(endHdr.Len))
+	r.NoError(err)
 	var actualErr CallError
-	r.NoError(json.Unmarshal(errPkt.Body, &actualErr))
+	r.NoError(json.Unmarshal(body, &actualErr))
 	r.Equal("no such command: goo.bar", actualErr.Message)
 
-	vEndOK, err := src1.Next(todo)
-	r.Error(luigi.EOS{}, err)
-	endPkt, ok := vEndOK.(*codec.Packet)
-	r.True(ok)
-	r.True(endPkt.Flag.Get(codec.FlagEndErr))
+	// vEndOK, err := src1.Next(todo)
+	// r.Error(luigi.EOS{}, err)
 
-	for call != nil || connect != nil {
-		select {
-		case <-call:
-			call = nil
-		case <-connect:
-			connect = nil
-		}
-	}
+	rd1 := codec.NewReader(b1)
+
+	err = rd1.ReadHeader(&endHdr)
+	r.NoError(err)
+	r.True(endHdr.Flag.Get(codec.FlagEndErr))
+	r.Equal(uint32(4), endHdr.Len, "should not be a plain true")
+
+	body, err = ioutil.ReadAll(rd1.NextBodyReader(endHdr.Len))
+	r.NoError(err)
+	r.Equal([]byte("true"), body)
 
 }

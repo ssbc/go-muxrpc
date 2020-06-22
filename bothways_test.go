@@ -290,7 +290,7 @@ func TestBohwaysSource(t *testing.T) {
 	fmt.Println("waiting for loop done")
 }
 
-func XTestBothwaysSink(t *testing.T) {
+func TestBothwaysSink(t *testing.T) {
 	expRx := []string{
 		"you are a test",
 		"you're a test",

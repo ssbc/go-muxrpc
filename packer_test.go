@@ -38,7 +38,7 @@ func TestPacker(t *testing.T) {
 
 	errc := make(chan error)
 	go func() {
-		err := pkr1.Pour(ctx, &pkt)
+		err := pkr1.w.WritePacket(&pkt)
 		if err != nil {
 			errc <- errors.Wrap(err, "failed to send test packet (wat)")
 		}
@@ -86,7 +86,7 @@ func TestPacker(t *testing.T) {
 		t.Fatal("expected EOS, got:", err)
 	}
 
-	err = pkr1.Pour(ctx, pkt_)
+	err = pkr1.w.WritePacket(pkt_)
 	if err == nil {
 		t.Fatal("expected write-to-close-conn error, got nil")
 	}

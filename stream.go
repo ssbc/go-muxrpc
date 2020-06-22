@@ -57,10 +57,10 @@ const (
 	streamCapMultiple                         // can be used multiple times
 )
 
-func newStream(src luigi.Source, sink luigi.Sink, req int32, ins, outs streamCapability) Stream {
+func newStream(src luigi.Source, w *codec.Writer, req int32, ins, outs streamCapability) Stream {
 	return &stream{
 		pktSrc:    src,
-		pktSink:   sink,
+		pktWriter: w,
 		req:       req,
 		closeCh:   make(chan struct{}),
 		closeOnce: &sync.Once{},
@@ -73,8 +73,9 @@ func newStream(src luigi.Source, sink luigi.Sink, req int32, ins, outs streamCap
 type stream struct {
 	l sync.Mutex
 
-	pktSrc  luigi.Source
-	pktSink luigi.Sink
+	pktSrc luigi.Source
+
+	pktWriter *codec.Writer
 
 	tipe      interface{}
 	req       int32
@@ -182,6 +183,9 @@ func (str *stream) Pour(ctx context.Context, v interface{}) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
+		if str.closed {
+			return errSinkClosed
+		}
 	}
 
 	var (
@@ -217,7 +221,7 @@ func (str *stream) Pour(ctx context.Context, v interface{}) error {
 		}
 	}
 
-	err = str.pktSink.Pour(ctx, pkt)
+	err = str.pktWriter.WritePacket(pkt)
 	if err != nil {
 		return errors.Wrap(err, "error pouring to packet sink")
 	}
@@ -285,7 +289,7 @@ func (str *stream) doCloseWithError(closeErr error) error {
 		close(str.closeCh)
 		str.closed = true
 
-		err = str.pktSink.Pour(context.TODO(), pkt)
+		err = str.pktWriter.WritePacket(pkt)
 	})
 
 	if IsSinkClosed(err) || isAlreadyClosed(err) {

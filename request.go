@@ -94,13 +94,13 @@ func (req *Request) CloseWithError(cerr error) error {
 	if cerr == nil || luigi.IsEOS(errors.Cause(cerr)) {
 		if req.in == nil {
 			req.done(nil)
-		} else {
+		} else { // legacy sink
 			inErr = req.in.Close()
 		}
 	} else {
 		if req.in == nil {
 			req.done(cerr)
-		} else {
+		} else { // legacy sink
 			inErr = req.in.(luigi.ErrorCloser).CloseWithError(cerr)
 		}
 	}
