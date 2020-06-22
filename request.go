@@ -5,6 +5,7 @@ package muxrpc
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"strings"
 
@@ -52,7 +53,7 @@ type Request struct {
 	in luigi.Sink
 
 	// if in is nil, these funcs have to be set
-	consume func(pkt *codec.Packet) error
+	consume func(pktLen uint32, r io.Reader) error
 	done    func(error)
 
 	// same as packet.Req - the numerical identifier for the stream

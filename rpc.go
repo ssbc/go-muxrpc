@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/karrick/bufpool"
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
@@ -29,8 +30,10 @@ type rpc struct {
 
 	remote net.Addr
 
-	// pkr is the Sink and Source of the network connection
-	pkr Packer
+	// pkr (un)marshales codec.Packets
+	pkr *Packer
+
+	bpool bufpool.FreeList
 
 	// reqs is the map we keep, tracking all requests
 	reqs  map[int32]*Request
@@ -57,32 +60,30 @@ type rpc struct {
 const bufSize = 150
 
 // Handle handles the connection of the packer using the specified handler.
-func Handle(pkr Packer, handler Handler) Endpoint {
+func Handle(pkr *Packer, handler Handler) Endpoint {
 	return handle(pkr, handler, nil, nil)
 }
 
 // HandleWithRemote also sets the remote address the endpoint is connected to
 // TODO: better passing through packer maybe?!
-func HandleWithRemote(pkr Packer, handler Handler, addr net.Addr) Endpoint {
+func HandleWithRemote(pkr *Packer, handler Handler, addr net.Addr) Endpoint {
 	return handle(pkr, handler, addr, nil)
 }
 
 // HandleWithLogger same as Handle but let's you overwrite the stderr logger
-func HandleWithLogger(pkr Packer, handler Handler, logger log.Logger) Endpoint {
+func HandleWithLogger(pkr *Packer, handler Handler, logger log.Logger) Endpoint {
 	return handle(pkr, handler, nil, logger)
 }
 
-func handle(pkr Packer, handler Handler, remote net.Addr, logger log.Logger) Endpoint {
+func handle(pkr *Packer, handler Handler, remote net.Addr, logger log.Logger) Endpoint {
 	if logger == nil {
 		logger = log.NewLogfmtLogger(os.Stderr)
 		logger = level.NewFilter(logger, level.AllowInfo()) // only log info and above
 		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "unit", "muxrpc")
 	}
 	if remote == nil {
-		if pkr, ok := pkr.(*packer); ok {
-			if ra, ok := pkr.c.(interface{ RemoteAddr() net.Addr }); ok {
-				remote = ra.RemoteAddr()
-			}
+		if ra, ok := pkr.c.(interface{ RemoteAddr() net.Addr }); ok {
+			remote = ra.RemoteAddr()
 		}
 	}
 	if remote != nil {
@@ -102,6 +103,12 @@ func handle(pkr Packer, handler Handler, remote net.Addr, logger log.Logger) End
 
 		cancel: cancel,
 	}
+
+	bp, err := bufpool.NewChanPool()
+	if err != nil {
+		panic(err)
+	}
+	r.bpool = bp
 
 	go handler.HandleConnect(ctx, r)
 
@@ -429,11 +436,11 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 	}()
 
 	for {
-		var vpkt interface{}
+		var hdr codec.Header
 
 		// read next packet from connection
 		doRet := func() bool {
-			vpkt, err = r.pkr.Next(ctx)
+			err = r.pkr.NextHeader(ctx, &hdr)
 			if luigi.IsEOS(err) || isAlreadyClosed(err) {
 				err = nil
 				return true
@@ -458,11 +465,9 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			return
 		}
 
-		pkt := vpkt.(*codec.Packet)
-
 		// error handling and cleanup
 		var req *Request
-		if pkt.Flag.Get(codec.FlagEndErr) {
+		if hdr.Flag.Get(codec.FlagEndErr) {
 			getReq := func(req int32) (*Request, bool) {
 				r.rLock.Lock()
 				defer r.rLock.Unlock()
@@ -472,25 +477,37 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			}
 
 			var ok bool
-			if req, ok = getReq(pkt.Req); ok {
+			if req, ok = getReq(hdr.Req); ok {
 				var streamErr error
 				req.abort()
 
-				if !isTrue(pkt.Body) {
-					streamErr, err = parseError(pkt.Body)
+				buf := r.bpool.Get()
+
+				err = r.pkr.r.ReadBodyInto(buf, hdr.Len)
+				if err != nil {
+					return errors.Wrapf(err, "muxrpc: failed to get error body for closing of %d", hdr.Req)
+				}
+
+				body := buf.Bytes()
+
+				if !isTrue(body) {
+					streamErr, err = parseError(body)
 					if err != nil {
 						return errors.Wrap(err, "error parsing error packet")
 					}
 				}
-				go r.closeStream(req, streamErr)
+				go func() {
+					r.closeStream(req, streamErr)
+					r.bpool.Put(buf)
+				}()
 			} else {
-				level.Warn(r.logger).Log("event", "unhandled packet", "reqID", pkt.Req)
+				level.Warn(r.logger).Log("event", "unhandled packet", "reqID", hdr.Req)
 			}
 			continue
 		}
 
 		var isNew bool
-		req, isNew, err = r.fetchRequest(ctx, pkt)
+		req, isNew, err = r.fetchRequest(ctx, hdr)
 		if err != nil {
 			err = errors.Wrap(err, "muxrpc: error getting request")
 			return
@@ -499,18 +516,34 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			continue
 		}
 
-		if req.in == nil {
-			err = req.consume(pkt)
+		if req.in == nil { // legacy sink
+			err = req.consume(hdr.Len, r.pkr.r.NextBodyReader(hdr.Len))
 			if err != nil {
 				err = errors.Wrap(err, "muxrpc: error pouring data to handler")
 				return
 			}
 		} else {
+			var pkt codec.Packet
+
+			pkt.Flag = hdr.Flag
+			pkt.Req = hdr.Req
+
+			buf := r.bpool.Get()
+
+			err = r.pkr.r.ReadBodyInto(buf, hdr.Len)
+			if err != nil {
+				return errors.Wrapf(err, "muxrpc: failed to get error body for closing of %d", hdr.Req)
+			}
+
+			pkt.Body = buf.Bytes()
+
 			err = req.in.Pour(ctx, pkt)
 			if err != nil {
 				err = errors.Wrap(err, "muxrpc: error pouring data to handler")
 				return
 			}
+
+			r.bpool.Put(buf)
 		}
 	}
 }

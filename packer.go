@@ -17,16 +17,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Packer is a duplex stream that sends and receives *codec.Packet values.
-// Usually wraps a network connection or stdio.
-type Packer interface {
-	luigi.Source
-	luigi.Sink
-}
-
 // NewPacker takes an io.ReadWriteCloser and returns a Packer.
-func NewPacker(rwc io.ReadWriteCloser) Packer {
-	return &packer{
+func NewPacker(rwc io.ReadWriteCloser) *Packer {
+	return &Packer{
 		r: codec.NewReader(rwc),
 		w: codec.NewWriter(rwc),
 		c: rwc,
@@ -35,8 +28,9 @@ func NewPacker(rwc io.ReadWriteCloser) Packer {
 	}
 }
 
-// packer wraps an io.ReadWriteCloser and implements Packer.
-type packer struct {
+// Packer is a duplex stream that sends and receives *codec.Packet values.
+// Usually wraps a network connection or stdio.
+type Packer struct {
 	rl sync.Mutex
 	wl sync.Mutex
 
@@ -51,37 +45,36 @@ type packer struct {
 }
 
 // Next returns the next packet from the underlying stream.
-func (pkr *packer) Next(ctx context.Context) (interface{}, error) {
+func (pkr *Packer) NextHeader(ctx context.Context, hdr *codec.Header) error {
 	pkr.rl.Lock()
 	defer pkr.rl.Unlock()
 
-	pkt, err := pkr.r.ReadPacket()
+	err := pkr.r.ReadHeader(hdr)
 	select {
 	case <-pkr.closing:
 		if err != nil {
-			return nil, luigi.EOS{}
+			return luigi.EOS{}
 		}
 	case <-ctx.Done():
-		return nil, errors.Wrap(ctx.Err(), "muxrpc/packer: read packet canceled")
+		return errors.Wrap(ctx.Err(), "muxrpc/packer: read packet canceled")
 	default:
 	}
 
 	if err != nil {
-
 		if errors.Cause(err) == io.EOF {
-			return nil, luigi.EOS{}
+			return luigi.EOS{}
 		}
 
-		return nil, errors.Wrap(err, "error reading packet")
+		return errors.Wrap(err, "error reading packet")
 	}
 
-	pkt.Req = -pkt.Req
+	hdr.Req = -hdr.Req
 
-	return pkt, nil
+	return nil
 }
 
 // Pour sends a packet to the underlying stream.
-func (pkr *packer) Pour(ctx context.Context, v interface{}) error {
+func (pkr *Packer) Pour(ctx context.Context, v interface{}) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -158,7 +151,7 @@ func isAlreadyClosed(err error) bool {
 }
 
 // Close closes the packer.
-func (pkr *packer) Close() error {
+func (pkr *Packer) Close() error {
 	pkr.cl.Lock()
 	defer pkr.cl.Unlock()
 	select {

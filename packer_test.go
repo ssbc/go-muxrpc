@@ -9,13 +9,22 @@ import (
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/debug"
+	"go.mindeco.de/logging/logtest"
 )
 
 // TestPacker is a crappy golden path test
 func TestPacker(t *testing.T) {
 	c1, c2 := net.Pipe()
 
-	pkr1 := NewPacker(c1)
+	var pkr1 *Packer
+	if testing.Verbose() {
+		l, _ := logtest.KitLogger(t.Name(), t)
+		rwc := debug.Wrap(l, c1)
+		pkr1 = NewPacker(rwc)
+	} else {
+		pkr1 = NewPacker(c1)
+	}
 	pkr2 := NewPacker(c2)
 
 	ctx := context.Background()
@@ -60,6 +69,8 @@ func TestPacker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	hdr, err := pkr2.NextHeader(ctx)
 
 	_, err = pkr2.Next(ctx)
 	if !luigi.IsEOS(err) {

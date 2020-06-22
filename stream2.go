@@ -48,17 +48,17 @@ type byteSource struct {
 	cancel    context.CancelFunc
 }
 
-func newByteSource() *byteSource {
-	return &byteSource{
-		closed: make(chan struct{}),
-	}
-}
+// func newByteSource() *byteSource {
+// 	return &byteSource{}
+// }
 
 var _ ByteSource = (*byteSource)(nil)
 
 func NewByteSource(ctx context.Context) *byteSource {
 
-	bs := byteSource{}
+	bs := byteSource{
+		closed: make(chan struct{}),
+	}
 	bs.streamCtx, bs.cancel = context.WithCancel(ctx)
 
 	return &bs
@@ -141,7 +141,7 @@ func (bs *byteSource) Read(b []byte) (int, error) {
 	return sz, nil
 }
 
-func (bs *byteSource) consume(pkt *codec.Packet) error {
+func (bs *byteSource) consume(pktLen uint32, r io.Reader) error {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 
@@ -149,6 +149,7 @@ func (bs *byteSource) consume(pkt *codec.Packet) error {
 		return fmt.Errorf("muxrpc: byte source canceled: %w", bs.failed)
 	}
 
+	/* already happens in rpc.Serve
 	if pkt.Req != bs.requestID {
 		return fmt.Errorf("muxrpc: unexpected packet request ID: %d", pkt.Req)
 	}
@@ -159,16 +160,12 @@ func (bs *byteSource) consume(pkt *codec.Packet) error {
 		}
 		return fmt.Errorf("muxrpc: call error? %s", string(pkt.Body))
 	}
+	*/
 
-	bs.pkgFlag = pkt.Flag
-
-	n, err := bs.buf.Write(pkt.Body)
+	// bs.pkgFlag = pkt.Flag
+	err := bs.buf.copyBody(pktLen, r)
 	if err != nil {
 		return err
-	}
-
-	if n != len(pkt.Body) {
-		return fmt.Errorf("muxrpc: failed to consume packet body whole")
 	}
 
 	return nil
@@ -200,6 +197,7 @@ func (stream *bsStream) Next(ctx context.Context) (interface{}, error) {
 		return nil, fmt.Errorf("muxrcp: no more elemts from source: %w", err)
 	}
 
+	// TODO: flag is known at creation tyme and doesnt change other then end
 	if stream.source.pkgFlag.Get(codec.FlagJSON) {
 		tv := reflect.TypeOf(stream.tipe)
 		val := reflect.New(tv).Interface()
@@ -265,7 +263,34 @@ func (fw *frameWriter) Frames() uint32 {
 	return atomic.LoadUint32(&fw.frames)
 }
 
-func (fw *frameWriter) Write(buf []byte) (int, error) {
+func (fw *frameWriter) copyBody(pktLen uint32, rd io.Reader) error {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	binary.LittleEndian.PutUint32(fw.lenBuf[:], uint32(pktLen))
+	fw.store.Write(fw.lenBuf[:])
+
+	copied, err := io.Copy(&fw.store, rd)
+	if err != nil {
+		return err
+	}
+
+	if uint32(copied) != pktLen {
+		return fmt.Errorf("frameWriter: failed to consume whole body")
+	}
+
+	fw.frames++
+
+	// fmt.Printf("frameWriter(%d) stored %q (len:%d)\n", fw.frames, buf, pktLen)
+
+	if fw.waiting != nil {
+		close(fw.waiting)
+		fw.waiting = nil
+	}
+	return nil
+}
+
+func (fw *frameWriter) writeBody(buf []byte) (int, error) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 

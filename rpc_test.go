@@ -16,9 +16,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/luigi/mfr"
 
-	"go.cryptoscope.co/muxrpc/codec"
 	"go.cryptoscope.co/muxrpc/debug"
 )
 
@@ -41,24 +39,16 @@ func mkCheck(errc chan<- error) func(err error) {
 	}
 }
 
-func rewrap(l log.Logger, p Packer) Packer {
-	ip, ok := p.(*packer)
+func rewrap(l log.Logger, p *Packer) *Packer {
+	rwc, ok := p.c.(io.ReadWriteCloser)
 	if !ok {
-		l.Log(
-			"rewrap", "warn: wrong internal packer type",
-			"t", fmt.Sprintf("%T", p))
-		return p
-	}
-
-	rwc, ok := ip.c.(io.ReadWriteCloser)
-	if !ok {
-		panic(fmt.Sprintf("expected RWC: %T", ip.c))
+		panic(fmt.Sprintf("expected RWC: %T", p.c))
 	}
 
 	return NewPacker(debug.Wrap(l, rwc))
 }
 
-func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
+func BuildTestAsync(pkr1, pkr2 *Packer) func(*testing.T) {
 	return func(t *testing.T) {
 		r := require.New(t)
 
@@ -145,36 +135,36 @@ func TestAsync(t *testing.T) {
 		luigi.Sink
 	}
 
-	negReqMapFunc := func(ctx context.Context, v interface{}) (interface{}, error) {
-		pkt := v.(*codec.Packet)
-		pkt.Req = -pkt.Req
-		return pkt, nil
-	}
-	type makerFunc func() (string, Packer, Packer)
+	// negReqMapFunc := func(ctx context.Context, v interface{}) (interface{}, error) {
+	// 	pkt := v.(*codec.Packet)
+	// 	pkt.Req = -pkt.Req
+	// 	return pkt, nil
+	// }
+	type makerFunc func() (string, *Packer, *Packer)
 	pkrgens := []makerFunc{
-		func() (string, Packer, Packer) {
+		func() (string, *Packer, *Packer) {
 			c1, c2 := net.Pipe()
 			p1, p2 := NewPacker(c1), NewPacker(c2)
 			return "NetPipe", p1, p2
 		},
-		func() (string, Packer, Packer) {
-			rxSrc, rxSink := luigi.NewPipe(luigi.WithBuffer(5))
-			txSrc, txSink := luigi.NewPipe(luigi.WithBuffer(5))
+		// func() (string, Packer, Packer) {
+		// 	rxSrc, rxSink := luigi.NewPipe(luigi.WithBuffer(5))
+		// 	txSrc, txSink := luigi.NewPipe(luigi.WithBuffer(5))
 
-			rxSrc = mfr.SourceMap(rxSrc, negReqMapFunc)
-			txSrc = mfr.SourceMap(txSrc, negReqMapFunc)
+		// 	rxSrc = mfr.SourceMap(rxSrc, negReqMapFunc)
+		// 	txSrc = mfr.SourceMap(txSrc, negReqMapFunc)
 
-			return "LuigiPipes (buffered)", duplex{rxSrc, txSink}, duplex{txSrc, rxSink}
-		},
-		func() (string, Packer, Packer) {
-			rxSrc, rxSink := luigi.NewPipe()
-			txSrc, txSink := luigi.NewPipe()
+		// 	return "LuigiPipes (buffered)", duplex{rxSrc, txSink}, duplex{txSrc, rxSink}
+		// },
+		// func() (string, Packer, Packer) {
+		// 	rxSrc, rxSink := luigi.NewPipe()
+		// 	txSrc, txSink := luigi.NewPipe()
 
-			rxSrc = mfr.SourceMap(rxSrc, negReqMapFunc)
-			txSrc = mfr.SourceMap(txSrc, negReqMapFunc)
+		// 	rxSrc = mfr.SourceMap(rxSrc, negReqMapFunc)
+		// 	txSrc = mfr.SourceMap(txSrc, negReqMapFunc)
 
-			return "LuigiPipes (unbuffered)", duplex{rxSrc, txSink}, duplex{txSrc, rxSink}
-		},
+		// 	return "LuigiPipes (unbuffered)", duplex{rxSrc, txSink}, duplex{txSrc, rxSink}
+		// },
 	}
 
 	for _, pkrgen := range pkrgens {
