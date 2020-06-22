@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -331,7 +332,7 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 }
 
 // ParseRequest parses the first packet of a stream and parses the contained request
-func (r *rpc) ParseRequest(pkt *codec.Packet) (*Request, error) {
+func (r *rpc) ParseRequest(pkt *codec.Header) (*Request, error) {
 	var req Request
 
 	if !pkt.Flag.Get(codec.FlagJSON) {
@@ -343,7 +344,9 @@ func (r *rpc) ParseRequest(pkt *codec.Packet) (*Request, error) {
 		return nil, errors.New("expected negative request id")
 	}
 
-	err := json.Unmarshal(pkt.Body, &req)
+	rd := r.pkr.r.NextBodyReader(pkt.Len)
+
+	err := json.NewDecoder(rd).Decode(&req)
 	if err != nil {
 		return nil, errors.Wrap(err, "error decoding packet")
 	}
@@ -390,22 +393,22 @@ func isTrue(data []byte) bool {
 }
 
 // fetchRequest returns the request from the reqs map or, if it's not there yet, builds a new one.
-func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bool, error) {
+func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bool, error) {
 	var err error
 
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
 
 	// get request from map, otherwise make new one
-	req, ok := r.reqs[pkt.Req]
+	req, ok := r.reqs[hdr.Req]
 	if !ok {
-		req, err = r.ParseRequest(pkt)
+		req, err = r.ParseRequest(hdr)
 		if err != nil {
 			return nil, false, errors.Wrap(err, "error parsing request")
 		}
 		ctx, req.abort = context.WithCancel(ctx)
 
-		r.reqs[pkt.Req] = req
+		r.reqs[hdr.Req] = req
 		// TODO:
 		// buffer new requests to not mindlessly spawn goroutines
 		// and prioritize exisitng requests to unblock the connection time
@@ -485,7 +488,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 				err = r.pkr.r.ReadBodyInto(buf, hdr.Len)
 				if err != nil {
-					return errors.Wrapf(err, "muxrpc: failed to get error body for closing of %d", hdr.Req)
+					return errors.Wrapf(err, "muxrpc: failed to get error body for closing of req: %d (len:%d)", hdr.Req, hdr.Len)
 				}
 
 				body := buf.Bytes()
@@ -507,7 +510,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		}
 
 		var isNew bool
-		req, isNew, err = r.fetchRequest(ctx, hdr)
+		req, isNew, err = r.fetchRequest(ctx, &hdr)
 		if err != nil {
 			err = errors.Wrap(err, "muxrpc: error getting request")
 			return
@@ -523,27 +526,24 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 				return
 			}
 		} else {
-			var pkt codec.Packet
+			var pkt = new(codec.Packet)
 
 			pkt.Flag = hdr.Flag
 			pkt.Req = hdr.Req
 
-			buf := r.bpool.Get()
+			// buf := r.bpool.Get()
+			pkt.Body = make([]byte, hdr.Len)
 
-			err = r.pkr.r.ReadBodyInto(buf, hdr.Len)
+			_, err = io.ReadFull(r.pkr.r.NextBodyReader(hdr.Len), pkt.Body)
 			if err != nil {
 				return errors.Wrapf(err, "muxrpc: failed to get error body for closing of %d", hdr.Req)
 			}
-
-			pkt.Body = buf.Bytes()
 
 			err = req.in.Pour(ctx, pkt)
 			if err != nil {
 				err = errors.Wrap(err, "muxrpc: error pouring data to handler")
 				return
 			}
-
-			r.bpool.Put(buf)
 		}
 	}
 }

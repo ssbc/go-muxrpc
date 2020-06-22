@@ -57,13 +57,12 @@ func TestPacker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var pkt_ = codec.Packet{
+	// pkt.Req = -123
+	var pkt_ = &codec.Packet{
 		Flag: hdr.Flag,
-		Req:  hdr.Req,
+		Req:  -hdr.Req,
 		Body: buf.Bytes(),
 	}
-
-	// pkt.Req = -123
 
 	if !reflect.DeepEqual(pkt_, &pkt) {
 		t.Log("Req matches:", reflect.DeepEqual(pkt.Req, pkt_.Req))

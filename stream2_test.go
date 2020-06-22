@@ -1,6 +1,7 @@
 package muxrpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -13,7 +14,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/codec"
 )
 
 func TestSourceBytesFill(t *testing.T) {
@@ -30,7 +30,7 @@ func TestSourceBytesFill(t *testing.T) {
 	}
 
 	for i := 0; i < len(exp); i++ {
-		err := bs.consume(&codec.Packet{Req: 23, Body: exp[i]})
+		err := bs.consume(uint32(len(exp[i])), bytes.NewReader(exp[i]))
 		r.NoError(err, "failed to consume %d", i)
 	}
 
@@ -60,7 +60,7 @@ func TestSourceBytesOneByOne(t *testing.T) {
 
 	buf := make([]byte, 3)
 	for i := 0; i < len(exp); i++ {
-		err := bs.consume(&codec.Packet{Req: 23, Body: exp[i]})
+		err := bs.consume(uint32(len(exp[i])), bytes.NewReader(exp[i]))
 		r.NoError(err, "failed to consume %d", i)
 
 		n, err := bs.Read(buf)
