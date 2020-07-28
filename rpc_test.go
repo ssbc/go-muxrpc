@@ -554,9 +554,10 @@ func XTestErrorAsync(t *testing.T) {
 			ckFatal(fmt.Errorf("expected error %q, got %q", "omg an error!", errors.Cause(err)))
 		}
 
-		e, ok := errors.Cause(err).(*CallError)
+		cerr := errors.Cause(err)
+		e, ok := cerr.(*CallError)
 		if !ok {
-			t.Fatalf("not a callerror!")
+			t.Fatalf("not a callerror! %T", cerr)
 		}
 
 		if e.Message != "omg an error!" {
