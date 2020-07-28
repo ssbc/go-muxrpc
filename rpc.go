@@ -152,17 +152,21 @@ func (r *rpc) Async(ctx context.Context, tipe interface{}, method Method, args .
 
 // Source does a source call on the remote.
 func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (luigi.Source, error) {
-	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
-
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return nil, err
 	}
 
+	bs := NewByteSource(ctx)
+
 	req := &Request{
-		Type:   "source",
-		Stream: newStream(inSrc, r.pkr, 0, streamCapMultiple, streamCapNone),
-		in:     inSink,
+		Type:    "source",
+		Stream:  bs.AsStream(),
+		consume: bs.consume,
+		done:    bs.Cancel,
+
+		//		Stream: newStream(inSrc, r.pkr, 0, streamCapMultiple, streamCapNone),
+		//in:     inSink,
 
 		Method:  method,
 		RawArgs: argData,
@@ -184,7 +188,7 @@ func (r *rpc) ByteSource(ctx context.Context, method Method, args ...interface{}
 		return nil, err
 	}
 
-	var bs byteSource
+	bs := NewByteSource(ctx)
 
 	req := &Request{
 		Type:   "source",
@@ -201,7 +205,7 @@ func (r *rpc) ByteSource(ctx context.Context, method Method, args ...interface{}
 		return nil, errors.Wrap(err, "error sending request")
 	}
 
-	return &bs, nil
+	return bs, nil
 }
 
 // Sink does a sink call on the remote.
