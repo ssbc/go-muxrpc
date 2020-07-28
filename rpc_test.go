@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cryptix/go/logging/logtest"
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -22,12 +21,6 @@ import (
 	"go.cryptoscope.co/muxrpc/codec"
 	"go.cryptoscope.co/muxrpc/debug"
 )
-
-func initLogging(t *testing.T, pref string) (l log.Logger, w io.Writer) {
-	w = logtest.Logger(pref, t)
-	l = log.NewLogfmtLogger(w)
-	return
-}
 
 // for some reason you can't use t.Fatal // t.Error in goroutines... :-/
 func serve(ctx context.Context, r Server, errc chan<- error, done ...chan<- struct{}) {
@@ -97,13 +90,6 @@ func BuildTestAsync(pkr1, pkr2 Packer) func(*testing.T) {
 			t.Log("h2 connected")
 			close(conn2)
 		})
-
-		if testing.Verbose() {
-			muxlog1, _ := initLogging(t, "p1")
-			muxlog2, _ := initLogging(t, "p2")
-			pkr1 = rewrap(muxlog1, pkr1)
-			pkr2 = rewrap(muxlog2, pkr2)
-		}
 
 		rpc1 := Handle(pkr1, &fh1)
 		rpc2 := Handle(pkr2, &fh2)
@@ -550,8 +536,7 @@ func XTestErrorAsync(t *testing.T) {
 		close(conn2)
 	})
 
-	pktLog, _ := initLogging(t, "packer")
-	pkr1 := NewPacker(debug.Wrap(pktLog, c1))
+	pkr1 := NewPacker(c1)
 
 	rpc1 := Handle(pkr1, &fh1)
 	rpc2 := Handle(NewPacker(c2), &fh2)
@@ -683,12 +668,7 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 	// req.Stream.Close()
 }
 func TestDuplexHandlerStr(t *testing.T) {
-	dbg, w := logtest.KitLogger("dph", t)
-	if testing.Verbose() {
-
-		dbg = log.NewLogfmtLogger(io.MultiWriter(w, os.Stderr))
-
-	}
+	dbg := log.NewLogfmtLogger(os.Stderr)
 	r := require.New(t)
 	expRx := []string{
 		"you are a test",
@@ -790,8 +770,6 @@ func TestDuplexHandlerStr(t *testing.T) {
 }
 
 func TestDuplexHandlerJSON(t *testing.T) {
-
-	// dbg, _ := logtest.KitLogger("dph", t)
 	dbg := log.NewLogfmtLogger(os.Stderr)
 	r := require.New(t)
 	expRx := []string{

@@ -6,26 +6,16 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/cryptix/go/logging/logtest"
-
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/codec"
-	"go.cryptoscope.co/muxrpc/debug"
 )
 
 // TestPacker is a crappy golden path test
 func TestPacker(t *testing.T) {
 	c1, c2 := net.Pipe()
 
-	var pkr1 Packer
-	if testing.Verbose() {
-		l, _ := logtest.KitLogger(t.Name(), t)
-		rwc := debug.Wrap(l, c1)
-		pkr1 = NewPacker(rwc)
-	} else {
-		pkr1 = NewPacker(c1)
-	}
+	pkr1 := NewPacker(c1)
 	pkr2 := NewPacker(c2)
 
 	ctx := context.Background()
