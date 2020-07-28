@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -50,8 +49,8 @@ type byteSource struct {
 	cancel    context.CancelFunc
 }
 
-func newByteSource(pool bufpool.FreeList) *byteSource {
-	return &byteSource{
+func newByteSource(ctx context.Context, pool bufpool.FreeList) *byteSource {
+	bs := &byteSource{
 		bpool: pool,
 		buf: frameBuffer{
 			store: pool.Get(),
@@ -60,7 +59,7 @@ func newByteSource(pool bufpool.FreeList) *byteSource {
 	}
 	bs.streamCtx, bs.cancel = context.WithCancel(ctx)
 
-	return &bs
+	return bs
 }
 
 func (bs *byteSource) Cancel(err error) {
@@ -246,11 +245,11 @@ type frameBuffer struct {
 	lenBuf [4]byte
 }
 
-func (fw *frameWriter) Frames() uint32 {
+func (fw *frameBuffer) Frames() uint32 {
 	return atomic.LoadUint32(&fw.frames)
 }
 
-func (fw *frameWriter) copyBody(pktLen uint32, rd io.Reader) error {
+func (fw *frameBuffer) copyBody(pktLen uint32, rd io.Reader) error {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
@@ -266,30 +265,6 @@ func (fw *frameWriter) copyBody(pktLen uint32, rd io.Reader) error {
 		return fmt.Errorf("frameBuffer: failed to consume whole body")
 	}
 
-	fw.frames++
-
-	// fmt.Printf("frameBuffer(%d) stored %q (len:%d)\n", fw.frames, buf, pktLen)
-
-	if fw.waiting != nil {
-		close(fw.waiting)
-		fw.waiting = nil
-	}
-	return nil
-}
-
-func (fw *frameBuffer) writeBody(buf []byte) (int, error) {
-	fw.mu.Lock()
-	defer fw.mu.Unlock()
-
-	pktLen := len(buf)
-	if pktLen > math.MaxUint32 {
-		return 0, fmt.Errorf("frameBuffer: packet too large")
-	}
-	binary.LittleEndian.PutUint32(fw.lenBuf[:], uint32(pktLen))
-
-	fw.store.Write(fw.lenBuf[:])
-	fw.store.Write(buf)
-
 	atomic.AddUint32(&fw.frames, 1)
 	fmt.Println("frameWriter: stored ", fw.frames, pktLen)
 
@@ -297,7 +272,7 @@ func (fw *frameBuffer) writeBody(buf []byte) (int, error) {
 		close(fw.waiting)
 		fw.waiting = nil
 	}
-	return pktLen, nil
+	return nil
 }
 
 func (fw *frameBuffer) waitForMore() <-chan struct{} {

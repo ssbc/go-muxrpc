@@ -20,9 +20,11 @@ import (
 func TestSourceBytesFill(t *testing.T) {
 	r := require.New(t)
 
+	ctx := context.Background()
+
 	bpool, err := bufpool.NewLockPool()
 	r.NoError(err)
-	var bs = newByteSource(bpool)
+	var bs = newByteSource(ctx, bpool)
 	bs.requestID = 23
 
 	var exp = [][]byte{
@@ -51,9 +53,11 @@ func TestSourceBytesFill(t *testing.T) {
 func TestSourceBytesOneByOne(t *testing.T) {
 	r := require.New(t)
 
+	ctx := context.Background()
+
 	bpool, err := bufpool.NewLockPool()
 	r.NoError(err)
-	var bs = newByteSource(bpool)
+	var bs = newByteSource(ctx, bpool)
 	bs.requestID = 23
 
 	var exp = [][]byte{
