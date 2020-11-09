@@ -10,8 +10,8 @@ import (
 
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/codec"
-	"go.cryptoscope.co/muxrpc/debug"
+	"go.cryptoscope.co/muxrpc/v2/codec"
+	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
 // TestPacker is a crappy golden path test

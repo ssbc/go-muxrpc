@@ -9,7 +9,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 type Direction bool

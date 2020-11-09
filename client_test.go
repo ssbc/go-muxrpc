@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/debug"
+	"go.cryptoscope.co/muxrpc/v2/debug"
 
 	"github.com/cryptix/go/proc"
 	"github.com/go-kit/kit/log"

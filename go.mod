@@ -1,4 +1,6 @@
-module go.cryptoscope.co/muxrpc
+module go.cryptoscope.co/muxrpc/v2
+
+go 1.15
 
 require (
 	github.com/cryptix/go v1.5.0
@@ -11,5 +13,3 @@ require (
 	github.com/stretchr/testify v1.3.0
 	go.cryptoscope.co/luigi v0.3.4
 )
-
-go 1.13

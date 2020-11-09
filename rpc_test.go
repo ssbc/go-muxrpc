@@ -19,8 +19,8 @@ import (
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/luigi/mfr"
 
-	"go.cryptoscope.co/muxrpc/codec"
-	"go.cryptoscope.co/muxrpc/debug"
+	"go.cryptoscope.co/muxrpc/v2/codec"
+	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
 func initLogging(t *testing.T, pref string) (l log.Logger, w io.Writer) {

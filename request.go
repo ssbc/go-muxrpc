@@ -11,7 +11,7 @@ import (
 	"github.com/pkg/errors"
 
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 type Method []string

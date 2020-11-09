@@ -9,7 +9,7 @@ import (
 	"github.com/cryptix/go/logging"
 	"github.com/cryptix/go/proc"
 
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 func main() {

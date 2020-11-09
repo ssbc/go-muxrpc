@@ -15,7 +15,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 var (
@@ -28,6 +28,8 @@ type rpc struct {
 	logger log.Logger
 
 	remote net.Addr
+
+	isServer bool // is this rpc endpoint in the server role?
 
 	// pkr is the Sink and Source of the network connection
 	pkr Packer
@@ -45,7 +47,8 @@ type rpc struct {
 	terminated bool
 	tLock      sync.Mutex
 
-	cancel context.CancelFunc
+	serveCtx context.Context
+	cancel   context.CancelFunc
 }
 
 // this sets the buffer size of individual request streams
@@ -56,54 +59,87 @@ type rpc struct {
 // (which might decide it's too big, at that point it was already received though....)
 const bufSize = 150
 
-// Handle handles the connection of the packer using the specified handler.
-func Handle(pkr Packer, handler Handler) Endpoint {
-	return handle(pkr, handler, nil, nil)
-}
+type HandleOption func(*rpc)
 
-// HandleWithRemote also sets the remote address the endpoint is connected to
-// TODO: better passing through packer maybe?!
-func HandleWithRemote(pkr Packer, handler Handler, addr net.Addr) Endpoint {
-	return handle(pkr, handler, addr, nil)
-}
-
-// HandleWithLogger same as Handle but let's you overwrite the stderr logger
-func HandleWithLogger(pkr Packer, handler Handler, logger log.Logger) Endpoint {
-	return handle(pkr, handler, nil, logger)
-}
-
-func handle(pkr Packer, handler Handler, remote net.Addr, logger log.Logger) Endpoint {
-	if logger == nil {
-		logger = log.NewLogfmtLogger(os.Stderr)
-		logger = level.NewFilter(logger, level.AllowInfo()) // only log info and above
-		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "unit", "muxrpc")
+func WithContext(ctx context.Context) HandleOption {
+	return func(r *rpc) {
+		r.serveCtx = ctx
 	}
-	if remote == nil {
+}
+
+// WithRemoteAddr also sets the remote address the endpoint is connected to.
+// ie if the packer tunnels through something which can't see the address.
+func WithRemoteAddr(addr net.Addr) HandleOption {
+	return func(r *rpc) {
+		r.remote = addr
+	}
+}
+
+// WithLogger let's you overwrite the stderr logger
+func WithLogger(l log.Logger) HandleOption {
+	return func(r *rpc) {
+		r.logger = l
+	}
+}
+
+func WithIsServer(yes bool) HandleOption {
+	return func(r *rpc) {
+		r.isServer = yes
+	}
+}
+
+// IsServer tells you if the passed endpoint is in the server-role or not.
+// i.e.: Did I call the remote: yes.
+// Was I called by the remote: no.
+// Q: don't want to extend Endpoint interface?
+func IsServer(edp Endpoint) bool {
+
+	rpc, ok := edp.(*rpc)
+	if !ok {
+		panic(fmt.Sprintf("not an *rpc: %T", edp))
+	}
+
+	return rpc.isServer
+}
+
+// Handle handles the connection of the packer using the specified handler.
+func Handle(pkr Packer, handler Handler, opts ...HandleOption) Endpoint {
+	r := &rpc{
+		pkr:  pkr,
+		reqs: make(map[int32]*Request),
+		root: handler,
+	}
+
+	for _, o := range opts {
+		o(r)
+	}
+	// defaults
+	if r.logger == nil {
+		logger := log.NewLogfmtLogger(os.Stderr)
+		logger = level.NewFilter(logger, level.AllowInfo()) // only log info and above
+		r.logger = log.With(logger, "ts", log.DefaultTimestampUTC, "unit", "muxrpc")
+	}
+
+	if r.remote == nil {
 		if pkr, ok := pkr.(*packer); ok {
 			if ra, ok := pkr.c.(interface{ RemoteAddr() net.Addr }); ok {
-				remote = ra.RemoteAddr()
+				r.remote = ra.RemoteAddr()
 			}
 		}
 	}
-	if remote != nil {
-		logger = log.With(logger, "remote", remote.String())
+	if r.remote != nil {
+		// TODO: retract remote address
+		r.logger = log.With(r.logger, "remote", r.remote.String())
 	}
 
-	// TODO: rpc root context!? serve context?!
-	ctx := context.TODO()
-
-	ctx, cancel := context.WithCancel(ctx)
-	r := &rpc{
-		logger: logger,
-		remote: remote,
-		pkr:    pkr,
-		reqs:   make(map[int32]*Request),
-		root:   handler,
-
-		cancel: cancel,
+	if r.serveCtx == nil {
+		r.serveCtx = context.Background()
 	}
 
-	go handler.HandleConnect(ctx, r)
+	// we need to be able to cancel in any case
+	r.serveCtx, r.cancel = context.WithCancel(r.serveCtx)
+
+	go handler.HandleConnect(r.serveCtx, r)
 
 	return r
 }

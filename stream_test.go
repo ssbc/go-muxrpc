@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
