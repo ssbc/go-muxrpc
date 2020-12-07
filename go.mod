@@ -12,4 +12,5 @@ require (
 	github.com/shurcooL/go-goon v0.0.0-20170922171312-37c2f522c041 // indirect
 	github.com/stretchr/testify v1.3.0
 	go.cryptoscope.co/luigi v0.3.4
+	go.cryptoscope.co/muxrpc v1.5.3 // indirect
 )

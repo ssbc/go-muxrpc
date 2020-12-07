@@ -93,7 +93,6 @@ func WithIsServer(yes bool) HandleOption {
 // Was I called by the remote: no.
 // Q: don't want to extend Endpoint interface?
 func IsServer(edp Endpoint) bool {
-
 	rpc, ok := edp.(*rpc)
 	if !ok {
 		panic(fmt.Sprintf("not an *rpc: %T", edp))
@@ -419,11 +418,11 @@ func (r *rpc) fetchRequest(ctx context.Context, pkt *codec.Packet) (*Request, bo
 // Server can handle packets to and from a remote party
 type Server interface {
 	Remote() net.Addr
-	Serve(context.Context) error
+	Serve() error
 }
 
 // Serve handles the RPC session
-func (r *rpc) Serve(ctx context.Context) (err error) {
+func (r *rpc) Serve() (err error) {
 	level.Debug(r.logger).Log("event", "serving")
 	defer func() {
 		cerr := r.pkr.Close()
@@ -437,7 +436,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 		// read next packet from connection
 		doRet := func() bool {
-			vpkt, err = r.pkr.Next(ctx)
+			vpkt, err = r.pkr.Next(r.serveCtx)
 			if luigi.IsEOS(err) || isAlreadyClosed(err) {
 				err = nil
 				return true
@@ -494,7 +493,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		}
 
 		var isNew bool
-		req, isNew, err = r.fetchRequest(ctx, pkt)
+		req, isNew, err = r.fetchRequest(r.serveCtx, pkt)
 		if err != nil {
 			err = errors.Wrap(err, "muxrpc: error getting request")
 			return
@@ -503,7 +502,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			continue
 		}
 
-		err = req.in.Pour(ctx, pkt)
+		err = req.in.Pour(r.serveCtx, pkt)
 		if err != nil {
 			err = errors.Wrap(err, "muxrpc: error pouring data to handler")
 			return
