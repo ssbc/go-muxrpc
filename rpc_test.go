@@ -30,8 +30,8 @@ func initLogging(t *testing.T, pref string) (l log.Logger, w io.Writer) {
 }
 
 // for some reason you can't use t.Fatal // t.Error in goroutines... :-/
-func serve(ctx context.Context, r Server, errc chan<- error, done ...chan<- struct{}) {
-	err := r.Serve(ctx)
+func serve(_ context.Context, r Server, errc chan<- error, done ...chan<- struct{}) {
+	err := r.Serve()
 	if err != nil && errors.Cause(err) != context.Canceled {
 		errc <- errors.Wrap(err, "Serve failed")
 	}
