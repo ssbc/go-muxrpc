@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"reflect"
 	"sync"
 	"sync/atomic"
 
@@ -18,23 +16,7 @@ import (
 	"go.cryptoscope.co/muxrpc/codec"
 )
 
-// ByteSource is inspired by sql.Rows but without the Scan(), it just reads plain []bytes, one per muxrpc packet.
-type ByteSource interface {
-	Next(context.Context) bool // blocks until there are new muxrpc frames for this stream
-
-	// instead of returning an (un)marshaled object
-	// we just give access to the received []byte contained in the muxrpc body
-	io.Reader
-
-	// when processing fails or the context was canceled
-	Err() error
-
-	// sometimes we want to close a query early before it is drained
-	// (this sends a EndErr packet back )
-	Cancel(error)
-}
-
-type byteSource struct {
+type ByteSource struct {
 	bpool bufpool.FreeList
 	buf   frameBuffer
 
@@ -43,14 +25,14 @@ type byteSource struct {
 	failed error
 
 	requestID int32
-	pkgFlag   codec.Flag
+	hdrFlag   codec.Flag
 
 	streamCtx context.Context
 	cancel    context.CancelFunc
 }
 
-func newByteSource(ctx context.Context, pool bufpool.FreeList) *byteSource {
-	bs := &byteSource{
+func newByteSource(ctx context.Context, pool bufpool.FreeList) *ByteSource {
+	bs := &ByteSource{
 		bpool: pool,
 		buf: frameBuffer{
 			store: pool.Get(),
@@ -62,7 +44,7 @@ func newByteSource(ctx context.Context, pool bufpool.FreeList) *byteSource {
 	return bs
 }
 
-func (bs *byteSource) Cancel(err error) {
+func (bs *ByteSource) Cancel(err error) {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 	// fmt.Println("muxrpc: byte source canceled with", err)
@@ -75,7 +57,7 @@ func (bs *byteSource) Cancel(err error) {
 	bs.CloseWithError(err)
 }
 
-func (bs *byteSource) CloseWithError(err error) error {
+func (bs *ByteSource) CloseWithError(err error) error {
 	// cant lock here because we might block in next
 	if err == nil {
 		bs.failed = luigi.EOS{}
@@ -86,11 +68,11 @@ func (bs *byteSource) CloseWithError(err error) error {
 	return nil
 }
 
-func (bs *byteSource) Close() error {
+func (bs *ByteSource) Close() error {
 	return bs.CloseWithError(nil)
 }
 
-func (bs *byteSource) Err() error {
+func (bs *ByteSource) Err() error {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 
@@ -101,12 +83,12 @@ func (bs *byteSource) Err() error {
 	return bs.failed
 }
 
-// TODO: might need to add size to size
-func (bs *byteSource) Next(ctx context.Context) bool {
+// TODO: might need to add size to return
+func (bs *ByteSource) Next(ctx context.Context) bool {
 	bs.mu.Lock()
 	if bs.failed != nil && bs.buf.frames == 0 {
-		bs.mu.Unlock()
 		bs.bpool.Put(bs.buf.store)
+		bs.mu.Unlock()
 		return false
 	}
 	if bs.buf.frames > 0 {
@@ -132,16 +114,30 @@ func (bs *byteSource) Next(ctx context.Context) bool {
 	}
 }
 
-// TODO: might not be a good iead, easy to missuse (call twice and get two packates)
-func (bs *byteSource) Read(b []byte) (int, error) {
-	sz, err := bs.buf.readFrame(b)
+// Reader returns a (limited) reader for the next segment. It needs to be fully read before calling next again.
+// Since the stream can't be written while it's read, the 2nd return value unlocks the mutex.
+func (bs *ByteSource) Reader() (io.Reader, func(), error) {
+	_, rd, err := bs.buf.getNextFrameReader()
 	if err != nil {
-		return sz, err
+		return nil, nil, err
 	}
-	return sz, nil
+	bs.buf.mu.Lock()
+	return rd, bs.buf.mu.Unlock, nil
 }
 
-func (bs *byteSource) consume(pktLen uint32, r io.Reader) error {
+// Bytes returns the full slice of bytes from the next frame.
+func (bs *ByteSource) Bytes() ([]byte, error) {
+	_, rd, err := bs.buf.getNextFrameReader()
+	if err != nil {
+		return nil, err
+	}
+	bs.buf.mu.Lock()
+	b, err := ioutil.ReadAll(rd)
+	bs.buf.mu.Unlock()
+	return b, err
+}
+
+func (bs *ByteSource) consume(pktLen uint32, r io.Reader) error {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 
@@ -155,82 +151,6 @@ func (bs *byteSource) consume(pktLen uint32, r io.Reader) error {
 	}
 
 	return nil
-}
-
-// legacy stream adapter
-
-func (bs *byteSource) AsStream() Stream {
-	return &bsStream{
-		source: bs,
-		tipe:   json.RawMessage{},
-	}
-}
-
-type bsStream struct {
-	source *byteSource
-
-	tipe interface{}
-
-	buf [1024]byte
-}
-
-func (stream *bsStream) Next(ctx context.Context) (interface{}, error) {
-	if !stream.source.Next(ctx) {
-		err := stream.source.Err()
-		if err == nil {
-			return nil, luigi.EOS{}
-		}
-		return nil, fmt.Errorf("muxrcp: no more elemts from source: %w", err)
-	}
-
-	// TODO: flag is known at creation tyme and doesnt change other then end
-	if stream.source.pkgFlag.Get(codec.FlagJSON) {
-		tv := reflect.TypeOf(stream.tipe)
-		val := reflect.New(tv).Interface()
-
-		err := json.NewDecoder(stream.source).Decode(&val)
-		if err != nil {
-			return nil, fmt.Errorf("muxrcp: failed to decode json from source: %w", err)
-		}
-		return val, nil
-	} else if stream.source.pkgFlag.Get(codec.FlagString) {
-		n, err := stream.source.Read(stream.buf[:])
-		if err != nil {
-			return nil, err
-		}
-		str := string(stream.buf[:n])
-		fmt.Println("Next() string:", str)
-		return str, nil
-	} else {
-		return ioutil.ReadAll(stream.source)
-	}
-}
-
-func (stream *bsStream) Pour(ctx context.Context, v interface{}) error {
-	err := fmt.Errorf("muxrpc: can't pour into byte source")
-	panic(err)
-	return err
-}
-
-func (stream *bsStream) Close() error {
-	return fmt.Errorf("muxrpc: can't close byte source?")
-}
-
-func (stream *bsStream) CloseWithError(e error) error {
-	stream.source.Cancel(e)
-	return nil // already closed?
-}
-
-// WithType tells the stream in what type JSON data should be unmarshalled into
-func (stream *bsStream) WithType(tipe interface{}) {
-	// fmt.Printf("muxrpc: chaging marshal type to %T\n", tipe)
-	stream.tipe = tipe
-}
-
-// WithReq tells the stream what request number should be used for sent messages
-func (stream *bsStream) WithReq(req int32) {
-	// fmt.Printf("muxrpc: chaging request ID to %d\n", req)
-	stream.source.requestID = req
 }
 
 // utils
@@ -266,7 +186,7 @@ func (fw *frameBuffer) copyBody(pktLen uint32, rd io.Reader) error {
 	}
 
 	atomic.AddUint32(&fw.frames, 1)
-	fmt.Println("frameWriter: stored ", fw.frames, pktLen)
+	//	fmt.Println("frameWriter: stored ", fw.frames, pktLen)
 
 	if fw.waiting != nil {
 		close(fw.waiting)
@@ -294,28 +214,18 @@ func (fw *frameBuffer) waitForMore() <-chan struct{} {
 	return ch
 }
 
-func (fw *frameBuffer) readFrame(buf []byte) (int, error) {
+func (fw *frameBuffer) getNextFrameReader() (uint32, io.Reader, error) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
 	_, err := fw.store.Read(fw.lenBuf[:])
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-
 	pktLen := binary.LittleEndian.Uint32(fw.lenBuf[:])
-
-	if uint32(len(buf)) < pktLen {
-		return 0, fmt.Errorf("muxrpc: buffer to small to hold frame")
-	}
 
 	rd := io.LimitReader(fw.store, int64(pktLen))
 
-	n, err := rd.Read(buf)
-	if err != nil {
-		return n, err
-	}
-
-	fw.frames--
-	return n, nil
+	atomic.AddUint32(&fw.frames, ^uint32(0))
+	return pktLen, rd, nil
 }

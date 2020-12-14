@@ -6,9 +6,13 @@ package muxrpc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
 	"time"
+
+	"go.cryptoscope.co/muxrpc/codec"
 
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/debug"
@@ -22,8 +26,7 @@ import (
 func TestJSGettingCalledSource(t *testing.T) {
 	r := require.New(t)
 
-	_, jsLog := initLogging(t, "js")
-	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	gotCall := make(chan struct{})
@@ -53,18 +56,16 @@ func TestJSGettingCalledSource(t *testing.T) {
 		close(callServed)
 	})
 
-	// pktDump, err := os.Create(t.Name() + ".pkt")
-	// jsonLog := log.NewJSONLogger(pktDump)
-	// r.NoError(err, "new logger")
-
-	muxdbg, _ := initLogging(t, "packets")
+	jsLog := log.NewJSONLogger(os.Stderr)
+	muxdbg := log.With(jsLog, "u", "pkts")
 	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
 	ctx := context.Background()
 	go serve(ctx, rpc1.(Server), errc)
 
-	v, err := rpc1.Async(ctx, "string", Method{"callme", "source"})
+	var v string
+	err = rpc1.Async(ctx, &v, Method{"callme", "source"})
 	r.NoError(err, "rcp Async call")
 
 	r.Equal(v, "call done", "expected call result")
@@ -97,8 +98,7 @@ func TestJSGettingCalledAsync(t *testing.T) {
 		close(errc)
 	}()
 
-	_, logOut := initLogging(t, "js")
-	serv, err := proc.StartStdioProcess("node", logOut, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
@@ -111,7 +111,7 @@ func TestJSGettingCalledAsync(t *testing.T) {
 		ckFatal(err)
 	})
 
-	// muxdbg, _ := initLogging(t, "packets")
+	// muxdbg:= log.With(jsLog, "u","pkts")
 	// debug.Wrap(muxdbg, serv)
 	packer := NewPacker(serv)
 	rpc1 := Handle(packer, &fh)
@@ -119,11 +119,12 @@ func TestJSGettingCalledAsync(t *testing.T) {
 	ctx := context.Background()
 	go serve(ctx, rpc1.(Server), errc, done)
 
-	v, err := rpc1.Async(ctx, "string", Method{"callme", "async"})
+	var v string
+	err = rpc1.Async(ctx, &v, Method{"callme", "async"})
 	r.NoError(err, "rcp Async call")
 	r.Equal(v, "call done", "expected call result")
 
-	v, err = rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	err = rpc1.Async(ctx, &v, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal(v, "ty", "expected call result")
 
@@ -154,12 +155,12 @@ sbot.whoami((err, who) => {
 func TestJSSyncString(t *testing.T) {
 	r := require.New(t)
 
-	_, jsLog := initLogging(t, "js")
-	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
+	jsLog := log.NewJSONLogger(os.Stderr)
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
-	muxdbg, _ := initLogging(t, "packets")
+	muxdbg := log.With(jsLog, "u", "pkts")
 	packer := NewPacker(debug.Wrap(muxdbg, debug.Dump(t.Name(), serv)))
 	rpc1 := Handle(packer, &fh)
 
@@ -168,15 +169,17 @@ func TestJSSyncString(t *testing.T) {
 	done := make(chan struct{})
 	go serve(ctx, rpc1.(Server), errc, done)
 
-	v, err := rpc1.Async(ctx, "string", Method{"version"}, "some", "params", 23)
+	var v string
+
+	err = rpc1.Async(ctx, &v, Method{"version"}, "some", "params", 23)
 	r.NoError(err, "rcp sync call")
 	r.Equal("some/version@1.2.3", v, "expected call result")
 
-	v, err = rpc1.Async(ctx, "string", Method{"version"}, "wrong", "params", 42)
+	err = rpc1.Async(ctx, &v, Method{"version"}, "wrong", "params", 42)
 	r.Error(err, "rcp sync call")
 	r.Nil(v, "unexpected call result")
 
-	v, err = rpc1.Async(ctx, "string", Method{"finalCall"}, 2000)
+	err = rpc1.Async(ctx, &v, Method{"finalCall"}, 2000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal(v, "ty", "expected call result")
 
@@ -198,13 +201,13 @@ func TestJSSyncString(t *testing.T) {
 
 func TestJSAsyncString(t *testing.T) {
 	r := require.New(t)
+	jsLog := log.NewJSONLogger(os.Stderr)
 
-	_, jsLog := initLogging(t, "js")
-	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
-	muxdbg, _ := initLogging(t, "packets")
+	muxdbg := log.With(jsLog, "u", "pkts")
 	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
@@ -219,11 +222,12 @@ func TestJSAsyncString(t *testing.T) {
 	ctx := context.Background()
 	go serve(ctx, rpc1.(Server), errc, done)
 
-	v, err := rpc1.Async(ctx, "string", Method{"hello"}, "world", "bob")
+	var v string
+	err = rpc1.Async(ctx, &v, Method{"hello"}, "world", "bob")
 	r.NoError(err, "rcp Async call")
 	r.Equal(v, "hello, world and bob!", "expected call result")
 
-	v, err = rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	err = rpc1.Async(ctx, &v, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal(v, "ty", "expected call result")
 
@@ -241,13 +245,13 @@ func TestJSAsyncString(t *testing.T) {
 
 func TestJSAsyncObject(t *testing.T) {
 	r := require.New(t)
+	jsLog := log.NewJSONLogger(os.Stderr)
 
-	_, jsLog := initLogging(t, "js")
-	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
-	muxdbg, _ := initLogging(t, "packets")
+	muxdbg := log.With(jsLog, "u", "pkts")
 	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
@@ -262,17 +266,18 @@ func TestJSAsyncObject(t *testing.T) {
 
 	go serve(ctx, rpc1.(Server), errc, done)
 
-	type resp struct {
+	var resp struct {
 		With string `json:"with"`
 	}
 
-	v, err := rpc1.Async(ctx, resp{}, Method{"object"})
+	err = rpc1.Async(ctx, &resp, Method{"object"})
 	r.NoError(err, "rcp Async call")
-	r.Equal(v.(resp).With, "fields!", "wrong call response")
+	r.Equal("fields!", resp.With, "wrong call response")
 
-	v, err = rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	var str string
+	err = rpc1.Async(ctx, &str, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
-	r.Equal(v, "ty", "expected call result")
+	r.Equal("ty", str, "expected call result")
 
 	for err := range errc {
 		if err != nil {
@@ -288,13 +293,13 @@ func TestJSAsyncObject(t *testing.T) {
 
 func TestJSSource(t *testing.T) {
 	r := require.New(t)
+	jsLog := log.NewJSONLogger(os.Stderr)
 
-	_, jsLog := initLogging(t, "js")
-	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
-	muxdbg, _ := initLogging(t, "packets")
+	muxdbg := log.With(jsLog, "u", "pkts")
 	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
@@ -313,24 +318,33 @@ func TestJSSource(t *testing.T) {
 		A int
 	}
 
-	src, err := rpc1.Source(ctx, obj{}, Method{"stuff"})
+	src, err := rpc1.Source(ctx, codec.FlagJSON, Method{"stuff"})
 	r.NoError(err, "rcp Async call")
 
 	for i := 1; i < 5; i++ {
-		v, err := src.Next(ctx)
-		r.NoError(err, "src.Next")
+		more := src.Next(ctx)
+		r.True(more, "src.Next %d", i)
 
-		casted, ok := v.(obj)
-		r.True(ok, "cast problem. T: %T", v)
-		r.Equal(casted.A, i, "result order?")
+		rd, done, err := src.Reader()
+		r.NoError(err)
+
+		dec := json.NewDecoder(rd)
+
+		var v obj
+		err = dec.Decode(&v)
+		r.NoError(err, "decode: %d", i)
+		done()
+		r.Equal(i, v.A, "result value: %d", i)
 	}
 
-	val, err := src.Next(ctx)
-	r.True(luigi.IsEOS(err), "expected EOS but got %+v", val)
+	more := src.Next(ctx)
+	r.False(more, "src.Next no more")
+	r.NoError(src.Err())
 
-	v, err := rpc1.Async(ctx, "string", Method{"finalCall"}, 1000)
+	var str string
+	err = rpc1.Async(ctx, &str, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
-	r.Equal(v, "ty", "expected call result")
+	r.Equal("ty", str, "expected call result")
 
 	cancel()
 	r.NoErrorf(packer.Close(), "%+s %s", "error closing packer")
@@ -347,13 +361,13 @@ func TestJSSource(t *testing.T) {
 
 func TestJSDuplex(t *testing.T) {
 	r := require.New(t)
+	jsLog := log.NewJSONLogger(os.Stderr)
 
-	_, jsLog := initLogging(t, "js")
-	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
-	muxdbg, _ := initLogging(t, "packets")
+	muxdbg := log.With(jsLog, "u", "pkts")
 	packer := NewPacker(debug.Wrap(muxdbg, serv))
 	rpc1 := Handle(packer, &fh)
 
@@ -368,7 +382,7 @@ func TestJSDuplex(t *testing.T) {
 
 	go serve(ctx, rpc1.(Server), errc, done)
 
-	src, snk, err := rpc1.Duplex(ctx, 0, Method{"magic"})
+	src, snk, err := rpc1.Duplex(ctx, codec.FlagJSON, Method{"magic"})
 	r.NoError(err, "rcp Async call")
 	fmt.Println("command started")
 	i := 0
@@ -384,14 +398,30 @@ func TestJSDuplex(t *testing.T) {
 		r.NoError(snk.Close())
 		return nil, luigi.EOS{}
 	})
-	r.NoError(luigi.Pump(ctx, snk, send))
+
+	enc := json.NewEncoder(snk)
+	luigiSnk := luigi.FuncSink(func(_ context.Context, v interface{}, err error) error {
+		if err != nil {
+			if luigi.IsEOS(err) {
+				return err
+			}
+		}
+		err = enc.Encode(v)
+		if err != nil {
+			return err
+		}
+		return err
+	})
+
+	r.NoError(luigi.Pump(ctx, luigiSnk, send))
 	fmt.Println("filled sink")
 
 	print := luigi.FuncSink(func(_ context.Context, v interface{}, err error) error {
 		fmt.Println("from src:", v.(int), err)
 		return err
 	})
-	r.NoError(luigi.Pump(ctx, print, src))
+
+	r.NoError(luigi.Pump(ctx, print, src.AsStream()))
 	fmt.Println("draind src")
 	// r.NoError(packer.Close())
 	// close(errc)
@@ -402,17 +432,18 @@ func TestJSDuplex(t *testing.T) {
 	// }
 }
 
+/*
 func TestJSDuplexToUs(t *testing.T) {
 	r := require.New(t)
+	jsLog := log.NewJSONLogger(os.Stderr)
 
-	_, jsLog := initLogging(t, "js")
-	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var h hDuplex
 	h.failed = make(chan error)
 
-	muxdbg, _ := initLogging(t, "packets")
+	muxdbg := log.With(jsLog, "u", "pkts")
 	h.logger = muxdbg
 
 	h.txvals = []interface{}{"a", "b", "c", "d", "e", struct{ RXJS int }{9}}
@@ -445,9 +476,9 @@ func TestJSDuplexToUs(t *testing.T) {
 
 func TestJSSupportAbort(t *testing.T) {
 	r := require.New(t)
+	jsLog := log.NewJSONLogger(os.Stderr)
 
-	_, jsLog := initLogging(t, "js")
-	serv, err := proc.StartStdioProcess("node", jsLog, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var h hAbortMe
@@ -456,7 +487,7 @@ func TestJSSupportAbort(t *testing.T) {
 	handlerErrors := make(chan error)
 	h.failed = handlerErrors
 
-	muxdbg, _ := initLogging(t, "packets")
+	muxdbg := log.With(jsLog, "u", "pkts")
 	h.logger = muxdbg
 
 	packer := NewPacker(debug.Wrap(muxdbg, serv))
@@ -521,3 +552,5 @@ func (h *hAbortMe) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 	}
 	close(h.failed)
 }
+
+*/

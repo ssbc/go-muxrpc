@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"strings"
@@ -133,64 +134,54 @@ func marshalCallArgs(args []interface{}) ([]byte, error) {
 }
 
 // Async does an aync call on the remote.
-func (r *rpc) Async(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (interface{}, error) {
-	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
+func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ...interface{}) error {
 
 	argData, err := marshalCallArgs(args)
 	if err != nil {
-		return nil, err
-	}
-
-	req := &Request{
-		Type:   "async",
-		Stream: newStream(inSrc, r.pkr.w, 0, streamCapOnce, streamCapNone),
-		in:     inSink,
-
-		Method:  method,
-		RawArgs: argData,
-
-		tipe: tipe,
-	}
-
-	if err := r.Do(ctx, req); err != nil {
-		return nil, errors.Wrap(err, "error sending request")
-	}
-	v, err := req.Stream.Next(ctx)
-	return v, errors.Wrap(err, "error reading response from request source")
-}
-
-// Source does a source call on the remote.
-func (r *rpc) Source(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (luigi.Source, error) {
-	argData, err := marshalCallArgs(args)
-	if err != nil {
-		return nil, err
+		return err
 	}
 
 	bs := newByteSource(ctx, r.bpool)
 
 	req := &Request{
-		Type:    "source",
-		Stream:  bs.AsStream(),
+		Type: "async",
+
 		consume: bs.consume,
 		done:    bs.Cancel,
 
-		//		Stream: newStream(inSrc, r.pkr, 0, streamCapMultiple, streamCapNone),
-		//in:     inSink,
-
 		Method:  method,
 		RawArgs: argData,
-
-		tipe: tipe,
 	}
 
 	if err := r.Do(ctx, req); err != nil {
-		return nil, errors.Wrap(err, "error sending request")
+		return errors.Wrap(err, "error sending request")
 	}
 
-	return req.Stream, nil
+	if !bs.Next(ctx) {
+		return bs.Err()
+	}
+
+	rd, done, err := bs.Reader()
+	if err != nil {
+		return err
+	}
+
+	rd = io.TeeReader(rd, os.Stderr)
+	switch tv := ret.(type) {
+	case *string:
+		var bs []byte
+		bs, err = ioutil.ReadAll(rd)
+		r.logger.Log("asynctype", "str", "err", err)
+		*tv = string(bs)
+	default:
+		r.logger.Log("asynctype", "any")
+		err = json.NewDecoder(rd).Decode(ret)
+	}
+	done()
+	return errors.Wrap(err, "error decoding json from request source")
 }
 
-func (r *rpc) ByteSource(ctx context.Context, method Method, args ...interface{}) (ByteSource, error) {
+func (r *rpc) Source(ctx context.Context, tipe codec.Flag, method Method, args ...interface{}) (*ByteSource, error) {
 
 	argData, err := marshalCallArgs(args)
 	if err != nil {
@@ -200,8 +191,7 @@ func (r *rpc) ByteSource(ctx context.Context, method Method, args ...interface{}
 	bs := newByteSource(ctx, r.bpool)
 
 	req := &Request{
-		Type:   "source",
-		Stream: bs.AsStream(), // stub for legacy interfaces
+		Type: "source",
 
 		consume: bs.consume,
 		done:    bs.Cancel,
@@ -213,23 +203,27 @@ func (r *rpc) ByteSource(ctx context.Context, method Method, args ...interface{}
 	if err := r.Do(ctx, req); err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
+	bs.requestID = req.id
 
 	return bs, nil
 }
 
 // Sink does a sink call on the remote.
-func (r *rpc) Sink(ctx context.Context, method Method, args ...interface{}) (luigi.Sink, error) {
-	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
+func (r *rpc) Sink(ctx context.Context, tipe codec.Flag, method Method, args ...interface{}) (*ByteSink, error) {
 
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return nil, err
 	}
 
+	bs := newByteSink(ctx, r.pkr.w)
+	bs.pkt.Flag.Set(tipe)
+
 	req := &Request{
-		Type:   "sink",
-		Stream: newStream(inSrc, r.pkr.w, 0, streamCapNone, streamCapMultiple),
-		in:     inSink,
+		Type: "sink",
+
+		consume: bs.consume,
+		done:    bs.Cancel,
 
 		Method:  method,
 		RawArgs: argData,
@@ -238,23 +232,31 @@ func (r *rpc) Sink(ctx context.Context, method Method, args ...interface{}) (lui
 	if err := r.Do(ctx, req); err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
+	bs.requestID = req.id
 
-	return req.Stream, nil
+	return bs, nil
 }
 
 // Duplex does a duplex call on the remote.
-func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args ...interface{}) (luigi.Source, luigi.Sink, error) {
-	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
+func (r *rpc) Duplex(ctx context.Context, tipe codec.Flag, method Method, args ...interface{}) (*ByteSource, *ByteSink, error) {
 
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	bSrc := newByteSource(ctx, r.bpool)
+	bSink := newByteSink(ctx, r.pkr.w)
+	bSink.pkt.Flag.Set(tipe)
+
 	req := &Request{
-		Type:   "duplex",
-		Stream: newStream(inSrc, r.pkr.w, 0, streamCapMultiple, streamCapMultiple),
-		in:     inSink,
+		Type: "duplex",
+
+		consume: bSrc.consume,
+		done: func(err error) {
+			bSrc.Cancel(err)
+			bSink.Cancel(err)
+		},
 
 		Method:  method,
 		RawArgs: argData,
@@ -265,8 +267,10 @@ func (r *rpc) Duplex(ctx context.Context, tipe interface{}, method Method, args 
 	if err := r.Do(ctx, req); err != nil {
 		return nil, nil, errors.Wrap(err, "error sending request")
 	}
+	bSink.requestID = req.id
+	bSrc.requestID = req.id
 
-	return req.Stream, req.Stream, nil
+	return bSrc, bSink, nil
 }
 
 var ErrSessionTerminated = errors.New("muxrpc: session terminated")
@@ -316,8 +320,8 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 		r.highest++
 		pkt.Req = r.highest
 		r.reqs[pkt.Req] = req
-		req.Stream.WithReq(pkt.Req)
-		req.Stream.WithType(req.tipe)
+		// req.Stream.WithReq(pkt.Req)
+		// req.Stream.WithType(req.tipe)
 
 		req.id = pkt.Req
 	}()

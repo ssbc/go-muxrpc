@@ -6,13 +6,11 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/pkg/errors"
-	"go.cryptoscope.co/luigi"
+	"go.cryptoscope.co/muxrpc/codec"
 )
 
 func TestBothwaysAsync(t *testing.T) {
@@ -65,7 +63,8 @@ func TestBothwaysAsync(t *testing.T) {
 	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	go func() {
-		v, err := rpc1.Async(ctx, "string", Method{"whoami"})
+		var v string
+		err := rpc1.Async(ctx, &v, Method{"whoami"})
 		ckFatal(err)
 
 		if v != "you are a test" {
@@ -85,7 +84,8 @@ func TestBothwaysAsync(t *testing.T) {
 	}()
 
 	go func() {
-		v, err := rpc2.Async(ctx, "string", Method{"whoami"})
+		var v string
+		err := rpc2.Async(ctx, &v, Method{"whoami"})
 		ckFatal(err)
 
 		if v != "you are a test" {
@@ -206,21 +206,46 @@ func TestBohwaysSource(t *testing.T) {
 	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	go func() {
-		src, err := rpc1.Source(ctx, "strings", Method{"whoami"})
+		src, err := rpc1.Source(ctx, codec.FlagString, Method{"whoami"})
 		ckFatal(err)
 
+		var buf []byte
 		for _, exp := range expRx {
-			v, err := src.Next(ctx)
-			ckFatal(err)
+			more := src.Next(ctx)
+			if !more {
+				ckFatal(errors.Errorf("expected more"))
+			}
 
-			if v != exp {
+			buf = make([]byte, len(exp))
+
+			rd, done, err := src.Reader()
+			if err != nil {
+				ckFatal(err)
+				return
+			}
+
+			n, err := rd.Read(buf)
+			if n != len(exp) {
+				ckFatal(errors.Errorf("expected %d bytes but got %d", n, len(exp)))
+			}
+			done()
+
+			if v := string(buf); v != exp {
 				err = errors.Errorf("unexpected response message %q, expected %v", v, exp)
 				ckFatal(err)
 			}
 		}
 
-		val, err := src.Next(ctx)
-		if !luigi.IsEOS(err) {
+		more := src.Next(ctx)
+		if more {
+			ckFatal(errors.Errorf("expected no more"))
+		}
+		if err := src.Err(); err != nil {
+			b, bodyErr := src.Bytes()
+			if bodyErr != nil {
+				panic(err)
+			}
+			val := string(b)
 			err = errors.Errorf("expected end of stream, got value %v and error %+v", val, err)
 			ckFatal(err)
 		}
@@ -233,23 +258,48 @@ func TestBohwaysSource(t *testing.T) {
 	}()
 
 	go func() {
-		src, err := rpc2.Source(ctx, "strings", Method{"whoami"})
+		src, err := rpc2.Source(ctx, codec.FlagString, Method{"whoami"})
 		ckFatal(err)
 
+		var buf []byte
 		for _, exp := range expRx {
-			v, err := src.Next(ctx)
-			ckFatal(err)
+			more := src.Next(ctx)
+			if !more {
+				ckFatal(errors.Errorf("expected more"))
+			}
 
-			if v != exp {
+			buf = make([]byte, len(exp))
+
+			rd, done, err := src.Reader()
+			if err != nil {
+				ckFatal(err)
+				return
+			}
+
+			n, err := rd.Read(buf)
+			if n != len(exp) {
+				ckFatal(errors.Errorf("expected %d bytes but got %d", n, len(exp)))
+			}
+			done()
+
+			if v := string(buf); v != exp {
 				err = errors.Errorf("unexpected response message %q, expected %v", v, exp)
 				ckFatal(err)
 			}
 		}
 
-		_, err = src.Next(ctx)
-		if !luigi.IsEOS(err) {
+		more := src.Next(ctx)
+		if more {
+			ckFatal(errors.Errorf("expected no more"))
+		}
+		if err := src.Err(); err != nil {
+			b, bodyErr := src.Bytes()
+			if bodyErr != nil {
+				panic(err)
+			}
+			val := string(b)
+			err = errors.Errorf("expected end of stream, got value %v and error %+v", val, err)
 			ckFatal(err)
-			// t.Errorf("expected end of stream, got value %v and error %+v", val, err)
 		}
 
 		close(call2)
@@ -318,7 +368,7 @@ func TestBothwaysSink(t *testing.T) {
 			fmt.Printf("bothwaysSink: %s called %+v\n", name, req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				for i, exp := range expRx {
-					fmt.Printf("bothwaysSink: calling Next() %d", i)
+					fmt.Printf("bothwaysSink: calling Next() %d\n", i)
 					v, err := req.Stream.Next(ctx)
 					if err != nil {
 						errc <- errors.Wrapf(err, "stream next errored")
@@ -367,11 +417,11 @@ func TestBothwaysSink(t *testing.T) {
 	}()
 
 	go func() {
-		sink, err := rpc1.Sink(ctx, Method{"whoami"})
+		sink, err := rpc1.Sink(ctx, codec.FlagString, Method{"whoami"})
 		ckFatal(err)
 
 		for _, v := range expRx {
-			err := sink.Pour(ctx, v)
+			_, err := sink.Write([]byte(v))
 			ckFatal(err)
 		}
 
@@ -386,11 +436,11 @@ func TestBothwaysSink(t *testing.T) {
 	}()
 
 	go func() {
-		sink, err := rpc2.Sink(ctx, Method{"whoami"})
+		sink, err := rpc2.Sink(ctx, codec.FlagString, Method{"whoami"})
 		ckFatal(err)
 
 		for _, v := range expRx {
-			err := sink.Pour(ctx, v)
+			_, err := sink.Write([]byte(v))
 			ckFatal(err)
 		}
 
@@ -433,6 +483,7 @@ func TestBothwaysSink(t *testing.T) {
 	}
 }
 
+/*
 func TestBothwayDuplex(t *testing.T) {
 	expRx := []string{
 		"you are a test",
@@ -569,3 +620,4 @@ func TestBothwayDuplex(t *testing.T) {
 		}
 	}
 }
+*/

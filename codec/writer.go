@@ -11,7 +11,7 @@ import (
 )
 
 type Writer struct {
-	sync.Mutex
+	mu sync.Mutex
 
 	w io.Writer
 }
@@ -21,8 +21,8 @@ func NewWriter(w io.Writer) *Writer { return &Writer{w: w} }
 
 // WritePacket creates an header for the Packet and writes it and the body to the underlying writer
 func (w *Writer) WritePacket(r *Packet) error {
-	w.Lock()
-	defer w.Unlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	hdr := Header{
 		Flag: r.Flag,
 		Len:  uint32(len(r.Body)),
@@ -39,8 +39,8 @@ func (w *Writer) WritePacket(r *Packet) error {
 
 // Close sends 9 zero bytes and also closes it's underlying writer if it is also an io.Closer
 func (w *Writer) Close() error {
-	w.Lock()
-	defer w.Unlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	_, err := w.w.Write([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0})
 	if err != nil {
 		return errors.Wrapf(err, "pkt-codec: failed to write Close() packet")

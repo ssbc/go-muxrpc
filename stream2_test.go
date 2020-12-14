@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"go.cryptoscope.co/muxrpc/codec"
+
 	"github.com/karrick/bufpool"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"go.cryptoscope.co/luigi"
 )
 
 func TestSourceBytesFill(t *testing.T) {
@@ -43,8 +44,12 @@ func TestSourceBytesFill(t *testing.T) {
 
 	buf := make([]byte, 3)
 	for i := 0; i < len(exp); i++ {
-		n, err := bs.Read(buf)
+		rd, done, err := bs.Reader()
 		r.NoError(err)
+
+		n, err := rd.Read(buf)
+		r.NoError(err)
+		done()
 		r.Equal(3, n)
 		r.Equal(exp[i], buf)
 	}
@@ -72,8 +77,12 @@ func TestSourceBytesOneByOne(t *testing.T) {
 		err := bs.consume(uint32(len(exp[i])), bytes.NewReader(exp[i]))
 		r.NoError(err, "failed to consume %d", i)
 
-		n, err := bs.Read(buf)
+		rd, done, err := bs.Reader()
 		r.NoError(err)
+
+		n, err := rd.Read(buf)
+		r.NoError(err)
+		done()
 		r.Equal(3, n)
 		r.Equal(exp[i], buf)
 	}
@@ -108,7 +117,7 @@ func setupSource(t testing.TB, expRx []map[string]interface{}) Endpoint {
 
 	var fh2 FakeHandler
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
-		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+		if len(req.Method) == 1 && req.Method[0] == "srctest" {
 			for i, v := range expRx {
 				err := req.Stream.Pour(ctx, v)
 				ckFatal(errors.Wrapf(err, "test pour %d failed", i))
@@ -201,21 +210,19 @@ func testSourceBytesWithItems(expRx []map[string]interface{}) func(t *testing.T)
 		rpc1 := setupSource(t, expRx)
 
 		ctx := context.Background()
-		src, err := rpc1.ByteSource(ctx, Method{"whoami"})
+		src, err := rpc1.Source(ctx, codec.FlagJSON, Method{"srctest"})
 		r.NoError(err)
 
-		// time.Sleep(2 * time.Second) // give time to fill fill
 		expIdx := 0
-		buf := make([]byte, 512)
+
 		for src.Next(ctx) {
-			n, err := src.Read(buf)
-			r.NoError(err, "failed to read")
-			buf = buf[:n]
+			buf, err := src.Bytes()
+			r.NoError(err)
 
 			var obj testType
 			err = json.Unmarshal(buf, &obj)
 			if err != nil {
-				t.Log(hex.Dump(buf))
+				t.Log("\n", hex.Dump(buf))
 			}
 			r.NoError(err, "failed to unmarshal bytes: %q", string(buf))
 
@@ -223,20 +230,20 @@ func testSourceBytesWithItems(expRx []map[string]interface{}) func(t *testing.T)
 			r.Equal(expRx[expIdx]["Foo"], obj.Foo)
 
 			expIdx++
-			buf = buf[0:512]
 		}
 		r.Equal(expIdx, len(expRx), "expected more items")
 		r.NoError(src.Err(), "expected no error from source")
 	}
 }
 
+/*
 func testSourceLegacyWithItems(expRx []map[string]interface{}) func(t *testing.T) {
 	return func(t *testing.T) {
 		r := require.New(t)
 
 		rpc := setupSource(t, expRx)
 		ctx := context.Background()
-		src, err := rpc.Source(ctx, testType{}, Method{"whoami"})
+		src, err := rpc.Source(ctx, codec.FlagJSON, Method{"srctest"})
 		r.NoError(err)
 
 		expIdx := 0
@@ -267,6 +274,7 @@ func TestSourceLegacy(t *testing.T) {
 	t.Run("500", testSourceLegacyWithItems(makeTestItems(500)))
 	t.Run("10k", testSourceLegacyWithItems(makeTestItems(10_000)))
 }
+*/
 
 type testType struct {
 	Idx int
@@ -284,13 +292,17 @@ func BenchmarkSourceByte(b *testing.B) {
 	b.ResetTimer()
 	buf := make([]byte, 1024)
 	for bi := 0; bi < b.N; bi++ {
-		src, err := rpc.ByteSource(ctx, Method{"whoami"})
+		src, err := rpc.Source(ctx, codec.FlagJSON, Method{"srctest"})
 		r.NoError(err)
 
 		expIdx := 0
 		for src.Next(ctx) {
-			n, err := src.Read(buf)
+			rd, done, err := src.Reader()
+			r.NoError(err)
+
+			n, err := rd.Read(buf)
 			r.NoError(err, "failed to read %d", expIdx)
+			done()
 			buf = buf[:n]
 
 			var obj testType
@@ -309,6 +321,7 @@ func BenchmarkSourceByte(b *testing.B) {
 	}
 }
 
+/*
 func BenchmarkSourceLegacy(b *testing.B) {
 	r := require.New(b)
 
@@ -320,7 +333,7 @@ func BenchmarkSourceLegacy(b *testing.B) {
 	b.ResetTimer()
 	for bi := 0; bi < b.N; bi++ {
 
-		src, err := rpc.Source(ctx, testType{}, Method{"whoami"})
+		src, err := rpc.Source(ctx, testType{}, Method{"srctest"})
 		r.NoError(err)
 
 		expIdx := 0
@@ -345,3 +358,4 @@ func BenchmarkSourceLegacy(b *testing.B) {
 		// r.Equal(expIdx, count, "expected more items")
 	}
 }
+*/
