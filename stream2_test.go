@@ -44,6 +44,9 @@ func TestSourceBytesFill(t *testing.T) {
 
 	buf := make([]byte, 3)
 	for i := 0; i < len(exp); i++ {
+		has := bs.Next(ctx)
+		r.True(has, "expected more from source")
+
 		rd, done, err := bs.Reader()
 		r.NoError(err)
 

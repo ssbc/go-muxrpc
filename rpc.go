@@ -157,7 +157,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ..
 	req.Stream = bs.AsStream()
 
 	if err := r.Do(ctx, req); err != nil {
-		return errors.Wrap(err, "error sending request")
+		return fmt.Errorf("muxrpc: error sending request: %w", err)
 	}
 
 	if !bs.Next(ctx) {
@@ -168,24 +168,31 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ..
 	if err != nil {
 		return err
 	}
+	defer done()
 
-	//rd = io.TeeReader(rd, os.Stderr)
+	// rd = io.TeeReader(rd, os.Stderr)
+	// hmm.. we might need to poke at the flag of the muxrpc packet here, too
 	switch tv := ret.(type) {
 	case *string:
 		var bs []byte
 		bs, err = ioutil.ReadAll(rd)
-		r.logger.Log("asynctype", "str", "err", err)
+		if err != nil {
+			return fmt.Errorf("muxrpc: error decoding json from request source: %w", err)
+		}
+		level.Debug(r.logger).Log("asynctype", "str", "err", err, "len", len(bs))
 		*tv = string(bs)
 	default:
-		r.logger.Log("asynctype", "any")
+		level.Debug(r.logger).Log("asynctype", "any")
 		err = json.NewDecoder(rd).Decode(ret)
+		if err != nil {
+			return fmt.Errorf("muxrpc: error decoding json from request source: %w", err)
+		}
 	}
-	done()
-	return errors.Wrap(err, "error decoding json from request source")
+
+	return nil
 }
 
 func (r *rpc) Source(ctx context.Context, tipe codec.Flag, method Method, args ...interface{}) (*ByteSource, error) {
-
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return nil, err
@@ -215,7 +222,6 @@ func (r *rpc) Source(ctx context.Context, tipe codec.Flag, method Method, args .
 
 // Sink does a sink call on the remote.
 func (r *rpc) Sink(ctx context.Context, tipe codec.Flag, method Method, args ...interface{}) (*ByteSink, error) {
-
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return nil, err

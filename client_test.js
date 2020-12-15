@@ -45,14 +45,19 @@ var server = MRPC(api, api)({
     cb(null, 'hello, ' + name + ' and ' + name2 + '!')
   },
   callme: {
-    source: function (cb) {
+    source: function (n, cb) {
       pull(server.stuff(), pull.collect(function (err, vals) {
         if (err) {
           console.error(err)
           throw err
         }
-        console.error('callme:source:ok vals:', vals)
-        cb(err, 'call done')
+        console.warn('callme:source:ok vals:', vals)
+
+        if (vals.length !== n) {
+          throw new Error(`expected ${n} elements in source got ${vals.length}`)
+        }
+
+        cb(null, 'call done')
       }))
     },
     async: function (cb) {

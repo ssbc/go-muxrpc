@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 
+	"github.com/pkg/errors"
 	"go.cryptoscope.co/muxrpc/codec"
 )
 
@@ -38,11 +39,12 @@ func (bs *ByteSink) Write(b []byte) (int, error) {
 	if bs.closed != nil {
 		return 0, bs.closed
 	}
-	bs.pkt.Body = b
 
 	if bs.pkt.Req == 0 {
 		return -1, fmt.Errorf("req ID not set (Flag: %s)", bs.pkt.Flag)
 	}
+
+	bs.pkt.Body = b
 	err := bs.w.WritePacket(bs.pkt)
 	if err != nil {
 		bs.closed = err
@@ -56,6 +58,23 @@ func (bs *ByteSink) CloseWithError(err error) error {
 		return bs.closed
 	}
 	bs.closed = err
+
+	var closePkt *codec.Packet
+	var isStream = bs.pkt.Flag.Get(codec.FlagStream)
+	if err == io.EOF || err == nil {
+		closePkt = newEndOkayPacket(bs.pkt.Req, isStream)
+	} else {
+		var epkt error
+		closePkt, epkt = newEndErrPacket(bs.pkt.Req, isStream, err)
+		if epkt != nil {
+			return errors.Wrapf(epkt, "close bytesink: error building error packet for %s", err)
+		}
+	}
+
+	if werr := bs.w.WritePacket(closePkt); werr != nil {
+		bs.closed = werr
+		return werr
+	}
 	return nil
 }
 

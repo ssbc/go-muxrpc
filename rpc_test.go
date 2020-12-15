@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -146,7 +149,9 @@ func TestAsync(t *testing.T) {
 	pkrgens := []makerFunc{
 		func() (string, *Packer, *Packer) {
 			c1, c2 := net.Pipe()
-			p1, p2 := NewPacker(c1), NewPacker(c2)
+			tpath := filepath.Join("testrun", t.Name())
+			c1dbg := debug.Dump(tpath, c1)
+			p1, p2 := NewPacker(c1dbg), NewPacker(c2)
 			return "NetPipe", p1, p2
 		},
 		// func() (string, Packer, Packer) {
@@ -223,7 +228,10 @@ func TestSource(t *testing.T) {
 		close(conn2)
 	})
 
-	rpc1 := Handle(NewPacker(c1), &fh1)
+	tpath := filepath.Join("testrun", t.Name())
+	c1dbg := debug.Dump(tpath, c1)
+
+	rpc1 := Handle(NewPacker(c1dbg), &fh1)
 	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
@@ -247,9 +255,9 @@ func TestSource(t *testing.T) {
 		r.NoError(err)
 
 		n, err := rd.Read(buf)
+		done()
 		r.NoError(err)
 		r.Equal(len(exp), n, "%d expected different count", i)
-		done()
 
 		r.Equal(exp, string(buf), "%d expected different value", i)
 	}
@@ -393,8 +401,7 @@ func TestSink(t *testing.T) {
 	}
 }
 
-/*
-func TestDuplex(t *testing.T) {
+func XTestDuplex(t *testing.T) {
 	r := require.New(t)
 	expRx := []string{
 		"you are a test",
@@ -466,27 +473,27 @@ func TestDuplex(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc)
 	go serve(ctx, rpc2.(Server), errc)
 
-	src, sink, err := rpc1.Duplex(ctx, "str", Method{"whoami"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	src, sink, err := rpc1.Duplex(ctx, codec.FlagString, Method{"whoami"})
+	r.NoError(err)
 
 	for _, v := range expRx {
-		err := sink.Pour(ctx, v)
-		if err != nil {
-			t.Error(err)
-		}
+		_, err := fmt.Fprint(sink, v)
+		r.NoError(err)
 	}
 
 	for _, exp := range expTx {
-		v, err := src.Next(ctx)
-		if err != nil {
-			t.Error(err)
-		}
+		has := src.Next(ctx)
+		r.True(has, "expected more from source")
 
-		if v != exp {
-			t.Errorf("expected %v, got %v", exp, v)
-		}
+		rd, done, err := src.Reader()
+		r.NoError(err)
+
+		var buf = make([]byte, len(exp))
+		_, err = rd.Read(buf)
+		r.NoError(err)
+		done()
+
+		r.Equal(exp, string(buf), "wrong value from source")
 	}
 
 	err = sink.Close()
@@ -554,7 +561,8 @@ func XTestErrorAsync(t *testing.T) {
 	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	go func() {
-		v, err := rpc1.Async(ctx, "string", Method{"whoami"})
+		var v string
+		err := rpc1.Async(ctx, &v, Method{"whoami"})
 		if err == nil {
 			ckFatal(fmt.Errorf("expected an error"))
 		} else if errors.Cause(err).Error() != "omg an error!" {
@@ -575,8 +583,8 @@ func XTestErrorAsync(t *testing.T) {
 			ckFatal(fmt.Errorf("expected field name to have %q, got %q", "Error", e.Name))
 		}
 
-		if v != nil {
-			ckFatal(fmt.Errorf("unexpected response message %q, expected nil", v))
+		if v != "" {
+			ckFatal(fmt.Errorf("unexpected response message %q, expected emptystring", v))
 		}
 	}()
 
@@ -675,7 +683,8 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 	}
 	// req.Stream.Close()
 }
-func TestDuplexHandlerStr(t *testing.T) {
+
+func XTestDuplexHandlerStr(t *testing.T) {
 	dbg := log.NewLogfmtLogger(os.Stderr)
 	r := require.New(t)
 	expRx := []string{
@@ -734,27 +743,27 @@ func TestDuplexHandlerStr(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc)
 	go serve(ctx, rpc2.(Server), errc)
 
-	src, sink, err := rpc1.Duplex(ctx, "str", Method{"magic"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	src, sink, err := rpc1.Duplex(ctx, codec.FlagString, Method{"magic"})
+	r.NoError(err)
 
 	for _, v := range expRx {
-		err := sink.Pour(ctx, v)
-		if err != nil {
-			t.Error(err)
-		}
+		_, err := fmt.Fprint(sink, v)
+		r.NoError(err)
 	}
 
 	for _, exp := range expTx {
-		v, err := src.Next(ctx)
-		if err != nil {
-			t.Error(err)
-		}
+		has := src.Next(ctx)
+		r.True(has, "expected more from source")
 
-		if v != exp {
-			t.Errorf("expected %v, got %v", exp, v)
-		}
+		rd, done, err := src.Reader()
+		r.NoError(err)
+
+		var buf = make([]byte, len(exp))
+		_, err = rd.Read(buf)
+		r.NoError(err)
+		done()
+
+		r.Equal(exp, string(buf), "wrong value from source")
 	}
 
 	err = sink.Close()
@@ -777,7 +786,7 @@ func TestDuplexHandlerStr(t *testing.T) {
 	r.Equal(0, fh1.HandleCallCallCount(), "peer h1 did call unexpectedly")
 }
 
-func TestDuplexHandlerJSON(t *testing.T) {
+func XTestDuplexHandlerJSON(t *testing.T) {
 	dbg := log.NewLogfmtLogger(os.Stderr)
 	r := require.New(t)
 	expRx := []string{
@@ -841,25 +850,32 @@ func TestDuplexHandlerJSON(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc)
 	go serve(ctx, rpc2.(Server), errc)
 
-	var v interface{}
-	src, sink, err := rpc1.Duplex(ctx, v, Method{"magic"})
+	src, sink, err := rpc1.Duplex(ctx, codec.FlagJSON, Method{"magic"})
 	r.NoError(err)
 
+	enc := json.NewEncoder(sink)
 	for i, v := range expRx {
-		err := sink.Pour(ctx, testStruct{
+		obj := testStruct{
 			A:   i,
 			N:   len(expRx),
 			Str: v,
-		})
+		}
+		err := enc.Encode(obj)
 		r.NoError(err)
 	}
 
 	for _, exp := range expTx {
-		v, err := src.Next(ctx)
+		has := src.Next(ctx)
+		r.True(has, "expected more from source")
+
+		rd, done, err := src.Reader()
 		r.NoError(err)
-		mv, ok := v.(map[string]interface{})
-		r.True(ok)
-		r.EqualValues(exp, mv["Str"])
+
+		var ret testStruct
+		err = json.NewDecoder(rd).Decode(&ret)
+		r.NoError(err)
+		done()
+		r.EqualValues(exp, ret.Str, "wrong value from source")
 	}
 
 	err = sink.Close()
@@ -882,4 +898,3 @@ func TestDuplexHandlerJSON(t *testing.T) {
 	r.Equal(0, fh1.HandleCallCallCount(), "peer h1 did call unexpectedly")
 
 }
-*/
