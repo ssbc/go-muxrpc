@@ -40,7 +40,7 @@ type rpc struct {
 
 	// reqs is the map we keep, tracking all requests
 	reqs  map[int32]*Request
-	rLock sync.Mutex
+	rLock sync.RWMutex
 
 	// highest is the highest request id we already allocated
 	highest int32
@@ -146,12 +146,15 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ..
 	req := &Request{
 		Type: "async",
 
+		source: bs,
+
 		consume: bs.consume,
 		done:    bs.Cancel,
 
 		Method:  method,
 		RawArgs: argData,
 	}
+	req.Stream = bs.AsStream()
 
 	if err := r.Do(ctx, req); err != nil {
 		return errors.Wrap(err, "error sending request")
@@ -166,7 +169,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ..
 		return err
 	}
 
-	rd = io.TeeReader(rd, os.Stderr)
+	//rd = io.TeeReader(rd, os.Stderr)
 	switch tv := ret.(type) {
 	case *string:
 		var bs []byte
@@ -193,17 +196,19 @@ func (r *rpc) Source(ctx context.Context, tipe codec.Flag, method Method, args .
 	req := &Request{
 		Type: "source",
 
+		source: bs,
+
 		consume: bs.consume,
 		done:    bs.Cancel,
 
 		Method:  method,
 		RawArgs: argData,
 	}
+	req.Stream = bs.AsStream()
 
 	if err := r.Do(ctx, req); err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
-	bs.requestID = req.id
 
 	return bs, nil
 }
@@ -222,17 +227,19 @@ func (r *rpc) Sink(ctx context.Context, tipe codec.Flag, method Method, args ...
 	req := &Request{
 		Type: "sink",
 
+		sink: bs,
+
 		consume: bs.consume,
 		done:    bs.Cancel,
 
 		Method:  method,
 		RawArgs: argData,
 	}
+	req.Stream = bs.AsStream()
 
 	if err := r.Do(ctx, req); err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
-	bs.requestID = req.id
 
 	return bs, nil
 }
@@ -252,6 +259,9 @@ func (r *rpc) Duplex(ctx context.Context, tipe codec.Flag, method Method, args .
 	req := &Request{
 		Type: "duplex",
 
+		source: bSrc,
+		sink:   bSink,
+
 		consume: bSrc.consume,
 		done: func(err error) {
 			bSrc.Cancel(err)
@@ -267,46 +277,28 @@ func (r *rpc) Duplex(ctx context.Context, tipe codec.Flag, method Method, args .
 	if err := r.Do(ctx, req); err != nil {
 		return nil, nil, errors.Wrap(err, "error sending request")
 	}
-	bSink.requestID = req.id
-	bSrc.requestID = req.id
+
+	panic("TODO: duplex as Stream")
 
 	return bSrc, bSink, nil
 }
 
-var ErrSessionTerminated = errors.New("muxrpc: session terminated")
-
-// Terminate ends the RPC session
-func (r *rpc) Terminate() error {
-	r.cancel()
-	r.tLock.Lock()
-	defer r.tLock.Unlock()
-	r.terminated = true
-	r.rLock.Lock()
-	defer r.rLock.Unlock()
-	if n := len(r.reqs); n > 0 { // close active requests
-		for _, req := range r.reqs {
-			req.CloseWithError(ErrSessionTerminated)
-		}
-	}
-	return r.pkr.Close()
-}
-
 // Do executes a generic call
 func (r *rpc) Do(ctx context.Context, req *Request) error {
-	dbg := level.Debug(r.logger)
+	dbg := level.Warn(r.logger)
 	dbg = log.With(dbg, "call", req.Type, "method", req.Method.String())
 	if req.abort == nil {
 		req.abort = func() {} // noop
+	}
+
+	if req.RawArgs == nil {
+		req.RawArgs = []byte("[]")
 	}
 
 	var (
 		pkt codec.Packet
 		err error
 	)
-
-	if req.RawArgs == nil {
-		req.RawArgs = []byte("[]")
-	}
 
 	func() {
 		r.rLock.Lock()
@@ -320,8 +312,17 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 		r.highest++
 		pkt.Req = r.highest
 		r.reqs[pkt.Req] = req
-		// req.Stream.WithReq(pkt.Req)
-		// req.Stream.WithType(req.tipe)
+
+		if req.sink != nil {
+			req.sink.pkt = &pkt
+		}
+
+		if req.source != nil {
+			req.source.hdrFlag = pkt.Flag
+		}
+
+		req.Stream.WithReq(pkt.Req)
+		req.Stream.WithType(req.tipe)
 
 		req.id = pkt.Req
 	}()
@@ -331,18 +332,49 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 	}
 
 	err = r.pkr.w.WritePacket(&pkt)
-	dbg.Log("event", "request sent", "reqID", req.id, "err", err)
+	dbg.Log("event", "request sent",
+		"reqID", req.id,
+		"err", err,
+		"flag", pkt.Flag.String())
 	return err
 }
 
-// ParseRequest parses the first packet of a stream and parses the contained request
-func (r *rpc) ParseRequest(pkt *codec.Header) (*Request, error) {
-	var req Request
+// fetchRequest returns the request from the reqs map or, if it's not there yet, builds a new one.
+func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bool, error) {
+	var err error
 
-	if !pkt.Flag.Get(codec.FlagJSON) {
-		return nil, errors.New("expected JSON flag")
+	r.rLock.RLock()
+
+	// get request from map, otherwise make new one
+	req, exists := r.reqs[hdr.Req]
+	if exists {
+		r.rLock.RUnlock()
+		return req, false, nil
 	}
+	r.rLock.RUnlock()
+	r.rLock.Lock()
+	defer r.rLock.Unlock()
 
+	req, err = r.parseNewRequest(hdr)
+	if err != nil {
+		return nil, false, errors.Wrap(err, "error parsing request")
+	}
+	ctx, req.abort = context.WithCancel(ctx)
+
+	r.reqs[hdr.Req] = req
+	// TODO:
+	// buffer new requests to not mindlessly spawn goroutines
+	// and prioritize exisitng requests to unblock the connection time
+	// maybe use two maps
+	// go func() {
+	r.root.HandleCall(ctx, req, r)
+	level.Debug(r.logger).Log("call", "returned", "method", req.Method, "reqID", req.id)
+	// }()
+	return req, true, nil
+}
+
+// parseNewRequest parses the first packet of a stream and parses the contained request
+func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 	if pkt.Req >= 0 {
 		// request numbers should have been inverted by now
 		return nil, errors.New("expected negative request id")
@@ -357,25 +389,50 @@ func (r *rpc) ParseRequest(pkt *codec.Header) (*Request, error) {
 		return nil, errors.Wrap(err, "error copying request body")
 	}
 
+	// TODO: move be before reading the body - just debugging
+	if !pkt.Flag.Get(codec.FlagJSON) {
+		return nil, fmt.Errorf("expected JSON flag (%d)", len(reqBody))
+	}
+
+	var req Request
 	err = json.Unmarshal(reqBody, &req)
 	// err := json.NewDecoder(rd).Decode(&req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\nSPEW\n%s", spew.Sdump(reqBody))
 		return nil, errors.Wrap(err, "error decoding packet")
 	}
+
+	// horray!
 	req.id = pkt.Req
 
-	inSrc, inSink := luigi.NewPipe(luigi.WithBuffer(bufSize))
+	todoCtx := context.TODO() // merge in with v2 changes to get serve() context
 
-	var inStream, outStream streamCapability
+	// the capabailitys are nice guard rails but in the end
+	// we still need to be able to error on a source
+	// ie write to something which is supposed to be read-only.
+	req.in = nil
+
+	req.sink = newByteSink(todoCtx, r.pkr.w)
+	req.sink.pkt.Req = req.id
+	req.sink.pkt.Flag = pkt.Flag
+
+	req.source = newByteSource(todoCtx, r.bpool)
+	req.source.hdrFlag = pkt.Flag
+
+	req.consume = req.source.consume
+	req.done = func(err error) {
+		req.sink.Cancel(err)
+		req.source.Cancel(err)
+	}
+
 	if pkt.Flag.Get(codec.FlagStream) {
 		switch req.Type {
 		case "duplex":
-			inStream, outStream = streamCapMultiple, streamCapMultiple
+			return nil, fmt.Errorf("TODO: duplex legacy stream")
 		case "source":
-			inStream, outStream = streamCapNone, streamCapMultiple
+			req.Stream = req.sink.AsStream()
 		case "sink":
-			inStream, outStream = streamCapMultiple, streamCapNone
+			req.Stream = req.source.AsStream()
 		default:
 			return nil, errors.Errorf("unhandled request type: %q", req.Type)
 		}
@@ -386,53 +443,12 @@ func (r *rpc) ParseRequest(pkt *codec.Header) (*Request, error) {
 		if req.Type != "async" {
 			return nil, errors.Errorf("unhandled request type: %q", req.Type)
 		}
-		inStream, outStream = streamCapNone, streamCapOnce
-
+		req.Stream = req.sink.AsStream()
 	}
-	req.Stream = newStream(inSrc, r.pkr.w, pkt.Req, inStream, outStream)
-	req.in = inSink
 
 	level.Debug(r.logger).Log("event", "got request", "reqID", req.id, "method", req.Method, "type", req.Type)
 
 	return &req, nil
-}
-
-func isTrue(data []byte) bool {
-	return len(data) == 4 &&
-		data[0] == 't' &&
-		data[1] == 'r' &&
-		data[2] == 'u' &&
-		data[3] == 'e'
-}
-
-// fetchRequest returns the request from the reqs map or, if it's not there yet, builds a new one.
-func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bool, error) {
-	var err error
-
-	r.rLock.Lock()
-	defer r.rLock.Unlock()
-
-	// get request from map, otherwise make new one
-	req, ok := r.reqs[hdr.Req]
-	if !ok {
-		req, err = r.ParseRequest(hdr)
-		if err != nil {
-			return nil, false, errors.Wrap(err, "error parsing request")
-		}
-		ctx, req.abort = context.WithCancel(ctx)
-
-		r.reqs[hdr.Req] = req
-		// TODO:
-		// buffer new requests to not mindlessly spawn goroutines
-		// and prioritize exisitng requests to unblock the connection time
-		// maybe use two maps
-		go func() {
-			r.root.HandleCall(ctx, req, r)
-			level.Debug(r.logger).Log("call", "returned", "method", req.Method, "reqID", req.id)
-		}()
-	}
-
-	return req, !ok, nil
 }
 
 // Server can handle packets to and from a remote party
@@ -488,8 +504,8 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		var req *Request
 		if hdr.Flag.Get(codec.FlagEndErr) {
 			getReq := func(req int32) (*Request, bool) {
-				r.rLock.Lock()
-				defer r.rLock.Unlock()
+				r.rLock.RLock()
+				defer r.rLock.RUnlock()
 
 				r, ok := r.reqs[req]
 				return r, ok
@@ -528,7 +544,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		var isNew bool
 		req, isNew, err = r.fetchRequest(ctx, &hdr)
 		if err != nil {
-			err = errors.Wrap(err, "muxrpc: error getting request")
+			err = errors.Wrap(err, "muxrpc: error unpacking request")
 			return
 		}
 		if isNew {
@@ -562,6 +578,14 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 	}
 }
 
+func isTrue(data []byte) bool {
+	return len(data) == 4 &&
+		data[0] == 't' &&
+		data[1] == 'r' &&
+		data[2] == 'u' &&
+		data[3] == 'e'
+}
+
 func (r *rpc) closeStream(req *Request, streamErr error) {
 	err := req.CloseWithError(streamErr)
 	if err != nil {
@@ -572,6 +596,25 @@ func (r *rpc) closeStream(req *Request, streamErr error) {
 	defer r.rLock.Unlock()
 	delete(r.reqs, req.id)
 	return
+}
+
+// ErrSessionTerminated is returned once Terminate() was called  or the connection dies
+var ErrSessionTerminated = errors.New("muxrpc: session terminated")
+
+// Terminate ends the RPC session
+func (r *rpc) Terminate() error {
+	r.cancel()
+	r.tLock.Lock()
+	defer r.tLock.Unlock()
+	r.terminated = true
+	r.rLock.Lock()
+	defer r.rLock.Unlock()
+	if n := len(r.reqs); n > 0 { // close active requests
+		for _, req := range r.reqs {
+			req.CloseWithError(ErrSessionTerminated)
+		}
+	}
+	return r.pkr.Close()
 }
 
 func (r *rpc) Remote() net.Addr {

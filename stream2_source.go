@@ -24,8 +24,8 @@ type ByteSource struct {
 	closed chan struct{}
 	failed error
 
-	requestID int32
-	hdrFlag   codec.Flag
+	// requestID int32
+	hdrFlag codec.Flag
 
 	streamCtx context.Context
 	cancel    context.CancelFunc

@@ -4,6 +4,7 @@ package muxrpc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -207,7 +208,7 @@ func TestSource(t *testing.T) {
 	var fh2 FakeHandler
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+		if len(req.Method) == 1 && req.Method[0] == "srctest" {
 			for _, v := range expRx {
 				err := req.Stream.Pour(ctx, v)
 				ckFatal(errors.Wrap(err, "h2 pour errored"))
@@ -230,7 +231,7 @@ func TestSource(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc, serve1)
 	go serve(ctx, rpc2.(Server), errc, serve2)
 
-	src, err := rpc1.Source(ctx, codec.FlagString, Method{"whoami"})
+	src, err := rpc1.Source(ctx, codec.FlagString, Method{"srctest"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,8 +286,6 @@ func TestSource(t *testing.T) {
 	r.Equal(0, fh1.HandleCallCallCount(), "peer did not call 'connect'")
 }
 
-/*
-
 func TestSink(t *testing.T) {
 	r := require.New(t)
 	expRx := []string{
@@ -317,24 +316,26 @@ func TestSink(t *testing.T) {
 	var fh2 FakeHandler
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+		if len(req.Method) == 1 && req.Method[0] == "sinktest" {
 			for i, exp := range expRx {
 				t.Log("calling Next()", i)
 				v, err := req.Stream.Next(ctx)
 				ckFatal(err)
 				t.Log("Next()", i, "returned", v)
 
-				if v != exp {
-					err = errors.Errorf("expected value %v, got %v", exp, v)
+				str, ok := v.(string)
+				if !ok {
+					err = errors.Errorf("expected value %q, got %v (%T)", exp, v, v)
+					ckFatal(err)
+					continue
+				}
+				if str != exp {
+					err = errors.Errorf("expected value %q, got %v (%T)", exp, v, v)
 					ckFatal(err)
 				}
 			}
 
 			close(wait)
-
-			err := req.Stream.Close()
-			ckFatal(err)
-
 		}
 	})
 
@@ -351,11 +352,12 @@ func TestSink(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc, serve1)
 	go serve(ctx, rpc2.(Server), errc, serve2)
 
-	sink, err := rpc1.Sink(ctx, Method{"whoami"})
+	sink, err := rpc1.Sink(ctx, codec.FlagJSON, Method{"sinktest"})
 	r.NoError(err)
 
+	enc := json.NewEncoder(sink)
 	for _, v := range expRx {
-		err := sink.Pour(ctx, v)
+		err := enc.Encode(v)
 		r.NoError(err)
 	}
 	t.Log("waiting for wait...")
@@ -370,6 +372,11 @@ func TestSink(t *testing.T) {
 	t.Log("waiting for everything to shut down")
 	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
 		select {
+		case ev := <-errc:
+			if ev != nil {
+				t.Errorf("errorc: %s", ev)
+				return
+			}
 		case <-conn1:
 			t.Log("conn1 closed")
 			conn1 = nil
@@ -386,6 +393,7 @@ func TestSink(t *testing.T) {
 	}
 }
 
+/*
 func TestDuplex(t *testing.T) {
 	r := require.New(t)
 	expRx := []string{

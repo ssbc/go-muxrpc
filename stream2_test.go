@@ -26,7 +26,7 @@ func TestSourceBytesFill(t *testing.T) {
 	bpool, err := bufpool.NewLockPool()
 	r.NoError(err)
 	var bs = newByteSource(ctx, bpool)
-	bs.requestID = 23
+	// bs.requestID = 23
 
 	var exp = [][]byte{
 		[]byte("fii"),
@@ -63,7 +63,7 @@ func TestSourceBytesOneByOne(t *testing.T) {
 	bpool, err := bufpool.NewLockPool()
 	r.NoError(err)
 	var bs = newByteSource(ctx, bpool)
-	bs.requestID = 23
+	// bs.requestID = 23
 
 	var exp = [][]byte{
 		[]byte("fii"),

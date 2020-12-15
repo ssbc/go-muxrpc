@@ -158,8 +158,7 @@ func TestBohwaysSource(t *testing.T) {
 
 	var fh1 FakeHandler
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
-
-		t.Logf("h2 called %+v\n", req)
+		t.Logf("h1 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
 			for i, v := range expRx {
 				err := req.Stream.Pour(ctx, v)

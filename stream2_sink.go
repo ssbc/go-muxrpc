@@ -11,8 +11,6 @@ import (
 )
 
 type ByteSink struct {
-	requestID int32
-
 	w *codec.Writer
 
 	closed error
@@ -34,15 +32,17 @@ func newByteSink(ctx context.Context, w *codec.Writer) *ByteSink {
 	}
 }
 
-func (bs *ByteSink) Cancel(err error) {
-	bs.closed = err
-}
+func (bs *ByteSink) Cancel(err error) { bs.closed = err }
 
 func (bs *ByteSink) Write(b []byte) (int, error) {
 	if bs.closed != nil {
 		return 0, bs.closed
 	}
 	bs.pkt.Body = b
+
+	if bs.pkt.Req == 0 {
+		return -1, fmt.Errorf("req ID not set (Flag: %s)", bs.pkt.Flag)
+	}
 	err := bs.w.WritePacket(bs.pkt)
 	if err != nil {
 		bs.closed = err
@@ -52,6 +52,9 @@ func (bs *ByteSink) Write(b []byte) (int, error) {
 }
 
 func (bs *ByteSink) CloseWithError(err error) error {
+	if bs.closed != nil {
+		return bs.closed
+	}
 	bs.closed = err
 	return nil
 }

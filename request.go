@@ -5,6 +5,7 @@ package muxrpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -39,13 +40,15 @@ func (m Method) String() string {
 
 // Request assembles the state of an RPC call
 type Request struct {
-	// Stream allows sending and receiving packets
+	// Stream is a legacy adapter for luigi-powered streams
 	Stream Stream `json:"-"`
 
 	// Method is the name of the called function
 	Method Method `json:"name"`
+
 	// Args contains the call arguments
 	RawArgs json.RawMessage `json:"args"`
+
 	// Type is the type of the call, i.e. async, sink, source or duplex
 	Type CallType `json:"type"`
 
@@ -55,6 +58,10 @@ type Request struct {
 	// if in is nil, these funcs have to be set
 	consume func(pktLen uint32, r io.Reader) error
 	done    func(error)
+
+	// luigi-less iterators
+	sink   *ByteSink
+	source *ByteSource
 
 	// same as packet.Req - the numerical identifier for the stream
 	id int32
@@ -68,7 +75,27 @@ type Request struct {
 	abort context.CancelFunc
 }
 
-// Legacy
+type ErrWrongStreamType struct{ ct CallType }
+
+func (wst ErrWrongStreamType) Error() string {
+	return fmt.Sprintf("muxrpc: wrong stream type: %s", wst.ct)
+}
+
+func (req *Request) GetSink() (*ByteSink, error) {
+	if req.sink == nil {
+		return nil, ErrWrongStreamType{req.Type}
+	}
+	return req.sink, nil
+}
+
+func (req *Request) GetSource() (*ByteSource, error) {
+	if req.source == nil {
+		return nil, ErrWrongStreamType{req.Type}
+	}
+	return req.source, nil
+}
+
+// Args is a legacy stub to get the unmarshaled json arguments
 func (req *Request) Args() []interface{} {
 	var v []interface{}
 	json.Unmarshal(req.RawArgs, &v)
@@ -81,9 +108,14 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 		return errors.Errorf("cannot return value on %q stream", req.Type)
 	}
 
-	err := req.Stream.Pour(ctx, v)
+	b, err := json.Marshal(v)
 	if err != nil {
-		return errors.Wrap(err, "error pouring return value")
+		return errors.Wrap(err, "error marshaling return value")
+	}
+
+	_, err = req.sink.Write(b)
+	if err != nil {
+		return errors.Wrap(err, "error writing return value")
 	}
 
 	return nil
