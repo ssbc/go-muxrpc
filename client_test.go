@@ -15,6 +15,7 @@ import (
 
 	"github.com/cryptix/go/proc"
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
@@ -23,7 +24,7 @@ import (
 	"go.cryptoscope.co/muxrpc/debug"
 )
 
-func XTestJSGettingCalledSource(t *testing.T) {
+func TestJSGettingCalledSource(t *testing.T) {
 	r := require.New(t)
 
 	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
@@ -500,7 +501,15 @@ func XTestJSDuplexToUs(t *testing.T) {
 	}
 }
 
-func TestJSSupportAbort(t *testing.T) {
+func XTestJSSupportAbort(t *testing.T) {
+	ctx := context.Background()
+	if dl, ok := t.Deadline(); ok {
+		dl = dl.Add(-10 * time.Second)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, dl)
+		defer cancel()
+	}
+
 	r := require.New(t)
 	jsLog := log.NewLogfmtLogger(os.Stderr)
 
@@ -509,12 +518,8 @@ func TestJSSupportAbort(t *testing.T) {
 
 	var h hAbortMe
 	h.want = 20
-
-	handlerErrors := make(chan error)
-	h.failed = handlerErrors
-
-	muxdbg := log.With(jsLog, "u", "pkts")
-	h.logger = muxdbg
+	h.t = t
+	h.logger = jsLog
 
 	muxdbgPath := filepath.Join("testrun", t.Name())
 	os.RemoveAll(muxdbgPath)
@@ -523,9 +528,7 @@ func TestJSSupportAbort(t *testing.T) {
 
 	rpc1 := Handle(packer, &h)
 
-	ctx, cancel := context.WithCancel(context.Background())
 	errc := make(chan error)
-
 	go serve(ctx, rpc1.(Server), errc)
 
 	var ret string
@@ -533,14 +536,11 @@ func TestJSSupportAbort(t *testing.T) {
 	r.NoError(err, "call failed")
 	r.EqualValues("thanks!", ret)
 
-	r.NoError(<-handlerErrors)
-
 	var ret2 string
 	err = rpc1.Async(ctx, &ret2, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal("ty", ret2, "expected correct call result")
 
-	cancel()
 	rpc1.Terminate()
 	close(errc)
 	for err := range errc {
@@ -551,7 +551,7 @@ func TestJSSupportAbort(t *testing.T) {
 type hAbortMe struct {
 	want   int
 	logger log.Logger
-	failed chan<- error
+	t      *testing.T
 }
 
 func (h *hAbortMe) HandleConnect(ctx context.Context, e Endpoint) {
@@ -561,7 +561,7 @@ func (h *hAbortMe) HandleConnect(ctx context.Context, e Endpoint) {
 func (h *hAbortMe) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 	if req.Method.String() != "takeSome" {
 		err := fmt.Errorf("wrong method: %s", req.Method.String())
-		h.failed <- err
+		require.NoError(h.t, err)
 		req.Stream.CloseWithError(err)
 		return
 	}
@@ -574,13 +574,14 @@ func (h *hAbortMe) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 			if errors.Cause(err) == context.Canceled {
 				break
 			}
-			h.failed <- err
+			require.NoError(h.t, err)
 			break
 		}
 		time.Sleep(time.Second / 100)
 	}
 	if i != h.want {
-		h.failed <- fmt.Errorf("expected %d but sent %d packets", h.want, i)
+		err := fmt.Errorf("expected %d but sent %d packets", h.want, i)
+		level.Error(h.logger).Log("evt", "sent too much?", "err", err)
+		require.NoError(h.t, err)
 	}
-	close(h.failed)
 }

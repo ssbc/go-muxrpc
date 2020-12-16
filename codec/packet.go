@@ -57,7 +57,6 @@ func (f Flag) String() string {
 // Flag bitmasks
 // TODO: split types (bytes, string, json) and options (stream/enderr)
 const (
-	FlagBytes  Flag = 0
 	FlagString Flag = 1 << iota // type
 	FlagJSON                    // bits
 	FlagEndErr

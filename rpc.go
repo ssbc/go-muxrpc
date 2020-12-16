@@ -284,9 +284,7 @@ func (r *rpc) Duplex(ctx context.Context, tipe codec.Flag, method Method, args .
 		return nil, nil, errors.Wrap(err, "error sending request")
 	}
 
-	panic("TODO: duplex as Stream")
-
-	return bSrc, bSink, nil
+	return bSrc, bSink, fmt.Errorf("TODO: duplex as Stream")
 }
 
 // Do executes a generic call
@@ -372,10 +370,10 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 	// buffer new requests to not mindlessly spawn goroutines
 	// and prioritize exisitng requests to unblock the connection time
 	// maybe use two maps
-	// go func() {
-	r.root.HandleCall(ctx, req, r)
-	level.Debug(r.logger).Log("call", "returned", "method", req.Method, "reqID", req.id)
-	// }()
+	go func() {
+		r.root.HandleCall(ctx, req, r)
+		level.Debug(r.logger).Log("call", "returned", "method", req.Method, "reqID", req.id)
+	}()
 	return req, true, nil
 }
 

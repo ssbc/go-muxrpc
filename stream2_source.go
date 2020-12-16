@@ -107,7 +107,7 @@ func (bs *ByteSource) Next(ctx context.Context) bool {
 		return false
 
 	case <-bs.closed:
-		return bs.buf.frames > 0
+		return bs.buf.Frames() > 0
 
 	case <-bs.buf.waitForMore():
 		return true
@@ -159,6 +159,11 @@ type frameBuffer struct {
 	store *bytes.Buffer
 
 	waiting chan<- struct{}
+
+	// how much of the current frame has been read
+	// to advance/skip store correctly
+	currentFrameTotal uint32
+	currentFrameRead  uint32
 
 	frames uint32
 
@@ -218,14 +223,45 @@ func (fw *frameBuffer) getNextFrameReader() (uint32, io.Reader, error) {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
+	if fw.currentFrameTotal != 0 {
+		// if the last frame hasn't been fully read
+		diff := int64(fw.currentFrameTotal - fw.currentFrameRead)
+		if diff > 0 {
+			// seek it into /dev/null
+			fmt.Println("skipping", diff, "bytes")
+			io.Copy(ioutil.Discard, io.LimitReader(fw.store, diff))
+		}
+	}
+
 	_, err := fw.store.Read(fw.lenBuf[:])
 	if err != nil {
 		return 0, nil, err
 	}
 	pktLen := binary.LittleEndian.Uint32(fw.lenBuf[:])
 
-	rd := io.LimitReader(fw.store, int64(pktLen))
+	fw.currentFrameRead = 0
+	fw.currentFrameTotal = pktLen
 
+	rd := &countingReader{
+		rd:   io.LimitReader(fw.store, int64(pktLen)),
+		read: &fw.currentFrameRead,
+	}
+
+	// fw.frames--
 	atomic.AddUint32(&fw.frames, ^uint32(0))
 	return pktLen, rd, nil
+}
+
+type countingReader struct {
+	rd io.Reader
+
+	read *uint32
+}
+
+func (cr *countingReader) Read(b []byte) (int, error) {
+	n, err := cr.rd.Read(b)
+	if err == nil && n > 0 {
+		*cr.read += uint32(n)
+	}
+	return n, err
 }

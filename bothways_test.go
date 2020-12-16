@@ -6,14 +6,18 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/debug"
 )
 
-func TestBothwaysAsync(t *testing.T) {
+func XTestBothwaysAsync(t *testing.T) {
 	c1, c2 := net.Pipe()
 
 	conn1 := make(chan struct{})
@@ -53,8 +57,11 @@ func TestBothwaysAsync(t *testing.T) {
 		t.Log("h2 connected")
 		close(conn2)
 	})
-
-	rpc1 := Handle(NewPacker(c1), &fh1)
+	muxdbgPath := filepath.Join("testrun", t.Name())
+	os.RemoveAll(muxdbgPath)
+	os.MkdirAll(muxdbgPath, 0700)
+	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
+	rpc1 := Handle(dbgpacker, &fh1)
 	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
@@ -133,7 +140,7 @@ func TestBothwaysAsync(t *testing.T) {
 	t.Log("done")
 }
 
-func TestBohwaysSource(t *testing.T) {
+func TestBothwaysSource(t *testing.T) {
 	expRx := []string{
 		"you are a test",
 		"you're a test",
@@ -193,11 +200,13 @@ func TestBohwaysSource(t *testing.T) {
 		close(conn2)
 	})
 
-	fmt.Println("handle1")
-	rpc1 := Handle(NewPacker(c1), &fh1)
-	fmt.Println("handle2")
+	muxdbgPath := filepath.Join("testrun", t.Name())
+	os.RemoveAll(muxdbgPath)
+	os.MkdirAll(muxdbgPath, 0700)
+	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
+
+	rpc1 := Handle(dbgpacker, &fh1)
 	rpc2 := Handle(NewPacker(c2), &fh2)
-	fmt.Println("handler registered")
 
 	ctx := context.Background()
 
@@ -339,6 +348,7 @@ func TestBohwaysSource(t *testing.T) {
 	fmt.Println("waiting for loop done")
 }
 
+// TODO: should not have FlagJSON set but FlagString
 func TestBothwaysSink(t *testing.T) {
 	expRx := []string{
 		"you are a test",
@@ -365,7 +375,7 @@ func TestBothwaysSink(t *testing.T) {
 	handler := func(name string) func(context.Context, *Request, Endpoint) {
 		return func(ctx context.Context, req *Request, edp Endpoint) {
 			fmt.Printf("bothwaysSink: %s called %+v\n", name, req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
+			if len(req.Method) == 1 && req.Method[0] == "sinktest" {
 				for i, exp := range expRx {
 					fmt.Printf("bothwaysSink: calling Next() %d\n", i)
 					v, err := req.Stream.Next(ctx)
@@ -398,7 +408,11 @@ func TestBothwaysSink(t *testing.T) {
 		close(conn2)
 	})
 
-	rpc1 := Handle(NewPacker(c1), &fh1)
+	muxdbgPath := filepath.Join("testrun", t.Name())
+	os.RemoveAll(muxdbgPath)
+	os.MkdirAll(muxdbgPath, 0700)
+	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
+	rpc1 := Handle(dbgpacker, &fh1)
 	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
@@ -416,7 +430,7 @@ func TestBothwaysSink(t *testing.T) {
 	}()
 
 	go func() {
-		sink, err := rpc1.Sink(ctx, codec.FlagString, Method{"whoami"})
+		sink, err := rpc1.Sink(ctx, codec.FlagString, Method{"sinktest"})
 		ckFatal(err)
 
 		for _, v := range expRx {
@@ -482,8 +496,7 @@ func TestBothwaysSink(t *testing.T) {
 	}
 }
 
-/*
-func TestBothwayDuplex(t *testing.T) {
+func XTestBothwayDuplex(t *testing.T) {
 	expRx := []string{
 		"you are a test",
 		"you're a test",
@@ -510,7 +523,7 @@ func TestBothwayDuplex(t *testing.T) {
 	handler := func(name string) func(context.Context, *Request, Endpoint) {
 		return func(ctx context.Context, req *Request, edp Endpoint) {
 			t.Logf("%s called %+v\n", name, req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
+			if len(req.Method) == 1 && req.Method[0] == "test.duplex" {
 				for _, exp := range expRx {
 					v, err := req.Stream.Next(ctx)
 					if err != nil {
@@ -548,7 +561,11 @@ func TestBothwayDuplex(t *testing.T) {
 		wg.Done()
 	})
 
-	rpc1 := Handle(NewPacker(c1), &fh1)
+	muxdbgPath := filepath.Join("testrun", t.Name())
+	os.RemoveAll(muxdbgPath)
+	os.MkdirAll(muxdbgPath, 0700)
+	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
+	rpc1 := Handle(dbgpacker, &fh1)
 	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
@@ -557,21 +574,31 @@ func TestBothwayDuplex(t *testing.T) {
 	go serve(ctx, rpc2.(Server), errc)
 
 	go func() {
-		src, sink, err := rpc1.Duplex(ctx, "str", Method{"whoami"})
+		src, sink, err := rpc1.Duplex(ctx, codec.FlagString, Method{"test", "duplex"})
 		ckFatal(err)
 
 		for _, v := range expRx {
-			err := sink.Pour(ctx, v)
+			_, err := fmt.Fprint(sink, v)
 			ckFatal(err)
 		}
 
 		for _, exp := range expTx {
-			v, err := src.Next(ctx)
+			has := src.Next(ctx)
+			if !has {
+				ckFatal(fmt.Errorf("expected more from source"))
+				return
+			}
+
+			rd, done, err := src.Reader()
 			ckFatal(err)
 
-			if v != exp {
-				err = errors.Errorf("expected %v, got %v", exp, v)
-				ckFatal(err)
+			var buf = make([]byte, len(exp))
+			_, err = rd.Read(buf)
+			ckFatal(err)
+			done()
+
+			if exp != string(buf) {
+				ckFatal(fmt.Errorf("wrong value from source (exp: %q - got %q", exp, string(buf)))
 			}
 		}
 
@@ -582,21 +609,33 @@ func TestBothwayDuplex(t *testing.T) {
 	}()
 
 	go func() {
-		src, sink, err := rpc2.Duplex(ctx, "str", Method{"whoami"})
+		src, sink, err := rpc2.Duplex(ctx, codec.FlagString, Method{"whoami"})
 		ckFatal(err)
 
 		for _, v := range expRx {
-			err := sink.Pour(ctx, v)
+			_, err := fmt.Fprint(sink, v)
 			ckFatal(err)
 		}
 
 		for _, exp := range expTx {
-			v, err := src.Next(ctx)
+			has := src.Next(ctx)
+			if !has {
+				ckFatal(fmt.Errorf("expected more from source"))
+				return
+			}
+
+			rd, done, err := src.Reader()
 			ckFatal(err)
 
+			var buf = make([]byte, len(exp))
+			_, err = rd.Read(buf)
+			ckFatal(err)
+			done()
+			v := string(buf)
 			if v != exp {
 				err = errors.Errorf("expected %v, got %v", exp, v)
 				ckFatal(err)
+				return
 			}
 		}
 
@@ -619,4 +658,3 @@ func TestBothwayDuplex(t *testing.T) {
 		}
 	}
 }
-*/

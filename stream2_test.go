@@ -11,11 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"go.cryptoscope.co/muxrpc/codec"
-
 	"github.com/karrick/bufpool"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.cryptoscope.co/muxrpc/codec"
 )
 
 func TestSourceBytesFill(t *testing.T) {
@@ -26,7 +27,6 @@ func TestSourceBytesFill(t *testing.T) {
 	bpool, err := bufpool.NewLockPool()
 	r.NoError(err)
 	var bs = newByteSource(ctx, bpool)
-	// bs.requestID = 23
 
 	var exp = [][]byte{
 		[]byte("fii"),
@@ -66,7 +66,6 @@ func TestSourceBytesOneByOne(t *testing.T) {
 	bpool, err := bufpool.NewLockPool()
 	r.NoError(err)
 	var bs = newByteSource(ctx, bpool)
-	// bs.requestID = 23
 
 	var exp = [][]byte{
 		[]byte("fii"),
@@ -90,7 +89,45 @@ func TestSourceBytesOneByOne(t *testing.T) {
 		r.Equal(exp[i], buf)
 	}
 
-	// bs.Close()
+}
+
+// next should still advance even if we don't read the data fully
+func TestSourceBytesDontReadAll(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx := context.Background()
+
+	bpool, err := bufpool.NewLockPool()
+	r.NoError(err)
+	var bs = newByteSource(ctx, bpool)
+
+	var exp = [][]byte{
+		[]byte("1fii"),
+		[]byte("2faa"),
+		[]byte("3foo"),
+		[]byte("4fum"),
+	}
+
+	for i := 0; i < len(exp); i++ {
+		err := bs.consume(uint32(len(exp[i])), bytes.NewReader(exp[i]))
+		r.NoError(err, "failed to consume %d", i)
+	}
+
+	buf := make([]byte, 1)
+	for i := 0; i < len(exp); i++ {
+		has := bs.Next(ctx)
+		r.True(has, "expected more from source")
+
+		rd, done, err := bs.Reader()
+		r.NoError(err)
+
+		n, err := rd.Read(buf)
+		r.NoError(err)
+		done()
+		r.Equal(1, n)
+		a.Equal(exp[i][0], buf[0])
+	}
 }
 
 // TODO: make tests for different kinds of stream data
