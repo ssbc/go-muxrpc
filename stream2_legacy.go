@@ -65,7 +65,7 @@ func (stream *streamSource) Next(ctx context.Context) (interface{}, error) {
 		if err != nil {
 			return nil, fmt.Errorf("muxrcp: failed to decode json from source: %w", err)
 		}
-		fmt.Printf("Next() json decode! %T\n", dst)
+
 		if !ptrType {
 			dst = reflect.ValueOf(dst).Elem().Interface()
 		}
@@ -76,10 +76,8 @@ func (stream *streamSource) Next(ctx context.Context) (interface{}, error) {
 			return nil, err
 		}
 		str := string(buf)
-		fmt.Println("Next() stream type string:", str)
 		return str, nil
 	} else {
-		fmt.Println("Next() else, so byts!")
 		return stream.source.Bytes()
 	}
 }

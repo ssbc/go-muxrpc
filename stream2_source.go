@@ -116,8 +116,7 @@ func (bs *ByteSource) Next(ctx context.Context) bool {
 	}
 }
 
-// Reader returns a (limited) reader for the next segment. It needs to be fully read before calling next again.
-// Since the stream can't be written while it's read, the 2nd return value unlocks the mutex.
+// Reader returns a (limited) reader for the next segment. Since the stream can't be written while it's read, the 2nd return value unlocks the mutex.
 // TODO: instead of returning a reader and the done method, we could take a func(io.Reader) as an argument and do the done() call when fn returns
 func (bs *ByteSource) Reader() (io.Reader, func(), error) {
 	_, rd, err := bs.buf.getNextFrameReader()
@@ -157,6 +156,7 @@ func (bs *ByteSource) consume(pktLen uint32, r io.Reader) error {
 }
 
 // utils
+// framebuffer stores muxrpc body packets with their length prefix
 type frameBuffer struct {
 	mu    sync.Mutex
 	store *bytes.Buffer
@@ -194,7 +194,6 @@ func (fw *frameBuffer) copyBody(pktLen uint32, rd io.Reader) error {
 	}
 
 	atomic.AddUint32(&fw.frames, 1)
-	//	fmt.Println("frameWriter: stored ", fw.frames, pktLen)
 
 	if fw.waiting != nil {
 		close(fw.waiting)
@@ -231,7 +230,6 @@ func (fw *frameBuffer) getNextFrameReader() (uint32, io.Reader, error) {
 		diff := int64(fw.currentFrameTotal - fw.currentFrameRead)
 		if diff > 0 {
 			// seek it into /dev/null
-			fmt.Println("skipping", diff, "bytes")
 			io.Copy(ioutil.Discard, io.LimitReader(fw.store, diff))
 		}
 	}

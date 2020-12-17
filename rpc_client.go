@@ -121,7 +121,6 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ..
 	}
 	defer done()
 
-	// rd = io.TeeReader(rd, os.Stderr)
 	// hmm.. we might need to poke at the flag of the muxrpc packet here, too
 	switch tv := ret.(type) {
 	case *string:
