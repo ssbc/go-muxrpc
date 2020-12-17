@@ -17,7 +17,145 @@ import (
 	"go.cryptoscope.co/muxrpc/debug"
 )
 
-func XTestBothwaysAsync(t *testing.T) {
+func TestBothwaysAsyncJSON(t *testing.T) {
+	c1, c2 := net.Pipe()
+
+	conn1 := make(chan struct{})
+	conn2 := make(chan struct{})
+	serve1 := make(chan struct{})
+	serve2 := make(chan struct{})
+	call1 := make(chan struct{})
+	call2 := make(chan struct{})
+	term1 := make(chan struct{})
+	term2 := make(chan struct{})
+
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
+
+	type testMsg struct {
+		Foo string
+		Bar int
+	}
+
+	var fh1 FakeHandler
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("h1 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "asyncObj" {
+			err := req.Return(ctx, testMsg{Foo: "you are a test", Bar: 23})
+			ckFatal(err)
+		}
+	})
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1) // I think this _should_ terminate e?
+	})
+
+	var fh2 FakeHandler
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("h2 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "asyncObj" {
+			err := req.Return(ctx, testMsg{Foo: "you are a test", Bar: 42})
+			ckFatal(err)
+		}
+	})
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
+	muxdbgPath := filepath.Join("testrun", t.Name())
+	os.RemoveAll(muxdbgPath)
+	os.MkdirAll(muxdbgPath, 0700)
+	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
+	rpc1 := Handle(dbgpacker, &fh1)
+	rpc2 := Handle(NewPacker(c2), &fh2)
+
+	ctx := context.Background()
+
+	go serve(ctx, rpc1.(Server), errc, serve1)
+	go serve(ctx, rpc2.(Server), errc, serve2)
+
+	go func() {
+		var v testMsg
+		err := rpc1.Async(ctx, &v, Method{"asyncObj"})
+		ckFatal(err)
+
+		if v.Foo != "you are a test" {
+			err = errors.Errorf("unexpected response text %q", v.Foo)
+			ckFatal(err)
+		}
+
+		if v.Bar != 42 {
+			err = errors.Errorf("unexpected response int %q", v.Bar)
+			ckFatal(err)
+		}
+
+		t.Log("return of rpc1/async:", v)
+
+		time.Sleep(2 * time.Millisecond)
+
+		close(call1)
+		<-call2
+		err = rpc1.Terminate()
+		ckFatal(err)
+		close(term1)
+	}()
+
+	go func() {
+		var v testMsg
+		err := rpc2.Async(ctx, &v, Method{"asyncObj"})
+		ckFatal(err)
+
+		if v.Foo != "you are a test" {
+			err = errors.Errorf("unexpected response text %q", v.Foo)
+			ckFatal(err)
+		}
+
+		if v.Bar != 23 {
+			err = errors.Errorf("unexpected response int %q", v.Bar)
+			ckFatal(err)
+		}
+
+		t.Log("return of rpc2/async:", v)
+
+		time.Sleep(2 * time.Millisecond)
+
+		close(call2)
+		<-call1
+		err = rpc2.Terminate()
+		ckFatal(err)
+		close(term2)
+	}()
+
+	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil && term1 != nil || term2 != nil {
+		select {
+		case err := <-errc:
+			if err != nil {
+				t.Fatalf("from error chan:\n%+v", err)
+			}
+		case <-conn1:
+			t.Log("conn1 closed")
+			conn1 = nil
+		case <-conn2:
+			t.Log("conn2 closed")
+			conn2 = nil
+		case <-serve1:
+			t.Log("serve1 closed")
+			serve1 = nil
+		case <-serve2:
+			t.Log("serve2 closed")
+			serve2 = nil
+		case <-term1:
+			t.Log("term1 closed")
+			term1 = nil
+		case <-term2:
+			t.Log("term2 closed")
+			term2 = nil
+		}
+	}
+	t.Log("done")
+}
+
+func TestBothwaysAsyncString(t *testing.T) {
 	c1, c2 := net.Pipe()
 
 	conn1 := make(chan struct{})
@@ -35,7 +173,7 @@ func XTestBothwaysAsync(t *testing.T) {
 	var fh1 FakeHandler
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h1 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+		if len(req.Method) == 1 && req.Method[0] == "testasync" {
 			err := req.Return(ctx, "you are a test")
 			ckFatal(err)
 		}
@@ -48,7 +186,7 @@ func XTestBothwaysAsync(t *testing.T) {
 	var fh2 FakeHandler
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+		if len(req.Method) == 1 && req.Method[0] == "testasync" {
 			err := req.Return(ctx, "you are a test")
 			ckFatal(err)
 		}
@@ -71,7 +209,7 @@ func XTestBothwaysAsync(t *testing.T) {
 
 	go func() {
 		var v string
-		err := rpc1.Async(ctx, &v, Method{"whoami"})
+		err := rpc1.Async(ctx, &v, Method{"testasync"})
 		ckFatal(err)
 
 		if v != "you are a test" {
@@ -79,7 +217,7 @@ func XTestBothwaysAsync(t *testing.T) {
 			ckFatal(err)
 		}
 
-		t.Log("return of rpc1.whoami/async:", v)
+		t.Log("return of rpc1/async:", v)
 
 		time.Sleep(2 * time.Millisecond)
 
@@ -92,7 +230,7 @@ func XTestBothwaysAsync(t *testing.T) {
 
 	go func() {
 		var v string
-		err := rpc2.Async(ctx, &v, Method{"whoami"})
+		err := rpc2.Async(ctx, &v, Method{"testasync"})
 		ckFatal(err)
 
 		if v != "you are a test" {
@@ -100,7 +238,7 @@ func XTestBothwaysAsync(t *testing.T) {
 			ckFatal(err)
 		}
 
-		t.Log("return of rpc2.whoami/async:", v)
+		t.Log("return of rpc2/async:", v)
 
 		time.Sleep(2 * time.Millisecond)
 
