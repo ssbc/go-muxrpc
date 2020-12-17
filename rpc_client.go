@@ -96,27 +96,26 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ..
 		return err
 	}
 
-	bs := newByteSource(ctx, r.bpool)
-
 	req := &Request{
 		Type: "async",
 
-		source: bs,
+		source: newByteSource(ctx, r.bpool),
+		sink:   newByteSink(ctx, r.pkr.w),
 
 		Method:  method,
 		RawArgs: argData,
 	}
-	req.Stream = bs.AsStream()
+	req.Stream = req.source.AsStream()
 
 	if err := r.Do(ctx, req); err != nil {
 		return fmt.Errorf("muxrpc: error sending request: %w", err)
 	}
 
-	if !bs.Next(ctx) {
-		return bs.Err()
+	if !req.source.Next(ctx) {
+		return req.source.Err()
 	}
 
-	rd, done, err := bs.Reader()
+	rd, done, err := req.source.Reader()
 	if err != nil {
 		return err
 	}
@@ -150,23 +149,22 @@ func (r *rpc) Source(ctx context.Context, tipe codec.Flag, method Method, args .
 		return nil, err
 	}
 
-	bs := newByteSource(ctx, r.bpool)
-
 	req := &Request{
 		Type: "source",
 
-		source: bs,
+		source: newByteSource(ctx, r.bpool),
+		sink:   newByteSink(ctx, r.pkr.w),
 
 		Method:  method,
 		RawArgs: argData,
 	}
-	req.Stream = bs.AsStream()
+	req.Stream = req.source.AsStream()
 
 	if err := r.Do(ctx, req); err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
 
-	return bs, nil
+	return req.source, nil
 }
 
 // Sink does a sink call on the remote.
@@ -182,7 +180,8 @@ func (r *rpc) Sink(ctx context.Context, tipe codec.Flag, method Method, args ...
 	req := &Request{
 		Type: "sink",
 
-		sink: bs,
+		sink:   bs,
+		source: newByteSource(ctx, r.bpool),
 
 		Method:  method,
 		RawArgs: argData,
