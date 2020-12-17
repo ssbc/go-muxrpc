@@ -148,9 +148,6 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ..
 
 		source: bs,
 
-		consume: bs.consume,
-		done:    bs.Cancel,
-
 		Method:  method,
 		RawArgs: argData,
 	}
@@ -205,9 +202,6 @@ func (r *rpc) Source(ctx context.Context, tipe codec.Flag, method Method, args .
 
 		source: bs,
 
-		consume: bs.consume,
-		done:    bs.Cancel,
-
 		Method:  method,
 		RawArgs: argData,
 	}
@@ -228,15 +222,12 @@ func (r *rpc) Sink(ctx context.Context, tipe codec.Flag, method Method, args ...
 	}
 
 	bs := newByteSink(ctx, r.pkr.w)
-	bs.pkt.Flag.Set(tipe)
+	bs.pkt.Flag = bs.pkt.Flag.Set(tipe)
 
 	req := &Request{
 		Type: "sink",
 
 		sink: bs,
-
-		consume: bs.consume,
-		done:    bs.Cancel,
 
 		Method:  method,
 		RawArgs: argData,
@@ -260,19 +251,13 @@ func (r *rpc) Duplex(ctx context.Context, tipe codec.Flag, method Method, args .
 
 	bSrc := newByteSource(ctx, r.bpool)
 	bSink := newByteSink(ctx, r.pkr.w)
-	bSink.pkt.Flag.Set(tipe)
+	bSink.pkt.Flag = bSink.pkt.Flag.Set(tipe)
 
 	req := &Request{
 		Type: "duplex",
 
 		source: bSrc,
 		sink:   bSink,
-
-		consume: bSrc.consume,
-		done: func(err error) {
-			bSrc.Cancel(err)
-			bSink.Cancel(err)
-		},
 
 		Method:  method,
 		RawArgs: argData,
@@ -414,7 +399,6 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 	// the capabailitys are nice guard rails but in the end
 	// we still need to be able to error on a source
 	// ie write to something which is supposed to be read-only.
-	req.in = nil
 
 	req.sink = newByteSink(todoCtx, r.pkr.w)
 	req.sink.pkt.Req = req.id
@@ -422,12 +406,6 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 
 	req.source = newByteSource(todoCtx, r.bpool)
 	req.source.hdrFlag = pkt.Flag
-
-	req.consume = req.source.consume
-	req.done = func(err error) {
-		req.sink.Cancel(err)
-		req.source.Cancel(err)
-	}
 
 	if pkt.Flag.Get(codec.FlagStream) {
 		switch req.Type {
@@ -555,29 +533,10 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 			continue
 		}
 
-		if req.in == nil {
-			err = req.consume(hdr.Len, r.pkr.r.NextBodyReader(hdr.Len))
-			if err != nil {
-				err = errors.Wrap(err, "muxrpc: error pouring data to handler")
-				return
-			}
-		} else { // legacy sink
-			var pkt = new(codec.Packet)
-
-			pkt.Flag = hdr.Flag
-			pkt.Req = hdr.Req
-			pkt.Body = make([]byte, hdr.Len)
-
-			_, err = io.ReadFull(r.pkr.r.NextBodyReader(hdr.Len), pkt.Body)
-			if err != nil {
-				return errors.Wrapf(err, "muxrpc: failed to get error body for closing of %d", hdr.Req)
-			}
-
-			err = req.in.Pour(ctx, pkt)
-			if err != nil {
-				err = errors.Wrap(err, "muxrpc: error pouring data to handler")
-				return
-			}
+		err = req.source.consume(hdr.Len, r.pkr.r.NextBodyReader(hdr.Len))
+		if err != nil {
+			err = errors.Wrap(err, "muxrpc: error pouring data to handler")
+			return
 		}
 	}
 }

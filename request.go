@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -51,13 +50,6 @@ type Request struct {
 
 	// Type is the type of the call, i.e. async, sink, source or duplex
 	Type CallType `json:"type"`
-
-	// in is the sink that incoming packets are passed to
-	in luigi.Sink
-
-	// if in is nil, these funcs have to be set
-	consume func(pktLen uint32, r io.Reader) error
-	done    func(error)
 
 	// luigi-less iterators
 	sink   *ByteSink
@@ -122,22 +114,12 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 }
 
 func (req *Request) CloseWithError(cerr error) error {
-	var inErr error
 	if cerr == nil || luigi.IsEOS(errors.Cause(cerr)) {
-		if req.in == nil {
-			req.done(nil)
-		} else { // legacy sink
-			inErr = req.in.Close()
-		}
+		req.source.Cancel(nil)
+		req.sink.Cancel(nil)
 	} else {
-		if req.in == nil {
-			req.done(cerr)
-		} else { // legacy sink
-			inErr = req.in.(luigi.ErrorCloser).CloseWithError(cerr)
-		}
-	}
-	if inErr != nil {
-		return errors.Wrap(inErr, "failed to close request input")
+		req.source.Cancel(cerr)
+		req.sink.Cancel(cerr)
 	}
 
 	// we really need to make sure we shut down the streams.
