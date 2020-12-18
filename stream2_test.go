@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 func TestSourceBytesFill(t *testing.T) {

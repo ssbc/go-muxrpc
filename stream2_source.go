@@ -15,7 +15,8 @@ import (
 
 	"github.com/karrick/bufpool"
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/codec"
+
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 type ByteSource struct {

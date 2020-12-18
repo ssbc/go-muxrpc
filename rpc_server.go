@@ -18,7 +18,8 @@ import (
 	"github.com/karrick/bufpool"
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/codec"
+
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 var (
@@ -31,6 +32,8 @@ type rpc struct {
 	logger log.Logger
 
 	remote net.Addr
+
+	isServer bool // is this rpc endpoint in the server role?
 
 	// pkr (un)marshales codec.Packets
 	pkr *Packer
@@ -50,7 +53,8 @@ type rpc struct {
 	terminated bool
 	tLock      sync.Mutex
 
-	cancel context.CancelFunc
+	serveCtx context.Context
+	cancel   context.CancelFunc
 }
 
 // fetchRequest returns the request from the reqs map or, if it's not there yet, builds a new one.
@@ -161,11 +165,11 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 // Server can handle packets to and from a remote party
 type Server interface {
 	Remote() net.Addr
-	Serve(context.Context) error
+	Serve() error
 }
 
 // Serve drains the incoming packets and handles the RPC session
-func (r *rpc) Serve(ctx context.Context) (err error) {
+func (r *rpc) Serve() (err error) {
 	level.Debug(r.logger).Log("event", "serving")
 	defer func() {
 		if luigi.IsEOS(err) || isAlreadyClosed(err) {
@@ -182,7 +186,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 
 		// read next packet from connection
 		doRet := func() bool {
-			err = r.pkr.NextHeader(ctx, &hdr)
+			err = r.pkr.NextHeader(r.serveCtx, &hdr)
 			if luigi.IsEOS(err) || isAlreadyClosed(err) {
 				err = nil
 				return true
@@ -249,7 +253,7 @@ func (r *rpc) Serve(ctx context.Context) (err error) {
 		}
 
 		var isNew bool
-		req, isNew, err = r.fetchRequest(ctx, &hdr)
+		req, isNew, err = r.fetchRequest(r.serveCtx, &hdr)
 		if err != nil {
 			err = errors.Wrap(err, "muxrpc: error unpacking request")
 			return

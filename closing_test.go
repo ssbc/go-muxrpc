@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 type streamConfig struct {

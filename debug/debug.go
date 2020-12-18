@@ -12,7 +12,7 @@ import (
 	multierror "github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 func newLogWriter(l log.Logger) *logWriter {

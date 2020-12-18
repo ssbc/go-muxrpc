@@ -15,52 +15,76 @@ import (
 	"github.com/karrick/bufpool"
 	"github.com/pkg/errors"
 
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
+type HandleOption func(*rpc)
+
+func WithContext(ctx context.Context) HandleOption {
+	return func(r *rpc) {
+		r.serveCtx = ctx
+	}
+}
+
+// WithRemoteAddr also sets the remote address the endpoint is connected to.
+// ie if the packer tunnels through something which can't see the address.
+func WithRemoteAddr(addr net.Addr) HandleOption {
+	return func(r *rpc) {
+		r.remote = addr
+	}
+}
+
+// WithLogger let's you overwrite the stderr logger
+func WithLogger(l log.Logger) HandleOption {
+	return func(r *rpc) {
+		r.logger = l
+	}
+}
+
+func WithIsServer(yes bool) HandleOption {
+	return func(r *rpc) {
+		r.isServer = yes
+	}
+}
+
+// IsServer tells you if the passed endpoint is in the server-role or not.
+// i.e.: Did I call the remote: yes.
+// Was I called by the remote: no.
+// Q: don't want to extend Endpoint interface?
+func IsServer(edp Endpoint) bool {
+	rpc, ok := edp.(*rpc)
+	if !ok {
+		panic(fmt.Sprintf("not an *rpc: %T", edp))
+	}
+
+	return rpc.isServer
+}
+
 // Handle handles the connection of the packer using the specified handler.
-func Handle(pkr *Packer, handler Handler) Endpoint {
-	return handle(pkr, handler, nil, nil)
-}
-
-// HandleWithRemote also sets the remote address the endpoint is connected to
-// TODO: better passing through packer maybe?!
-func HandleWithRemote(pkr *Packer, handler Handler, addr net.Addr) Endpoint {
-	return handle(pkr, handler, addr, nil)
-}
-
-// HandleWithLogger same as Handle but let's you overwrite the stderr logger
-func HandleWithLogger(pkr *Packer, handler Handler, logger log.Logger) Endpoint {
-	return handle(pkr, handler, nil, logger)
-}
-
-func handle(pkr *Packer, handler Handler, remote net.Addr, logger log.Logger) Endpoint {
-	if logger == nil {
-		logger = log.NewLogfmtLogger(os.Stderr)
-		logger = level.NewFilter(logger, level.AllowInfo()) // only log info and above
-		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "unit", "muxrpc")
-	}
-	if remote == nil {
-		if ra, ok := pkr.c.(interface{ RemoteAddr() net.Addr }); ok {
-			remote = ra.RemoteAddr()
-		}
-	}
-	if remote != nil {
-		logger = log.With(logger, "remote", remote.String())
-	}
-
-	// TODO: rpc root context!? serve context?!
-	ctx := context.TODO()
-
-	ctx, cancel := context.WithCancel(ctx)
+func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 	r := &rpc{
-		logger: logger,
-		remote: remote,
-		pkr:    pkr,
-		reqs:   make(map[int32]*Request),
-		root:   handler,
+		pkr:  pkr,
+		reqs: make(map[int32]*Request),
+		root: handler,
+	}
 
-		cancel: cancel,
+	for _, o := range opts {
+		o(r)
+	}
+	// defaults
+	if r.logger == nil {
+		logger := log.NewLogfmtLogger(os.Stderr)
+		logger = level.NewFilter(logger, level.AllowInfo()) // only log info and above
+		r.logger = log.With(logger, "ts", log.DefaultTimestampUTC, "unit", "muxrpc")
+	}
+
+	if r.remote != nil {
+		// TODO: retract remote address
+		r.logger = log.With(r.logger, "remote", r.remote.String())
+	}
+
+	if r.serveCtx == nil {
+		r.serveCtx = context.Background()
 	}
 
 	bp, err := bufpool.NewChanPool()
@@ -69,7 +93,10 @@ func handle(pkr *Packer, handler Handler, remote net.Addr, logger log.Logger) En
 	}
 	r.bpool = bp
 
-	go handler.HandleConnect(ctx, r)
+	// we need to be able to cancel in any case
+	r.serveCtx, r.cancel = context.WithCancel(r.serveCtx)
+
+	go handler.HandleConnect(r.serveCtx, r)
 
 	return r
 }

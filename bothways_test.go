@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"go.cryptoscope.co/muxrpc/codec"
-	"go.cryptoscope.co/muxrpc/debug"
+	"go.cryptoscope.co/muxrpc/v2/codec"
+	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
 func TestBothwaysAsyncJSON(t *testing.T) {
@@ -553,20 +553,19 @@ func TestBothwaysSink(t *testing.T) {
 	rpc1 := Handle(dbgpacker, &fh1)
 	rpc2 := Handle(NewPacker(c2), &fh2)
 
-	ctx := context.Background()
-
 	go func() {
-		err := rpc1.(*rpc).Serve(ctx)
+		err := rpc1.(*rpc).Serve()
 		ckFatal(err)
 		close(serve1)
 	}()
 
 	go func() {
-		err := rpc2.(*rpc).Serve(ctx)
+		err := rpc2.(*rpc).Serve()
 		ckFatal(err)
 		close(serve2)
 	}()
 
+	ctx := context.Background()
 	go func() {
 		sink, err := rpc1.Sink(ctx, codec.FlagString, Method{"sinktest"})
 		ckFatal(err)

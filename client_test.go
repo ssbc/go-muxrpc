@@ -20,8 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
 
-	"go.cryptoscope.co/muxrpc/codec"
-	"go.cryptoscope.co/muxrpc/debug"
+	"go.cryptoscope.co/muxrpc/v2/codec"
+	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
 func TestJSGettingCalledSource(t *testing.T) {

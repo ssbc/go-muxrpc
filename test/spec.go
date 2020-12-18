@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"go.cryptoscope.co/muxrpc"
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 type Errorer interface {

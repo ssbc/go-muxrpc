@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc"
+	"go.cryptoscope.co/muxrpc/v2"
 )
 
 type FakeEndpoint struct {

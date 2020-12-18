@@ -7,7 +7,7 @@ import (
 	"io"
 	"net"
 
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 // Endpoint allows calling functions on the RPC peer.

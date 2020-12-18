@@ -10,10 +10,10 @@ import (
 	"reflect"
 	"sync"
 
-	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/codec"
-
 	"github.com/pkg/errors"
+	"go.cryptoscope.co/luigi"
+
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 var (

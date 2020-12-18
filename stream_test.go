@@ -8,12 +8,12 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/codec"
-
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.cryptoscope.co/luigi"
+
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 func TestStreamDuplex(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"go.cryptoscope.co/muxrpc/codec"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 func main() {

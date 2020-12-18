@@ -14,19 +14,18 @@ import (
 	"testing"
 	"time"
 
-	"go.cryptoscope.co/muxrpc/codec"
-
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
 
-	"go.cryptoscope.co/muxrpc/debug"
+	"go.cryptoscope.co/muxrpc/v2/codec"
+	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
 // for some reason you can't use t.Fatal // t.Error in goroutines... :-/
-func serve(ctx context.Context, r Server, errc chan<- error, done ...chan<- struct{}) {
-	err := r.Serve(ctx)
+func serve(_ context.Context, r Server, errc chan<- error, done ...chan<- struct{}) {
+	err := r.Serve()
 	if err != nil && errors.Cause(err) != context.Canceled {
 		errc <- errors.Wrap(err, "Serve failed")
 	}
