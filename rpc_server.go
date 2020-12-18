@@ -135,7 +135,7 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 	if pkt.Flag.Get(codec.FlagStream) {
 		switch req.Type {
 		case "duplex":
-			return nil, fmt.Errorf("TODO: duplex legacy stream")
+			req.Stream = &streamDuplex{src: req.source.AsStream(), snk: req.sink.AsStream()}
 		case "source":
 			req.Stream = req.sink.AsStream()
 		case "sink":

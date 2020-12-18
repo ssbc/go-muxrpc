@@ -13,7 +13,7 @@ import (
 )
 
 // AsStream returns a legacy stream adapter for luigi code
-func (bs *ByteSource) AsStream() Stream {
+func (bs *ByteSource) AsStream() *streamSource {
 	return &streamSource{
 		source: bs,
 		tipe:   nil, // nil for defaulting to empty-interface auto-typing
@@ -108,7 +108,7 @@ func (stream *streamSource) WithReq(req int32) {
 }
 
 // AsStream returns a legacy stream adapter for luigi code
-func (bs *ByteSink) AsStream() Stream {
+func (bs *ByteSink) AsStream() *streamSink {
 	return &streamSink{sink: bs}
 }
 
@@ -152,4 +152,37 @@ func (stream *streamSink) WithType(tipe interface{}) {
 func (stream *streamSink) WithReq(req int32) {
 	fmt.Printf("muxrpc/legacy: chaging request ID of sink to %d\n", req)
 	stream.sink.pkt.Req = req
+}
+
+type streamDuplex struct {
+	src *streamSource
+	snk *streamSink
+}
+
+func (stream *streamDuplex) Next(ctx context.Context) (interface{}, error) {
+	return stream.src.Next(ctx)
+}
+
+func (stream *streamDuplex) Pour(ctx context.Context, v interface{}) error {
+	return stream.snk.Pour(ctx, v)
+}
+
+func (stream *streamDuplex) Close() error {
+	return stream.snk.Close()
+}
+
+func (stream *streamDuplex) CloseWithError(e error) error {
+	return stream.snk.CloseWithError(e)
+}
+
+// WithType tells the stream in what type JSON data should be unmarshalled into
+func (stream *streamDuplex) WithType(tipe interface{}) {
+	stream.snk.WithType(tipe)
+	stream.src.WithType(tipe)
+}
+
+// WithReq tells the stream what request number should be used for sent messages
+func (stream *streamDuplex) WithReq(req int32) {
+	stream.snk.WithReq(req)
+	stream.src.WithReq(req)
 }

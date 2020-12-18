@@ -38,6 +38,7 @@ func serve(ctx context.Context, r Server, errc chan<- error, done ...chan<- stru
 func mkCheck(errc chan<- error) func(err error) {
 	return func(err error) {
 		if err != nil {
+			fmt.Println("chkerr:", err)
 			errc <- err
 		}
 	}
@@ -180,7 +181,7 @@ func TestAsync(t *testing.T) {
 	}
 }
 
-func TestSource(t *testing.T) {
+func TestSourceString(t *testing.T) {
 	r := require.New(t)
 	expRx := []string{
 		"you are a test",
@@ -213,7 +214,7 @@ func TestSource(t *testing.T) {
 	var fh2 FakeHandler
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "srctest" {
+		if len(req.Method) == 1 && req.Method[0] == "srcstring" {
 			for _, v := range expRx {
 				err := req.Stream.Pour(ctx, v)
 				ckFatal(errors.Wrap(err, "h2 pour errored"))
@@ -239,7 +240,7 @@ func TestSource(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc, serve1)
 	go serve(ctx, rpc2.(Server), errc, serve2)
 
-	src, err := rpc1.Source(ctx, codec.FlagString, Method{"srctest"})
+	src, err := rpc1.Source(ctx, codec.FlagString, Method{"srcstring"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,6 +261,119 @@ func TestSource(t *testing.T) {
 		r.Equal(len(exp), n, "%d expected different count", i)
 
 		r.Equal(exp, string(buf), "%d expected different value", i)
+	}
+
+	more := src.Next(ctx)
+	r.False(more, "expected no more")
+	r.NoError(src.Err(), "error from clean source")
+
+	time.Sleep(time.Millisecond)
+	err = rpc1.Terminate()
+	r.NoError(err)
+	t.Log("waiting for everything to shut down")
+	for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
+		select {
+		case err := <-errc:
+			if err != nil {
+				t.Fatalf("from errc: %+v", err)
+			}
+		case <-conn1:
+			t.Log("conn1 closed")
+			conn1 = nil
+		case <-conn2:
+			t.Log("conn2 closed")
+			conn2 = nil
+		case <-serve1:
+			t.Log("serve1 closed")
+			serve1 = nil
+		case <-serve2:
+			t.Log("serve2 closed")
+			serve2 = nil
+		}
+	}
+
+	r.Equal(0, fh1.HandleCallCallCount(), "peer did not call 'connect'")
+}
+
+func TestSourceJSON(t *testing.T) {
+	r := require.New(t)
+	expRx := []testType{
+		{Idx: 0, Foo: "you are a test"},
+		{Idx: 1, Foo: "you're a test"},
+		{Idx: 2, Foo: "your a test"},
+		{Idx: 3, Foo: "ur a test"},
+		{Idx: 4, Foo: "u test"},
+	}
+
+	c1, c2 := net.Pipe()
+
+	conn1 := make(chan struct{})
+	conn2 := make(chan struct{})
+	serve1 := make(chan struct{})
+	serve2 := make(chan struct{})
+
+	errc := make(chan error)
+	ckFatal := mkCheck(errc)
+
+	var fh1 FakeHandler
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Log("h1 called")
+		errc <- errors.Errorf("unexpected call to rpc1: %#v", req)
+	})
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1)
+	})
+
+	var fh2 FakeHandler
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		t.Logf("h2 called %+v\n", req)
+		if len(req.Method) == 1 && req.Method[0] == "srcjson" {
+			for _, v := range expRx {
+				err := req.Stream.Pour(ctx, v)
+				ckFatal(errors.Wrap(err, "h2 pour errored"))
+			}
+			err := req.Stream.Close()
+			ckFatal(errors.Wrap(err, "h2 end pour errored"))
+		}
+	})
+
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
+
+	tpath := filepath.Join("testrun", t.Name())
+	c1dbg := debug.Dump(tpath, c1)
+
+	rpc1 := Handle(NewPacker(c1dbg), &fh1)
+	rpc2 := Handle(NewPacker(c2), &fh2)
+
+	ctx := context.Background()
+
+	go serve(ctx, rpc1.(Server), errc, serve1)
+	go serve(ctx, rpc2.(Server), errc, serve2)
+
+	src, err := rpc1.Source(ctx, codec.FlagJSON, Method{"srcjson"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i, exp := range expRx {
+		more := src.Next(ctx)
+		r.True(more, "%d: expected more", i)
+
+		rd, done, err := src.Reader()
+		r.NoError(err)
+
+		var got testType
+		err = json.NewDecoder(rd).Decode(&got)
+		done()
+		r.NoError(err)
+
+		r.Equal(i, got.Idx, "%d had wrong index")
+		r.Equal(exp.Foo, got.Foo, "%d expected different value", i)
+		t.Log("okay:", i)
 	}
 
 	more := src.Next(ctx)
@@ -401,7 +515,7 @@ func TestSink(t *testing.T) {
 	}
 }
 
-func XTestDuplex(t *testing.T) {
+func XTestDuplexString(t *testing.T) {
 	r := require.New(t)
 	expRx := []string{
 		"you are a test",
@@ -438,7 +552,7 @@ func XTestDuplex(t *testing.T) {
 	var fh2 FakeHandler
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "whoami" {
+		if len(req.Method) == 1 && req.Method[0] == "testduplex" {
 			for _, exp := range expRx {
 				v, err := req.Stream.Next(ctx)
 				ckFatal(errors.Wrap(err, "pour errored"))
@@ -465,7 +579,12 @@ func XTestDuplex(t *testing.T) {
 		wg.Done()
 	})
 
-	rpc1 := Handle(NewPacker(c1), &fh1)
+	muxdbgPath := filepath.Join("testrun", t.Name())
+	os.RemoveAll(muxdbgPath)
+	os.MkdirAll(muxdbgPath, 0700)
+	packer := NewPacker(debug.Dump(muxdbgPath, c1))
+
+	rpc1 := Handle(packer, &fh1)
 	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
@@ -473,7 +592,7 @@ func XTestDuplex(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc)
 	go serve(ctx, rpc2.(Server), errc)
 
-	src, sink, err := rpc1.Duplex(ctx, codec.FlagString, Method{"whoami"})
+	src, sink, err := rpc1.Duplex(ctx, codec.FlagString, Method{"testduplex"})
 	r.NoError(err)
 
 	for _, v := range expRx {
@@ -786,7 +905,7 @@ func XTestDuplexHandlerStr(t *testing.T) {
 	r.Equal(0, fh1.HandleCallCallCount(), "peer h1 did call unexpectedly")
 }
 
-func XTestDuplexHandlerJSON(t *testing.T) {
+func TestDuplexHandlerJSON(t *testing.T) {
 	dbg := log.NewLogfmtLogger(os.Stderr)
 	r := require.New(t)
 	expRx := []string{

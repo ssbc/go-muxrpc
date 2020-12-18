@@ -122,6 +122,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ..
 	defer done()
 
 	// hmm.. we might need to poke at the flag of the muxrpc packet here, too
+	// because you can still transmit a string literal as JSON (then it will have quotes and maybe escape some characters differentnly)
 	switch tv := ret.(type) {
 	case *string:
 		var bs []byte
@@ -218,11 +219,13 @@ func (r *rpc) Duplex(ctx context.Context, tipe codec.Flag, method Method, args .
 		tipe: tipe,
 	}
 
+	req.Stream = &streamDuplex{bSrc.AsStream(), bSink.AsStream()}
+
 	if err := r.Do(ctx, req); err != nil {
 		return nil, nil, errors.Wrap(err, "error sending request")
 	}
 
-	return bSrc, bSink, fmt.Errorf("TODO: duplex as Stream")
+	return bSrc, bSink, nil
 }
 
 // Do executes a generic call
