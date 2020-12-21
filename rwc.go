@@ -8,18 +8,16 @@ import (
 
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
-
-	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 const ChunkSize = 65536
 
-func NewSinkWriter(sink luigi.Sink) io.WriteCloser {
+func NewSinkWriter(sink *ByteSink) io.WriteCloser {
 	return &sinkWriter{sink}
 }
 
 type sinkWriter struct {
-	sink luigi.Sink
+	sink *ByteSink
 }
 
 func (w *sinkWriter) Write(data []byte) (int, error) {
@@ -34,7 +32,7 @@ func (w *sinkWriter) Write(data []byte) (int, error) {
 			block = data
 		}
 
-		err := w.sink.Pour(context.TODO(), codec.Body(block))
+		_, err := w.sink.Write(block)
 		if err != nil {
 			return written, err
 		}
@@ -50,14 +48,15 @@ func (w *sinkWriter) Close() error {
 	return w.sink.Close()
 }
 
-func NewSourceReader(src luigi.Source) io.Reader {
+func NewSourceReader(src *ByteSource) io.Reader {
 	return &srcReader{
 		src: src,
 	}
 }
 
 type srcReader struct {
-	src luigi.Source
+	src *ByteSource
+
 	buf []byte
 }
 
@@ -68,19 +67,20 @@ func (r *srcReader) Read(data []byte) (int, error) {
 		return n, nil
 	}
 
-	v, err := r.src.Next(context.TODO())
-	if err != nil {
-		if luigi.IsEOS(err) {
+	more := r.src.Next(context.TODO())
+	if !more {
+		srcErr := r.src.Err()
+		if luigi.IsEOS(srcErr) {
 			return 0, io.EOF
 		}
 
-		return 0, errors.Wrap(err, "error getting next block")
+		return 0, errors.Wrap(srcErr, "error getting next block")
 	}
 
-	var ok bool
-	r.buf, ok = v.([]byte)
-	if !ok {
-		return 0, errors.Errorf("expected type %T but got %T", r.buf, v)
+	var err error
+	r.buf, err = r.src.Bytes()
+	if err != nil {
+		return 0, err
 	}
 
 	return r.Read(data)
