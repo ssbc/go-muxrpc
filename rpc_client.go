@@ -78,6 +78,12 @@ func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 		r.logger = log.With(logger, "ts", log.DefaultTimestampUTC, "unit", "muxrpc")
 	}
 
+	if r.remote == nil {
+		if ra, ok := pkr.c.(interface{ RemoteAddr() net.Addr }); ok {
+			r.remote = ra.RemoteAddr()
+		}
+	}
+
 	if r.remote != nil {
 		// TODO: retract remote address
 		r.logger = log.With(r.logger, "remote", r.remote.String())
