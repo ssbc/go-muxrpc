@@ -250,14 +250,12 @@ func TestSourceString(t *testing.T) {
 		r.True(more, "%d: expected more", i)
 
 		buf = make([]byte, len(exp))
-
-		rd, done, err := src.Reader()
+		err := src.Reader(func(rd io.Reader) error {
+			n, err := rd.Read(buf)
+			r.Equal(len(exp), n, "%d expected different count", i)
+			return err
+		})
 		r.NoError(err)
-
-		n, err := rd.Read(buf)
-		done()
-		r.NoError(err)
-		r.Equal(len(exp), n, "%d expected different count", i)
 
 		r.Equal(exp, string(buf), "%d expected different value", i)
 	}
@@ -362,12 +360,10 @@ func TestSourceJSON(t *testing.T) {
 		more := src.Next(ctx)
 		r.True(more, "%d: expected more", i)
 
-		rd, done, err := src.Reader()
-		r.NoError(err)
-
 		var got testType
-		err = json.NewDecoder(rd).Decode(&got)
-		done()
+		err := src.Reader(func(r io.Reader) error {
+			return json.NewDecoder(r).Decode(&got)
+		})
 		r.NoError(err)
 
 		r.Equal(i, got.Idx, "%d had wrong index")
@@ -603,13 +599,12 @@ func XTestDuplexString(t *testing.T) {
 		has := src.Next(ctx)
 		r.True(has, "expected more from source")
 
-		rd, done, err := src.Reader()
+		buf := make([]byte, len(exp))
+		err := src.Reader(func(r io.Reader) error {
+			_, err := r.Read(buf)
+			return err
+		})
 		r.NoError(err)
-
-		var buf = make([]byte, len(exp))
-		_, err = rd.Read(buf)
-		r.NoError(err)
-		done()
 
 		r.Equal(exp, string(buf), "wrong value from source")
 	}
@@ -873,13 +868,12 @@ func XTestDuplexHandlerStr(t *testing.T) {
 		has := src.Next(ctx)
 		r.True(has, "expected more from source")
 
-		rd, done, err := src.Reader()
+		buf := make([]byte, len(exp))
+		err := src.Reader(func(r io.Reader) error {
+			_, err := r.Read(buf)
+			return err
+		})
 		r.NoError(err)
-
-		var buf = make([]byte, len(exp))
-		_, err = rd.Read(buf)
-		r.NoError(err)
-		done()
 
 		r.Equal(exp, string(buf), "wrong value from source")
 	}
@@ -986,13 +980,12 @@ func TestDuplexHandlerJSON(t *testing.T) {
 		has := src.Next(ctx)
 		r.True(has, "expected more from source")
 
-		rd, done, err := src.Reader()
+		var ret testStruct
+		err := src.Reader(func(r io.Reader) error {
+			return json.NewDecoder(r).Decode(&ret)
+		})
 		r.NoError(err)
 
-		var ret testStruct
-		err = json.NewDecoder(rd).Decode(&ret)
-		r.NoError(err)
-		done()
 		r.EqualValues(exp, ret.Str, "wrong value from source")
 	}
 

@@ -5,6 +5,7 @@ package muxrpc
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -363,18 +364,14 @@ func TestBothwaysSource(t *testing.T) {
 			}
 
 			buf = make([]byte, len(exp))
-
-			rd, done, err := src.Reader()
+			err := src.Reader(func(r io.Reader) error {
+				_, err := r.Read(buf)
+				return err
+			})
 			if err != nil {
 				ckFatal(err)
 				return
 			}
-
-			n, err := rd.Read(buf)
-			if n != len(exp) {
-				ckFatal(errors.Errorf("expected %d bytes but got %d", n, len(exp)))
-			}
-			done()
 
 			if v := string(buf); v != exp {
 				err = errors.Errorf("unexpected response message %q, expected %v", v, exp)
@@ -415,18 +412,20 @@ func TestBothwaysSource(t *testing.T) {
 			}
 
 			buf = make([]byte, len(exp))
-
-			rd, done, err := src.Reader()
+			err := src.Reader(func(r io.Reader) error {
+				n, err := r.Read(buf)
+				if err != nil {
+					return err
+				}
+				if n != len(exp) {
+					return errors.Errorf("expected %d bytes but got %d", n, len(exp))
+				}
+				return nil
+			})
 			if err != nil {
 				ckFatal(err)
 				return
 			}
-
-			n, err := rd.Read(buf)
-			if n != len(exp) {
-				ckFatal(errors.Errorf("expected %d bytes but got %d", n, len(exp)))
-			}
-			done()
 
 			if v := string(buf); v != exp {
 				err = errors.Errorf("unexpected response message %q, expected %v", v, exp)
@@ -726,13 +725,12 @@ func XTestBothwayDuplex(t *testing.T) {
 				return
 			}
 
-			rd, done, err := src.Reader()
-			ckFatal(err)
-
 			var buf = make([]byte, len(exp))
-			_, err = rd.Read(buf)
+			err := src.Reader(func(r io.Reader) error {
+				_, err := r.Read(buf)
+				return err
+			})
 			ckFatal(err)
-			done()
 
 			if exp != string(buf) {
 				ckFatal(fmt.Errorf("wrong value from source (exp: %q - got %q", exp, string(buf)))
@@ -761,13 +759,16 @@ func XTestBothwayDuplex(t *testing.T) {
 				return
 			}
 
-			rd, done, err := src.Reader()
-			ckFatal(err)
+			buf := make([]byte, len(exp))
+			err := src.Reader(func(r io.Reader) error {
+				_, err := r.Read(buf)
+				return err
+			})
+			if err != nil {
+				ckFatal(err)
+				return
+			}
 
-			var buf = make([]byte, len(exp))
-			_, err = rd.Read(buf)
-			ckFatal(err)
-			done()
 			v := string(buf)
 			if v != exp {
 				err = errors.Errorf("expected %v, got %v", exp, v)

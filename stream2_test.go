@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -49,13 +50,13 @@ func TestSourceBytesFill(t *testing.T) {
 		has := bs.Next(ctx)
 		r.True(has, "expected more from source")
 
-		rd, done, err := bs.Reader()
+		err := bs.Reader(func(rd io.Reader) error {
+			n, err := rd.Read(buf)
+			r.NoError(err)
+			r.Equal(3, n)
+			return nil
+		})
 		r.NoError(err)
-
-		n, err := rd.Read(buf)
-		r.NoError(err)
-		done()
-		r.Equal(3, n)
 		r.Equal(exp[i], buf)
 	}
 }
@@ -81,13 +82,14 @@ func TestSourceBytesOneByOne(t *testing.T) {
 		err := bs.consume(uint32(len(exp[i])), bytes.NewReader(exp[i]))
 		r.NoError(err, "failed to consume %d", i)
 
-		rd, done, err := bs.Reader()
+		err = bs.Reader(func(rd io.Reader) error {
+			n, err := rd.Read(buf)
+			r.NoError(err)
+			r.Equal(3, n)
+			return nil
+		})
 		r.NoError(err)
 
-		n, err := rd.Read(buf)
-		r.NoError(err)
-		done()
-		r.Equal(3, n)
 		r.Equal(exp[i], buf)
 	}
 
@@ -121,13 +123,14 @@ func TestSourceBytesDontReadAll(t *testing.T) {
 		has := bs.Next(ctx)
 		r.True(has, "expected more from source")
 
-		rd, done, err := bs.Reader()
+		err = bs.Reader(func(rd io.Reader) error {
+			n, err := rd.Read(buf)
+			r.NoError(err)
+			r.Equal(1, n)
+			return nil
+		})
 		r.NoError(err)
 
-		n, err := rd.Read(buf)
-		r.NoError(err)
-		done()
-		r.Equal(1, n)
 		a.Equal(exp[i][0], buf[0])
 	}
 }
@@ -339,13 +342,15 @@ func BenchmarkSourceByte(b *testing.B) {
 
 		expIdx := 0
 		for src.Next(ctx) {
-			rd, done, err := src.Reader()
-			r.NoError(err)
 
-			n, err := rd.Read(buf)
-			r.NoError(err, "failed to read %d", expIdx)
-			done()
-			buf = buf[:n]
+			err = src.Reader(func(rd io.Reader) error {
+				n, err := rd.Read(buf)
+				r.NoError(err)
+				r.Equal(3, n)
+				buf = buf[:n]
+				return nil
+			})
+			r.NoError(err)
 
 			var obj testType
 

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"os"
@@ -148,32 +149,29 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ..
 		return req.source.Err()
 	}
 
-	rd, done, err := req.source.Reader()
-	if err != nil {
-		return err
-	}
-	defer done()
-
-	// hmm.. we might need to poke at the flag of the muxrpc packet here, too
-	// because you can still transmit a string literal as JSON (then it will have quotes and maybe escape some characters differentnly)
-	switch tv := ret.(type) {
-	case *string:
-		var bs []byte
-		bs, err = ioutil.ReadAll(rd)
-		if err != nil {
-			return fmt.Errorf("muxrpc: error decoding json from request source: %w", err)
+	processEntry := func(rd io.Reader) error {
+		// hmm.. we might need to poke at the flag of the muxrpc packet here, too
+		// because you can still transmit a string literal as JSON (then it will have quotes and maybe escape some characters differentnly)
+		switch tv := ret.(type) {
+		case *string:
+			var bs []byte
+			bs, err = ioutil.ReadAll(rd)
+			if err != nil {
+				return fmt.Errorf("muxrpc: error decoding json from request source: %w", err)
+			}
+			level.Debug(r.logger).Log("asynctype", "str", "err", err, "len", len(bs))
+			*tv = string(bs)
+		default:
+			level.Debug(r.logger).Log("asynctype", "any")
+			err = json.NewDecoder(rd).Decode(ret)
+			if err != nil {
+				return fmt.Errorf("muxrpc: error decoding json from request source: %w", err)
+			}
 		}
-		level.Debug(r.logger).Log("asynctype", "str", "err", err, "len", len(bs))
-		*tv = string(bs)
-	default:
-		level.Debug(r.logger).Log("asynctype", "any")
-		err = json.NewDecoder(rd).Decode(ret)
-		if err != nil {
-			return fmt.Errorf("muxrpc: error decoding json from request source: %w", err)
-		}
+		return nil
 	}
 
-	return nil
+	return req.source.Reader(processEntry)
 }
 
 func (r *rpc) Source(ctx context.Context, tipe codec.Flag, method Method, args ...interface{}) (*ByteSource, error) {

@@ -117,15 +117,21 @@ func (bs *ByteSource) Next(ctx context.Context) bool {
 	}
 }
 
-// Reader returns a (limited) reader for the next segment. Since the stream can't be written while it's read, the 2nd return value unlocks the mutex.
-// TODO: instead of returning a reader and the done method, we could take a func(io.Reader) as an argument and do the done() call when fn returns
-func (bs *ByteSource) Reader() (io.Reader, func(), error) {
+// ReadFn is what a ByteSource needs for it's ReadFn. The passed reader is only valid during the call to it.
+type ReadFn func(io.Reader) error
+
+// Reader passes a (limited) reader for the next segment to the passed .
+// Since the stream can't be written while it's read, the reader is only valid during the call to the passed function.
+func (bs *ByteSource) Reader(fn ReadFn) error {
 	_, rd, err := bs.buf.getNextFrameReader()
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
+
 	bs.buf.mu.Lock()
-	return rd, bs.buf.mu.Unlock, nil
+	err = fn(rd)
+	bs.buf.mu.Unlock()
+	return err
 }
 
 // Bytes returns the full slice of bytes from the next frame.

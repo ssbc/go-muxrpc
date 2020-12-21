@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"reflect"
 
 	"go.cryptoscope.co/luigi"
@@ -56,15 +57,15 @@ func (stream *streamSource) Next(ctx context.Context) (interface{}, error) {
 			ptrType = true
 		}
 
-		rd, done, err := stream.source.Reader()
+		err := stream.source.Reader(func(rd io.Reader) error {
+			err := json.NewDecoder(rd).Decode(&dst)
+			if err != nil {
+				return fmt.Errorf("muxrcp: failed to decode json from source: %w", err)
+			}
+			return nil
+		})
 		if err != nil {
 			return nil, err
-		}
-		defer done()
-
-		err = json.NewDecoder(rd).Decode(&dst)
-		if err != nil {
-			return nil, fmt.Errorf("muxrcp: failed to decode json from source: %w", err)
 		}
 
 		if !ptrType {

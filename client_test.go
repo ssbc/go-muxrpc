@@ -1,4 +1,4 @@
-// +build interop_nodejs
+// -build interop_nodejs
 
 // SPDX-License-Identifier: MIT
 
@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -346,15 +347,12 @@ func TestJSSource(t *testing.T) {
 		more := src.Next(ctx)
 		r.True(more, "src.Next %d", i)
 
-		rd, done, err := src.Reader()
-		r.NoError(err)
-
-		dec := json.NewDecoder(rd)
-
 		var v obj
-		err = dec.Decode(&v)
+		err := src.Reader(func(r io.Reader) error {
+			return json.NewDecoder(r).Decode(&v)
+		})
 		r.NoError(err, "decode: %d", i)
-		done()
+
 		r.Equal(i, v.A, "result value: %d", i)
 	}
 
