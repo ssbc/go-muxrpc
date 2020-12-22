@@ -14,6 +14,7 @@ import (
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
+// ByteSink exposes a WriteCloser which wrapps each write into a muxrpc packet for that stream with the correct flags set.
 type ByteSink struct {
 	w *codec.Writer
 

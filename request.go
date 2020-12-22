@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -14,6 +13,46 @@ import (
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
+
+// RequestEncoding hides the specifics of codec.Flag
+type RequestEncoding uint
+
+// binary, string and JSON are the three supported format types.
+// Don't ask me why we have string and binary, this just copies the javascript secifics.
+const (
+	TypeBinary RequestEncoding = iota
+	TypeString
+	TypeJSON
+)
+
+// IsValid returns false if the type is not known.
+func (rt RequestEncoding) IsValid() bool {
+	if rt < 0 {
+		return false
+	}
+
+	if rt > TypeJSON {
+		return false
+	}
+
+	return true
+}
+
+func (rt RequestEncoding) asCodecFlag() (codec.Flag, error) {
+	if !rt.IsValid() {
+		return 0, fmt.Errorf("muxrpc: invalid request encoding %d", rt)
+	}
+	switch rt {
+	case TypeBinary:
+		return codec.FlagBinary, nil
+	case TypeString:
+		return codec.FlagString, nil
+	case TypeJSON:
+		return codec.FlagJSON, nil
+	default:
+		return 0, fmt.Errorf("muxrpc: invalid request encoding %d", rt)
+	}
+}
 
 type Method []string
 
@@ -121,19 +160,7 @@ func (req *Request) CloseWithError(cerr error) error {
 		req.source.Cancel(cerr)
 		req.sink.Cancel(cerr)
 	}
-
-	// we really need to make sure we shut down the streams.
-	// "you can't" only applies for high-level abstractions.
-	// this makes sure the resources go away.
-	s, ok := req.Stream.(*stream)
-	if !ok {
-		return nil
-	}
-	err := s.doCloseWithError(cerr)
-	if errors.Cause(err) == os.ErrClosed || IsSinkClosed(err) {
-		return nil
-	}
-	return errors.Wrap(err, "muxrpc: failed to close request stream")
+	return nil
 }
 
 func (req *Request) Close() error {

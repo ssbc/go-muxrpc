@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
 
-	"go.cryptoscope.co/muxrpc/v2/codec"
 	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
@@ -94,7 +93,7 @@ func BuildTestAsync(pkr1, pkr2 *Packer) func(*testing.T) {
 		go serve(ctx, rpc2.(Server), errc, serve2)
 
 		var v string
-		err := rpc1.Async(ctx, &v, Method{"whoami"})
+		err := rpc1.Async(ctx, &v, TypeString, Method{"whoami"})
 		r.NoError(err)
 		r.Equal("you are a test", v)
 
@@ -239,7 +238,7 @@ func TestSourceString(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc, serve1)
 	go serve(ctx, rpc2.(Server), errc, serve2)
 
-	src, err := rpc1.Source(ctx, codec.FlagString, Method{"srcstring"})
+	src, err := rpc1.Source(ctx, TypeString, Method{"srcstring"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +350,7 @@ func TestSourceJSON(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc, serve1)
 	go serve(ctx, rpc2.(Server), errc, serve2)
 
-	src, err := rpc1.Source(ctx, codec.FlagJSON, Method{"srcjson"})
+	src, err := rpc1.Source(ctx, TypeJSON, Method{"srcjson"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +468,7 @@ func TestSink(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc, serve1)
 	go serve(ctx, rpc2.(Server), errc, serve2)
 
-	sink, err := rpc1.Sink(ctx, codec.FlagJSON, Method{"sinktest"})
+	sink, err := rpc1.Sink(ctx, TypeJSON, Method{"sinktest"})
 	r.NoError(err)
 
 	enc := json.NewEncoder(sink)
@@ -587,7 +586,7 @@ func XTestDuplexString(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc)
 	go serve(ctx, rpc2.(Server), errc)
 
-	src, sink, err := rpc1.Duplex(ctx, codec.FlagString, Method{"testduplex"})
+	src, sink, err := rpc1.Duplex(ctx, TypeString, Method{"testduplex"})
 	r.NoError(err)
 
 	for _, v := range expRx {
@@ -650,10 +649,10 @@ func XTestErrorAsync(t *testing.T) {
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
-			err := req.Stream.CloseWithError(errors.New("omg an error!"))
+			err := req.Stream.CloseWithError(errors.New("omg an error"))
 			ckFatal(err)
 		} else {
-			err := req.Stream.CloseWithError(errors.New("unexpected !"))
+			err := req.Stream.CloseWithError(errors.New("unexpected"))
 			ckFatal(err)
 		}
 	})
@@ -675,11 +674,11 @@ func XTestErrorAsync(t *testing.T) {
 
 	go func() {
 		var v string
-		err := rpc1.Async(ctx, &v, Method{"whoami"})
+		err := rpc1.Async(ctx, &v, TypeString, Method{"whoami"})
 		if err == nil {
 			ckFatal(fmt.Errorf("expected an error"))
-		} else if errors.Cause(err).Error() != "omg an error!" {
-			ckFatal(fmt.Errorf("expected error %q, got %q", "omg an error!", errors.Cause(err)))
+		} else if errors.Cause(err).Error() != "omg an error" {
+			ckFatal(fmt.Errorf("expected error %q, got %q", "omg an error", errors.Cause(err)))
 		}
 
 		cerr := errors.Cause(err)
@@ -688,7 +687,7 @@ func XTestErrorAsync(t *testing.T) {
 			t.Fatalf("not a callerror! %T", cerr)
 		}
 
-		if e.Message != "omg an error!" {
+		if e.Message != "omg an error" {
 			ckFatal(fmt.Errorf("unexpected error message"))
 		}
 
@@ -856,7 +855,7 @@ func XTestDuplexHandlerStr(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc)
 	go serve(ctx, rpc2.(Server), errc)
 
-	src, sink, err := rpc1.Duplex(ctx, codec.FlagString, Method{"magic"})
+	src, sink, err := rpc1.Duplex(ctx, TypeString, Method{"magic"})
 	r.NoError(err)
 
 	for _, v := range expRx {
@@ -962,7 +961,7 @@ func TestDuplexHandlerJSON(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc)
 	go serve(ctx, rpc2.(Server), errc)
 
-	src, sink, err := rpc1.Duplex(ctx, codec.FlagJSON, Method{"magic"})
+	src, sink, err := rpc1.Duplex(ctx, TypeJSON, Method{"magic"})
 	r.NoError(err)
 
 	enc := json.NewEncoder(sink)

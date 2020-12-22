@@ -19,6 +19,7 @@ import (
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
+// ByteSource is inspired by sql.Rows but without the Scan(), it just reads plain []bytes, one per muxrpc packet.
 type ByteSource struct {
 	bpool bufpool.FreeList
 	buf   frameBuffer
@@ -47,6 +48,8 @@ func newByteSource(ctx context.Context, pool bufpool.FreeList) *ByteSource {
 	return bs
 }
 
+// Cancel stops reading and terminates the request.
+// Sometimes we want to close a query early before it is drained.
 func (bs *ByteSource) Cancel(err error) {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
@@ -60,6 +63,7 @@ func (bs *ByteSource) Cancel(err error) {
 	bs.CloseWithError(err)
 }
 
+// CloseWithError sends a EndErr packet back with the passed error inside.
 func (bs *ByteSource) CloseWithError(err error) error {
 	// cant lock here because we might block in next
 	if err == nil {
@@ -68,13 +72,17 @@ func (bs *ByteSource) CloseWithError(err error) error {
 		bs.failed = err
 	}
 	close(bs.closed)
+	bs.bpool.Put(bs.buf.store)
 	return nil
 }
 
+// Close returns the buffer for this sourc to the pool
+// TODO: remove close and closewitherr?!
 func (bs *ByteSource) Close() error {
 	return bs.CloseWithError(nil)
 }
 
+// Err returns nill or an error when processing fails or the context was canceled
 func (bs *ByteSource) Err() error {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
@@ -86,7 +94,7 @@ func (bs *ByteSource) Err() error {
 	return bs.failed
 }
 
-// TODO: might need to add size to return
+// Next blocks until there are new muxrpc frames for this stream
 func (bs *ByteSource) Next(ctx context.Context) bool {
 	bs.mu.Lock()
 	if bs.failed != nil && bs.buf.frames == 0 {
@@ -118,7 +126,7 @@ func (bs *ByteSource) Next(ctx context.Context) bool {
 }
 
 // ReadFn is what a ByteSource needs for it's ReadFn. The passed reader is only valid during the call to it.
-type ReadFn func(io.Reader) error
+type ReadFn func(r io.Reader) error
 
 // Reader passes a (limited) reader for the next segment to the passed .
 // Since the stream can't be written while it's read, the reader is only valid during the call to the passed function.

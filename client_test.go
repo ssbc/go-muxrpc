@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
 
-	"go.cryptoscope.co/muxrpc/v2/codec"
 	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
@@ -76,7 +75,7 @@ func TestJSGettingCalledSource(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc)
 
 	var v string
-	err = rpc1.Async(ctx, &v, Method{"callme", "source"}, 25)
+	err = rpc1.Async(ctx, &v, TypeString, Method{"callme", "source"}, 25)
 	r.NoError(err, "rcp Async call")
 
 	r.Equal("call done", v, "expected call result")
@@ -133,11 +132,11 @@ func TestJSGettingCalledAsync(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc, done)
 
 	var v string
-	err = rpc1.Async(ctx, &v, Method{"callme", "async"})
+	err = rpc1.Async(ctx, &v, TypeString, Method{"callme", "async"})
 	r.NoError(err, "rcp Async call")
 	r.Equal(v, "call done", "expected call result")
 
-	err = rpc1.Async(ctx, &v, Method{"finalCall"}, 1000)
+	err = rpc1.Async(ctx, &v, TypeString, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal(v, "ty", "expected call result")
 
@@ -185,17 +184,17 @@ func TestJSSyncString(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc, done)
 
 	var v1 string
-	err = rpc1.Async(ctx, &v1, Method{"version"}, "some", "params", 23)
+	err = rpc1.Async(ctx, &v1, TypeString, Method{"version"}, "some", "params", 23)
 	r.NoError(err, "rcp sync call")
 	r.Equal("some/version@1.2.3", v1, "expected call result")
 
 	var v2 string
-	err = rpc1.Async(ctx, &v2, Method{"version"}, "wrong", "params", 42)
+	err = rpc1.Async(ctx, &v2, TypeString, Method{"version"}, "wrong", "params", 42)
 	r.Error(err, "rcp sync call")
 	r.Equal("", v2, "unexpected call result")
 
 	var v3 string
-	err = rpc1.Async(ctx, &v3, Method{"finalCall"}, 2000)
+	err = rpc1.Async(ctx, &v3, TypeString, Method{"finalCall"}, 2000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal("ty", v3, "expected call result")
 
@@ -241,11 +240,11 @@ func TestJSAsyncString(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc, done)
 
 	var v string
-	err = rpc1.Async(ctx, &v, Method{"hello"}, "world", "bob")
+	err = rpc1.Async(ctx, &v, TypeString, Method{"hello"}, "world", "bob")
 	r.NoError(err, "rcp Async call")
 	r.Equal(v, "hello, world and bob!", "expected call result")
 
-	err = rpc1.Async(ctx, &v, Method{"finalCall"}, 1000)
+	err = rpc1.Async(ctx, &v, TypeString, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal(v, "ty", "expected call result")
 
@@ -290,12 +289,12 @@ func TestJSAsyncObject(t *testing.T) {
 		With string `json:"with"`
 	}
 
-	err = rpc1.Async(ctx, &resp, Method{"object"})
+	err = rpc1.Async(ctx, &resp, TypeJSON, Method{"object"})
 	r.NoError(err, "rcp Async call")
 	r.Equal("fields!", resp.With, "wrong call response")
 
 	var str string
-	err = rpc1.Async(ctx, &str, Method{"finalCall"}, 1000)
+	err = rpc1.Async(ctx, &str, TypeString, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal("ty", str, "expected call result")
 
@@ -340,7 +339,7 @@ func TestJSSource(t *testing.T) {
 		A int
 	}
 
-	src, err := rpc1.Source(ctx, codec.FlagJSON, Method{"stuff"})
+	src, err := rpc1.Source(ctx, TypeJSON, Method{"stuff"})
 	r.NoError(err, "rcp Async call")
 
 	for i := 1; i < 5; i++ {
@@ -361,7 +360,7 @@ func TestJSSource(t *testing.T) {
 	r.NoError(src.Err())
 
 	var str string
-	err = rpc1.Async(ctx, &str, Method{"finalCall"}, 1000)
+	err = rpc1.Async(ctx, &str, TypeString, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal("ty", str, "expected call result")
 
@@ -403,7 +402,7 @@ func XTestJSDuplex(t *testing.T) {
 
 	go serve(ctx, rpc1.(Server), errc, done)
 
-	src, snk, err := rpc1.Duplex(ctx, codec.FlagJSON, Method{"magic"})
+	src, snk, err := rpc1.Duplex(ctx, TypeJSON, Method{"magic"})
 	r.NoError(err, "rcp Async call")
 	fmt.Println("command started")
 	i := 0
@@ -481,13 +480,13 @@ func XTestJSDuplexToUs(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc)
 
 	var ret string
-	err = rpc1.Async(ctx, &ret, Method{"callme", "magic"})
+	err = rpc1.Async(ctx, &ret, TypeString, Method{"callme", "magic"})
 	r.NoError(err, "nodejs startup")
 	r.EqualValues("yey", ret)
 
 	r.NoError(<-h.failed)
 
-	err = rpc1.Async(ctx, &ret, Method{"finalCall"}, 2000)
+	err = rpc1.Async(ctx, &ret, TypeString, Method{"finalCall"}, 2000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal("ty", ret, "expected call result")
 
@@ -530,12 +529,12 @@ func XTestJSSupportAbort(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc)
 
 	var ret string
-	err = rpc1.Async(ctx, &ret, Method{"callme", "withAbort"}, h.want)
+	err = rpc1.Async(ctx, &ret, TypeString, Method{"callme", "withAbort"}, h.want)
 	r.NoError(err, "call failed")
 	r.EqualValues("thanks!", ret)
 
 	var ret2 string
-	err = rpc1.Async(ctx, &ret2, Method{"finalCall"}, 1000)
+	err = rpc1.Async(ctx, &ret2, TypeString, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
 	r.Equal("ty", ret2, "expected correct call result")
 

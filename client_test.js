@@ -62,7 +62,12 @@ var server = MRPC(api, api)({
     },
     async: function (cb) {
       server.hello(function (err, greet) {
-        console.error('callme:async:ok')
+        if (err) {
+          console.error('callme:async:not okay')
+          throw err
+        } else {
+          console.warn('callme:async:ok')
+        }
         cb(err, 'call done')
       })
     },

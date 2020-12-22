@@ -18,8 +18,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 func TestSourceBytesFill(t *testing.T) {
@@ -255,7 +253,7 @@ func testSourceBytesWithItems(expRx []map[string]interface{}) func(t *testing.T)
 		rpc1 := setupSource(t, expRx)
 
 		ctx := context.Background()
-		src, err := rpc1.Source(ctx, codec.FlagJSON, Method{"srctest"})
+		src, err := rpc1.Source(ctx, TypeJSON, Method{"srctest"})
 		r.NoError(err)
 
 		expIdx := 0
@@ -288,7 +286,7 @@ func testSourceLegacyWithItems(expRx []map[string]interface{}) func(t *testing.T
 
 		rpc := setupSource(t, expRx)
 		ctx := context.Background()
-		src, err := rpc.Source(ctx, codec.FlagJSON, Method{"srctest"})
+		src, err := rpc.Source(ctx, TypeJSON, Method{"srctest"})
 		r.NoError(err)
 
 		expIdx := 0
@@ -337,7 +335,7 @@ func BenchmarkSourceByte(b *testing.B) {
 	b.ResetTimer()
 	buf := make([]byte, 1024)
 	for bi := 0; bi < b.N; bi++ {
-		src, err := rpc.Source(ctx, codec.FlagJSON, Method{"srctest"})
+		src, err := rpc.Source(ctx, TypeJSON, Method{"srctest"})
 		r.NoError(err)
 
 		expIdx := 0

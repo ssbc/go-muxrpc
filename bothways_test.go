@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"go.cryptoscope.co/muxrpc/v2/codec"
 	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
@@ -77,7 +76,7 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 
 	go func() {
 		var v testMsg
-		err := rpc1.Async(ctx, &v, Method{"asyncObj"})
+		err := rpc1.Async(ctx, &v, TypeJSON, Method{"asyncObj"})
 		ckFatal(err)
 
 		if v.Foo != "you are a test" {
@@ -103,7 +102,7 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 
 	go func() {
 		var v testMsg
-		err := rpc2.Async(ctx, &v, Method{"asyncObj"})
+		err := rpc2.Async(ctx, &v, TypeJSON, Method{"asyncObj"})
 		ckFatal(err)
 
 		if v.Foo != "you are a test" {
@@ -210,7 +209,7 @@ func TestBothwaysAsyncString(t *testing.T) {
 
 	go func() {
 		var v string
-		err := rpc1.Async(ctx, &v, Method{"testasync"})
+		err := rpc1.Async(ctx, &v, TypeString, Method{"testasync"})
 		ckFatal(err)
 
 		if v != "you are a test" {
@@ -231,7 +230,7 @@ func TestBothwaysAsyncString(t *testing.T) {
 
 	go func() {
 		var v string
-		err := rpc2.Async(ctx, &v, Method{"testasync"})
+		err := rpc2.Async(ctx, &v, TypeString, Method{"testasync"})
 		ckFatal(err)
 
 		if v != "you are a test" {
@@ -353,7 +352,7 @@ func TestBothwaysSource(t *testing.T) {
 	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	go func() {
-		src, err := rpc1.Source(ctx, codec.FlagString, Method{"whoami"})
+		src, err := rpc1.Source(ctx, TypeString, Method{"whoami"})
 		ckFatal(err)
 
 		var buf []byte
@@ -401,7 +400,7 @@ func TestBothwaysSource(t *testing.T) {
 	}()
 
 	go func() {
-		src, err := rpc2.Source(ctx, codec.FlagString, Method{"whoami"})
+		src, err := rpc2.Source(ctx, TypeString, Method{"whoami"})
 		ckFatal(err)
 
 		var buf []byte
@@ -566,7 +565,7 @@ func TestBothwaysSink(t *testing.T) {
 
 	ctx := context.Background()
 	go func() {
-		sink, err := rpc1.Sink(ctx, codec.FlagString, Method{"sinktest"})
+		sink, err := rpc1.Sink(ctx, TypeString, Method{"sinktest"})
 		ckFatal(err)
 
 		for _, v := range expRx {
@@ -585,7 +584,7 @@ func TestBothwaysSink(t *testing.T) {
 	}()
 
 	go func() {
-		sink, err := rpc2.Sink(ctx, codec.FlagString, Method{"whoami"})
+		sink, err := rpc2.Sink(ctx, TypeString, Method{"whoami"})
 		ckFatal(err)
 
 		for _, v := range expRx {
@@ -710,7 +709,7 @@ func XTestBothwayDuplex(t *testing.T) {
 	go serve(ctx, rpc2.(Server), errc)
 
 	go func() {
-		src, sink, err := rpc1.Duplex(ctx, codec.FlagString, Method{"test", "duplex"})
+		src, sink, err := rpc1.Duplex(ctx, TypeString, Method{"test", "duplex"})
 		ckFatal(err)
 
 		for _, v := range expRx {
@@ -744,7 +743,7 @@ func XTestBothwayDuplex(t *testing.T) {
 	}()
 
 	go func() {
-		src, sink, err := rpc2.Duplex(ctx, codec.FlagString, Method{"whoami"})
+		src, sink, err := rpc2.Duplex(ctx, TypeString, Method{"whoami"})
 		ckFatal(err)
 
 		for _, v := range expRx {

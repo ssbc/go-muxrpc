@@ -124,7 +124,7 @@ func marshalCallArgs(args []interface{}) ([]byte, error) {
 }
 
 // Async does an aync call on the remote.
-func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ...interface{}) error {
+func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, method Method, args ...interface{}) error {
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return err
@@ -141,7 +141,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ..
 	}
 	req.Stream = req.source.AsStream()
 
-	if err := r.Do(ctx, req); err != nil {
+	if err := r.start(ctx, req); err != nil {
 		return fmt.Errorf("muxrpc: error sending request: %w", err)
 	}
 
@@ -174,8 +174,13 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, method Method, args ..
 	return req.source.Reader(processEntry)
 }
 
-func (r *rpc) Source(ctx context.Context, tipe codec.Flag, method Method, args ...interface{}) (*ByteSource, error) {
+func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, args ...interface{}) (*ByteSource, error) {
 	argData, err := marshalCallArgs(args)
+	if err != nil {
+		return nil, err
+	}
+
+	encFlag, err := re.asCodecFlag()
 	if err != nil {
 		return nil, err
 	}
@@ -189,24 +194,32 @@ func (r *rpc) Source(ctx context.Context, tipe codec.Flag, method Method, args .
 		Method:  method,
 		RawArgs: argData,
 	}
+
 	req.Stream = req.source.AsStream()
 
-	if err := r.Do(ctx, req); err != nil {
+	if err := r.start(ctx, req); err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
+
+	req.sink.pkt.Flag = req.sink.pkt.Flag.Set(encFlag)
 
 	return req.source, nil
 }
 
 // Sink does a sink call on the remote.
-func (r *rpc) Sink(ctx context.Context, tipe codec.Flag, method Method, args ...interface{}) (*ByteSink, error) {
+func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args ...interface{}) (*ByteSink, error) {
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return nil, err
 	}
 
+	encFlag, err := re.asCodecFlag()
+	if err != nil {
+		return nil, err
+	}
+
 	bs := newByteSink(ctx, r.pkr.w)
-	bs.pkt.Flag = bs.pkt.Flag.Set(tipe)
+	bs.pkt.Flag = bs.pkt.Flag.Set(encFlag)
 
 	req := &Request{
 		Type: "sink",
@@ -219,7 +232,7 @@ func (r *rpc) Sink(ctx context.Context, tipe codec.Flag, method Method, args ...
 	}
 	req.Stream = bs.AsStream()
 
-	if err := r.Do(ctx, req); err != nil {
+	if err := r.start(ctx, req); err != nil {
 		return nil, errors.Wrap(err, "error sending request")
 	}
 
@@ -227,16 +240,22 @@ func (r *rpc) Sink(ctx context.Context, tipe codec.Flag, method Method, args ...
 }
 
 // Duplex does a duplex call on the remote.
-func (r *rpc) Duplex(ctx context.Context, tipe codec.Flag, method Method, args ...interface{}) (*ByteSource, *ByteSink, error) {
+func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, args ...interface{}) (*ByteSource, *ByteSink, error) {
 
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	encFlag, err := re.asCodecFlag()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	bSrc := newByteSource(ctx, r.bpool)
+
 	bSink := newByteSink(ctx, r.pkr.w)
-	bSink.pkt.Flag = bSink.pkt.Flag.Set(tipe)
+	bSink.pkt.Flag = bSink.pkt.Flag.Set(encFlag)
 
 	req := &Request{
 		Type: "duplex",
@@ -246,23 +265,19 @@ func (r *rpc) Duplex(ctx context.Context, tipe codec.Flag, method Method, args .
 
 		Method:  method,
 		RawArgs: argData,
-
-		tipe: tipe,
 	}
 
 	req.Stream = &streamDuplex{bSrc.AsStream(), bSink.AsStream()}
 
-	if err := r.Do(ctx, req); err != nil {
+	if err := r.start(ctx, req); err != nil {
 		return nil, nil, errors.Wrap(err, "error sending request")
 	}
 
 	return bSrc, bSink, nil
 }
 
-// Do executes a generic call
-func (r *rpc) Do(ctx context.Context, req *Request) error {
-	dbg := level.Warn(r.logger)
-	dbg = log.With(dbg, "call", req.Type, "method", req.Method.String())
+// start starts a new call by allocating a request id and sending the first packet
+func (r *rpc) start(ctx context.Context, req *Request) error {
 	if req.abort == nil {
 		req.abort = func() {} // noop
 	}
@@ -272,45 +287,49 @@ func (r *rpc) Do(ctx context.Context, req *Request) error {
 	}
 
 	var (
-		pkt codec.Packet
-		err error
+		first codec.Packet
+		err   error
+
+		dbg = log.With(level.Warn(r.logger),
+			"call", req.Type,
+			"method", req.Method.String())
 	)
 
 	func() {
 		r.rLock.Lock()
 		defer r.rLock.Unlock()
 
-		pkt.Flag = pkt.Flag.Set(codec.FlagJSON)
-		pkt.Flag = pkt.Flag.Set(req.Type.Flags())
+		first.Flag = first.Flag.Set(codec.FlagJSON)
+		first.Flag = first.Flag.Set(req.Type.Flags())
 
-		pkt.Body, err = json.Marshal(req)
+		first.Body, err = json.Marshal(req)
 
 		r.highest++
-		pkt.Req = r.highest
-		r.reqs[pkt.Req] = req
+		first.Req = r.highest
+		r.reqs[first.Req] = req
 
-		if req.sink != nil {
-			req.sink.pkt = &pkt
-		}
+		// if req.sink != nil {
+		// 	req.sink.pkt = &first
+		// }
 
-		if req.source != nil {
-			req.source.hdrFlag = pkt.Flag
-		}
+		// if req.source != nil {
+		// 	req.source.hdrFlag = first.Flag
+		// }
 
-		req.Stream.WithReq(pkt.Req)
+		req.Stream.WithReq(first.Req)
 		req.Stream.WithType(req.tipe)
 
-		req.id = pkt.Req
+		req.id = first.Req
 	}()
 	if err != nil {
 		dbg.Log("event", "request create failed", "reqID", req.id, "err", err)
 		return err
 	}
 
-	err = r.pkr.w.WritePacket(&pkt)
+	err = r.pkr.w.WritePacket(&first)
 	dbg.Log("event", "request sent",
 		"reqID", req.id,
 		"err", err,
-		"flag", pkt.Flag.String())
+		"flag", first.Flag.String())
 	return err
 }
