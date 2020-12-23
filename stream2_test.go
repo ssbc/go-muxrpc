@@ -164,11 +164,15 @@ func setupSource(t testing.TB, expRx []map[string]interface{}) Endpoint {
 		if len(req.Method) == 1 && req.Method[0] == "srctest" {
 			for i, v := range expRx {
 				err := req.Stream.Pour(ctx, v)
-				ckFatal(errors.Wrapf(err, "test pour %d failed", i))
+				if err != nil {
+					ckFatal(errors.Wrapf(err, "test pour %d failed", i))
+				}
 			}
 
 			err := req.Stream.Close()
-			ckFatal(fmt.Errorf("test close failed: %w", err))
+			if err != nil {
+				ckFatal(fmt.Errorf("test close failed: %w", err))
+			}
 		}
 	})
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {

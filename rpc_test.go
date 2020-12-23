@@ -5,6 +5,7 @@ package muxrpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -15,7 +16,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
 
@@ -25,7 +25,7 @@ import (
 // for some reason you can't use t.Fatal // t.Error in goroutines... :-/
 func serve(_ context.Context, r Server, errc chan<- error, done ...chan<- struct{}) {
 	err := r.Serve()
-	if err != nil && errors.Cause(err) != context.Canceled {
+	if err != nil && errors.Is(err, context.Canceled) {
 		errc <- fmt.Errorf("Serve failed: %w", err)
 	}
 	if len(done) > 0 { // might want to use a waitGroup here instead?
@@ -202,7 +202,7 @@ func TestSourceString(t *testing.T) {
 	var fh1 FakeHandler
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Log("h1 called")
-		errc <- errors.Errorf("unexpected call to rpc1: %#v", req)
+		errc <- fmt.Errorf("unexpected call to rpc1: %#v", req)
 	})
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h1 connected")
@@ -256,7 +256,10 @@ func TestSourceString(t *testing.T) {
 		err := src.Reader(func(rd io.Reader) error {
 			n, err := rd.Read(buf)
 			r.Equal(len(exp), n, "%d expected different count", i)
-			return err
+			if !errors.Is(err, io.EOF) {
+				return err
+			}
+			return nil
 		})
 		r.NoError(err)
 
@@ -318,7 +321,7 @@ func TestSourceJSON(t *testing.T) {
 	var fh1 FakeHandler
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Log("h1 called")
-		errc <- errors.Errorf("unexpected call to rpc1: %#v", req)
+		errc <- fmt.Errorf("unexpected call to rpc1: %#v", req)
 	})
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h1 connected")
@@ -449,12 +452,12 @@ func TestSink(t *testing.T) {
 
 				str, ok := v.(string)
 				if !ok {
-					err = errors.Errorf("expected value %q, got %v (%T)", exp, v, v)
+					err = fmt.Errorf("expected value %q, got %v (%T)", exp, v, v)
 					ckFatal(err)
 					continue
 				}
 				if str != exp {
-					err = errors.Errorf("expected value %q, got %v (%T)", exp, v, v)
+					err = fmt.Errorf("expected value %q, got %v (%T)", exp, v, v)
 					ckFatal(err)
 				}
 			}
@@ -517,7 +520,7 @@ func TestSink(t *testing.T) {
 	}
 }
 
-func XTestDuplexString(t *testing.T) {
+func TestDuplexString(t *testing.T) {
 	r := require.New(t)
 	expRx := []string{
 		"you are a test",
@@ -562,7 +565,7 @@ func XTestDuplexString(t *testing.T) {
 				}
 
 				if v != exp {
-					err = errors.Errorf("expected value %v, got %v", exp, v)
+					err = fmt.Errorf("expected value %v, got %v", exp, v)
 					ckFatal(err)
 				}
 			}
@@ -659,10 +662,10 @@ func XTestErrorAsync(t *testing.T) {
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
-			err := req.Stream.CloseWithError(errors.New("omg an error"))
+			err := req.Stream.CloseWithError(fmt.Errorf("omg an error"))
 			ckFatal(err)
 		} else {
-			err := req.Stream.CloseWithError(errors.New("unexpected"))
+			err := req.Stream.CloseWithError(fmt.Errorf("unexpected"))
 			ckFatal(err)
 		}
 	})
@@ -687,14 +690,14 @@ func XTestErrorAsync(t *testing.T) {
 		err := rpc1.Async(ctx, &v, TypeString, Method{"whoami"})
 		if err == nil {
 			ckFatal(fmt.Errorf("expected an error"))
-		} else if errors.Cause(err).Error() != "omg an error" {
-			ckFatal(fmt.Errorf("expected error %q, got %q", "omg an error", errors.Cause(err)))
+		} else if err.Error() != "omg an error" {
+			ckFatal(fmt.Errorf("expected error %q, got %q", "omg an error", err))
 		}
 
-		cerr := errors.Cause(err)
-		e, ok := cerr.(*CallError)
+		var e = new(CallError)
+		ok := errors.As(err, &e)
 		if !ok {
-			t.Fatalf("not a callerror! %T", cerr)
+			t.Fatalf("not a callerror! %T", err)
 		}
 
 		if e.Message != "omg an error" {
@@ -767,7 +770,7 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 		for i, tx := range h.txvals {
 			err := req.Stream.Pour(ctx, tx)
 			if err != nil {
-				h.failed <- errors.Wrapf(err, "failed to tx val %d", i)
+				h.failed <- fmt.Errorf("failed to tx val %d: %w", i, err)
 				return
 			}
 			h.logger.Log("event", "sent", "err", err, "i", i, "tx", fmt.Sprintf("%+v", tx))
@@ -798,7 +801,7 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 			v.Str = rv["Str"].(string)
 			h.rxvals = append(h.rxvals, v)
 		default:
-			h.failed <- errors.Errorf("got unhandled duplex msg type: %T", v)
+			h.failed <- fmt.Errorf("got unhandled duplex msg type: %T", v)
 			return
 		}
 		j++
@@ -806,7 +809,7 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 	// req.Stream.Close()
 }
 
-func XTestDuplexHandlerStr(t *testing.T) {
+func TestDuplexHandlerStr(t *testing.T) {
 	dbg := log.NewLogfmtLogger(os.Stderr)
 	r := require.New(t)
 	expRx := []string{

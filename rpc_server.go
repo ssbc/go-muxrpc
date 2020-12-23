@@ -341,6 +341,7 @@ func (r *rpc) Serve() (err error) {
 				}
 
 				body := buf.Bytes()
+				r.bpool.Put(buf)
 
 				if !isTrue(body) {
 					streamErr, err = parseError(body)
@@ -350,7 +351,6 @@ func (r *rpc) Serve() (err error) {
 				}
 				go func() {
 					r.closeStream(req, streamErr)
-					r.bpool.Put(buf)
 				}()
 			} else {
 				level.Warn(r.logger).Log("event", "unhandled packet", "reqID", hdr.Req)

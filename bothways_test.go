@@ -560,13 +560,17 @@ func TestBothwaysSink(t *testing.T) {
 
 	go func() {
 		err := rpc1.(*rpc).Serve()
-		ckFatal(err)
+		if err != nil {
+			ckFatal(fmt.Errorf("rpc1 serve exited: %w", err))
+		}
 		close(serve1)
 	}()
 
 	go func() {
 		err := rpc2.(*rpc).Serve()
-		ckFatal(err)
+		if err != nil {
+			ckFatal(fmt.Errorf("rpc2 serve exited: %w", err))
+		}
 		close(serve2)
 	}()
 
@@ -638,7 +642,7 @@ func TestBothwaysSink(t *testing.T) {
 	}
 }
 
-func XTestBothwayDuplex(t *testing.T) {
+func TestBothwayDuplex(t *testing.T) {
 	expRx := []string{
 		"you are a test",
 		"you're a test",

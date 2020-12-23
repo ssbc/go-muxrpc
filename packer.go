@@ -135,7 +135,10 @@ func (pkr *Packer) Close() error {
 		if isAlreadyClosed(pkr.closeErr) {
 			return nil
 		}
-		return fmt.Errorf("packer: already closed: %w", pkr.closeErr)
+		if pkr.closeErr != nil {
+			return fmt.Errorf("packer: already closed: %w", pkr.closeErr)
+		}
+		return nil
 	default:
 	}
 

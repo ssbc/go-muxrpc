@@ -378,7 +378,7 @@ func TestJSSource(t *testing.T) {
 	r.Equal(0, fh.HandleCallCallCount(), "peer did call unexpectedly")
 }
 
-func XTestJSDuplex(t *testing.T) {
+func TestJSDuplex(t *testing.T) {
 	r := require.New(t)
 
 	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
@@ -453,7 +453,7 @@ func XTestJSDuplex(t *testing.T) {
 	// }
 }
 
-func XTestJSDuplexToUs(t *testing.T) {
+func TestJSDuplexToUs(t *testing.T) {
 	r := require.New(t)
 	jsLog := log.NewLogfmtLogger(os.Stderr)
 

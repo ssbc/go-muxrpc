@@ -69,7 +69,6 @@ func (bs *ByteSource) CloseWithError(err error) error {
 		bs.failed = err
 	}
 	close(bs.closed)
-	bs.bpool.Put(bs.buf.store)
 	return nil
 }
 
@@ -95,6 +94,8 @@ func (bs *ByteSource) Err() error {
 func (bs *ByteSource) Next(ctx context.Context) bool {
 	bs.mu.Lock()
 	if bs.failed != nil && bs.buf.frames == 0 {
+		// don't return buffer before stream is empty
+		// TODO: what if a stream isn't fully drained?!
 		bs.bpool.Put(bs.buf.store)
 		bs.mu.Unlock()
 		return false
@@ -250,7 +251,7 @@ func (fw *frameBuffer) getNextFrameReader() (uint32, io.Reader, error) {
 
 	_, err := fw.store.Read(fw.lenBuf[:])
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, fmt.Errorf("muxrpc: didnt get length of next body (frames:%d): %w", fw.frames, err)
 	}
 	pktLen := binary.LittleEndian.Uint32(fw.lenBuf[:])
 
