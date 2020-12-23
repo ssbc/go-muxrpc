@@ -4,10 +4,10 @@ package codec
 
 import (
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"io"
 	"os"
-
-	"github.com/pkg/errors"
 )
 
 type Reader struct {
@@ -22,10 +22,10 @@ func (r Reader) ReadPacket() (*Packet, error) {
 	var hdr Header
 	err := binary.Read(r.r, binary.BigEndian, &hdr)
 	// TODO does os.ErrClosed belong here?!
-	if e := errors.Cause(err); e == os.ErrClosed || e == io.EOF || e == io.ErrClosedPipe {
+	if readerClosed(err) {
 		return nil, io.EOF
 	} else if err != nil {
-		return nil, errors.Wrapf(err, "pkt-codec: header read failed")
+		return nil, fmt.Errorf("pkt-codec: header read failed: %w", err)
 	}
 
 	// detect EOF pkt. TODO: not sure how to do this nicer
@@ -42,7 +42,7 @@ func (r Reader) ReadPacket() (*Packet, error) {
 
 	_, err = io.ReadFull(r.r, p.Body)
 	if err != nil {
-		return nil, errors.Wrap(err, "pkt-codec: read body failed.")
+		return nil, fmt.Errorf("pkt-codec: read body failed: %w", err)
 	}
 
 	return &p, nil
@@ -51,11 +51,10 @@ func (r Reader) ReadPacket() (*Packet, error) {
 // ReadHeader only reads the header packet data (flag, len, req id). Use the exposed io.Reader to read the body.
 func (r Reader) ReadHeader(hdr *Header) error {
 	err := binary.Read(r.r, binary.BigEndian, hdr)
-	// TODO does os.ErrClosed belong here?!
-	if e := errors.Cause(err); e == os.ErrClosed || e == io.EOF || e == io.ErrClosedPipe {
+	if readerClosed(err) {
 		return io.EOF
 	} else if err != nil {
-		return errors.Wrapf(err, "pkt-codec: header read failed")
+		return fmt.Errorf("pkt-codec: header read failed: %w", err)
 	}
 
 	// detect EOF pkt
@@ -65,6 +64,10 @@ func (r Reader) ReadHeader(hdr *Header) error {
 	return nil
 }
 
+func readerClosed(err error) bool {
+	return errors.Is(err, os.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe)
+}
+
 func (r Reader) NextBodyReader(pktLen uint32) io.Reader {
 	return io.LimitReader(r.r, int64(pktLen))
 }
@@ -72,11 +75,11 @@ func (r Reader) NextBodyReader(pktLen uint32) io.Reader {
 func (r Reader) ReadBodyInto(w io.Writer, pktLen uint32) error {
 	n, err := io.Copy(w, io.LimitReader(r.r, int64(pktLen)))
 	if err != nil {
-		return errors.Wrap(err, "pkt-codec: failed to read full body")
+		return fmt.Errorf("pkt-codec: failed to read full body: %w", err)
 	}
 
 	if uint32(n) != pktLen {
-		return errors.Errorf("pkt-codec: failed to read full body")
+		return fmt.Errorf("pkt-codec: failed to read full body")
 	}
 
 	return nil

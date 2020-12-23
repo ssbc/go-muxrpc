@@ -4,10 +4,9 @@ package codec
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"sync"
-
-	"github.com/pkg/errors"
 )
 
 type Writer struct {
@@ -29,10 +28,10 @@ func (w *Writer) WritePacket(r *Packet) error {
 		Req:  r.Req,
 	}
 	if err := binary.Write(w.w, binary.BigEndian, hdr); err != nil {
-		return errors.Wrapf(err, "pkt-codec: header write failed")
+		return fmt.Errorf("pkt-codec: header write failed: %w", err)
 	}
 	if _, err := w.w.Write(r.Body); err != nil {
-		return errors.Wrapf(err, "pkt-codec: body write failed")
+		return fmt.Errorf("pkt-codec: body write failed: %w", err)
 	}
 	return nil
 }
@@ -43,10 +42,10 @@ func (w *Writer) Close() error {
 	defer w.mu.Unlock()
 	_, err := w.w.Write([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0})
 	if err != nil {
-		return errors.Wrapf(err, "pkt-codec: failed to write Close() packet")
+		return fmt.Errorf("pkt-codec: failed to write Close() packet: %w", err)
 	}
 	if c, ok := w.w.(io.Closer); ok {
-		return errors.Wrap(c.Close(), "pkt-codec: failed to close underlying writer")
+		return fmt.Errorf("pkt-codec: failed to close underlying writer: %w", c.Close())
 	}
 	return nil
 }

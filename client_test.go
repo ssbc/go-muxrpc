@@ -40,14 +40,14 @@ func TestJSGettingCalledSource(t *testing.T) {
 		t.Logf("got call: %+v", req)
 		close(gotCall)
 		if len(req.Method) != 1 || req.Method[0] != "stuff" {
-			ckFatal(errors.Errorf("unexpected method name: %s", req.Method))
+			ckFatal(fmt.Errorf("unexpected method name: %s", req.Method))
 		}
 		if req.Type != "source" {
-			ckFatal(errors.Errorf("request type: %s", req.Type))
+			ckFatal(fmt.Errorf("request type: %s", req.Type))
 		}
 		binSink, err := req.GetResponseSink()
 		if err != nil {
-			ckFatal(errors.Wrap(err, "expected to get sink for replies"))
+			ckFatal(fmt.Errorf("expected to get sink for replies: %w", err))
 		}
 		binSink.SetEncoding(TypeJSON)
 
@@ -61,7 +61,9 @@ func TestJSGettingCalledSource(t *testing.T) {
 			ckFatal(errors.Wrapf(err, "stream pour(%d) failed", i))
 		}
 		err = binSink.Close()
-		ckFatal(errors.Wrap(err, "stream close failed"))
+		if err != nil {
+			ckFatal(fmt.Errorf("stream close failed: %w", err))
+		}
 		close(callServed)
 	})
 
