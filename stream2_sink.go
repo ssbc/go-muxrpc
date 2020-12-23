@@ -31,13 +31,19 @@ func newByteSink(ctx context.Context, w *codec.Writer) *ByteSink {
 
 		w: w,
 
-		pkt: &codec.Packet{
-			Flag: codec.FlagStream,
-		},
+		pkt: &codec.Packet{},
 	}
 }
 
 func (bs *ByteSink) Cancel(err error) { bs.closed = err }
+
+func (bs *ByteSink) SetEncoding(re RequestEncoding) {
+	encFlag, err := re.asCodecFlag()
+	if err != nil {
+		return
+	}
+	bs.pkt.Flag = bs.pkt.Flag.Set(encFlag)
+}
 
 func (bs *ByteSink) Write(b []byte) (int, error) {
 	if bs.closed != nil {

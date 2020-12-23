@@ -34,6 +34,11 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 	}
 	req.Stream = req.source.AsStream()
 
+	req.sink.pkt.Flag, err = re.asCodecFlag()
+	if err != nil {
+		return err
+	}
+
 	if err := r.start(ctx, req); err != nil {
 		return fmt.Errorf("muxrpc: error sending request: %w", err)
 	}
@@ -43,10 +48,22 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 	}
 
 	processEntry := func(rd io.Reader) error {
-		// hmm.. we might need to poke at the flag of the muxrpc packet here, too
-		// because you can still transmit a string literal as JSON (then it will have quotes and maybe escape some characters differentnly)
 		switch tv := ret.(type) {
+		case *[]byte:
+			if re != TypeBinary {
+				return fmt.Errorf("muxrpc: unexpected requst encoding, need TypeBinary")
+			}
+			var bs []byte
+			bs, err = ioutil.ReadAll(rd)
+			if err != nil {
+				return fmt.Errorf("muxrpc: error decoding json from request source: %w", err)
+			}
+			*tv = bs
+
 		case *string:
+			if re != TypeString {
+				return fmt.Errorf("muxrpc: unexpected requst encoding, need TypeString")
+			}
 			var bs []byte
 			bs, err = ioutil.ReadAll(rd)
 			if err != nil {
@@ -54,7 +71,11 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 			}
 			level.Debug(r.logger).Log("asynctype", "str", "err", err, "len", len(bs))
 			*tv = string(bs)
+
 		default:
+			if re != TypeJSON {
+				return fmt.Errorf("muxrpc: unexpected requst encoding, need TypeJSON")
+			}
 			level.Debug(r.logger).Log("asynctype", "any")
 			err = json.NewDecoder(rd).Decode(ret)
 			if err != nil {
@@ -112,7 +133,7 @@ func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args 
 	}
 
 	bs := newByteSink(ctx, r.pkr.w)
-	bs.pkt.Flag = bs.pkt.Flag.Set(encFlag)
+	bs.pkt.Flag = bs.pkt.Flag.Set(encFlag).Set(codec.FlagStream)
 
 	req := &Request{
 		Type: "sink",
@@ -134,7 +155,6 @@ func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args 
 
 // Duplex does a duplex call on the remote.
 func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, args ...interface{}) (*ByteSource, *ByteSink, error) {
-
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return nil, nil, err
@@ -148,7 +168,7 @@ func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, arg
 	bSrc := newByteSource(ctx, r.bpool)
 
 	bSink := newByteSink(ctx, r.pkr.w)
-	bSink.pkt.Flag = bSink.pkt.Flag.Set(encFlag)
+	bSink.pkt.Flag = bSink.pkt.Flag.Set(encFlag).Set(codec.FlagStream)
 
 	req := &Request{
 		Type: "duplex",
@@ -194,23 +214,13 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 
 		first.Flag = first.Flag.Set(codec.FlagJSON)
 		first.Flag = first.Flag.Set(req.Type.Flags())
-
 		first.Body, err = json.Marshal(req)
 
 		r.highest++
 		first.Req = r.highest
 		r.reqs[first.Req] = req
 
-		// if req.sink != nil {
-		// 	req.sink.pkt = &first
-		// }
-
-		// if req.source != nil {
-		// 	req.source.hdrFlag = first.Flag
-		// }
-
 		req.Stream.WithReq(first.Req)
-		req.Stream.WithType(req.tipe)
 
 		req.id = first.Req
 	}()

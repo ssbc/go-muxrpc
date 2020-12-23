@@ -18,6 +18,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
 func TestSourceBytesFill(t *testing.T) {
@@ -37,7 +38,7 @@ func TestSourceBytesFill(t *testing.T) {
 	}
 
 	for i := 0; i < len(exp); i++ {
-		err := bs.consume(uint32(len(exp[i])), bytes.NewReader(exp[i]))
+		err := bs.consume(uint32(len(exp[i])), codec.FlagStream, bytes.NewReader(exp[i]))
 		r.NoError(err, "failed to consume %d", i)
 	}
 
@@ -77,7 +78,7 @@ func TestSourceBytesOneByOne(t *testing.T) {
 
 	buf := make([]byte, 3)
 	for i := 0; i < len(exp); i++ {
-		err := bs.consume(uint32(len(exp[i])), bytes.NewReader(exp[i]))
+		err := bs.consume(uint32(len(exp[i])), codec.FlagStream, bytes.NewReader(exp[i]))
 		r.NoError(err, "failed to consume %d", i)
 
 		err = bs.Reader(func(rd io.Reader) error {
@@ -112,7 +113,7 @@ func TestSourceBytesDontReadAll(t *testing.T) {
 	}
 
 	for i := 0; i < len(exp); i++ {
-		err := bs.consume(uint32(len(exp[i])), bytes.NewReader(exp[i]))
+		err := bs.consume(uint32(len(exp[i])), codec.FlagStream, bytes.NewReader(exp[i]))
 		r.NoError(err, "failed to consume %d", i)
 	}
 

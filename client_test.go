@@ -1,6 +1,6 @@
-// -build interop_nodejs
-
 // SPDX-License-Identifier: MIT
+
+// +build interop_nodejs
 
 package muxrpc
 
@@ -45,10 +45,11 @@ func TestJSGettingCalledSource(t *testing.T) {
 		if req.Type != "source" {
 			ckFatal(errors.Errorf("request type: %s", req.Type))
 		}
-		binSink, err := req.GetSink()
+		binSink, err := req.GetResponseSink()
 		if err != nil {
 			ckFatal(errors.Wrap(err, "expected to get sink for replies"))
 		}
+		binSink.SetEncoding(TypeJSON)
 
 		enc := json.NewEncoder(binSink)
 		for i := 0; i < 25; i++ {

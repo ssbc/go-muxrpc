@@ -15,7 +15,6 @@ import (
 
 	"github.com/karrick/bufpool"
 	"go.cryptoscope.co/luigi"
-
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
@@ -28,7 +27,6 @@ type ByteSource struct {
 	closed chan struct{}
 	failed error
 
-	// requestID int32
 	hdrFlag codec.Flag
 
 	streamCtx context.Context
@@ -154,13 +152,15 @@ func (bs *ByteSource) Bytes() ([]byte, error) {
 	return b, err
 }
 
-func (bs *ByteSource) consume(pktLen uint32, r io.Reader) error {
+func (bs *ByteSource) consume(pktLen uint32, flag codec.Flag, r io.Reader) error {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 
 	if bs.failed != nil {
 		return fmt.Errorf("muxrpc: byte source canceled: %w", bs.failed)
 	}
+
+	bs.hdrFlag = flag
 
 	err := bs.buf.copyBody(pktLen, r)
 	if err != nil {

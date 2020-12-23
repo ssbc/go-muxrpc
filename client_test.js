@@ -53,8 +53,13 @@ var server = MRPC(api, api)({
         }
         console.warn('callme:source:ok vals:', vals)
 
-        if (vals.length !== n) {
-          throw new Error(`expected ${n} elements in source got ${vals.length}`)
+        if (vals.length !== n) throw new Error(`expected ${n} elements in source got ${vals.length}`)
+
+        for (let i = 0; i < n; i++) {
+          const el = vals[i];
+
+          if (typeof el['a'] === 'undefined') throw new Error(`expected field 'a' in el ${i}`)
+          if (el['a'] !== i) throw new Error(`expected vals[i]['a'] to be ${i} but got ${el['a']}`)
         }
 
         cb(null, 'call done')

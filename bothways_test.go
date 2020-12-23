@@ -484,7 +484,6 @@ func TestBothwaysSource(t *testing.T) {
 	fmt.Println("waiting for loop done")
 }
 
-// TODO: should not have FlagJSON set but FlagString
 func TestBothwaysSink(t *testing.T) {
 	expRx := []string{
 		"you are a test",

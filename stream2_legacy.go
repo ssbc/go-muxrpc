@@ -125,10 +125,15 @@ func (stream *streamSink) Pour(ctx context.Context, v interface{}) error {
 	switch tv := v.(type) {
 	case []byte:
 		_, err = stream.sink.Write(tv)
+	case string:
+		stream.sink.SetEncoding(TypeString)
+		_, err = fmt.Fprint(stream.sink, tv)
 	case json.RawMessage:
+		stream.sink.SetEncoding(TypeJSON)
 		_, err = stream.sink.Write(tv)
 	default:
 		// fmt.Printf("[legacy stream sink] defaulted on %T\n", v)
+		stream.sink.SetEncoding(TypeJSON)
 		err = json.NewEncoder(stream.sink).Encode(v)
 		if err != nil {
 			return fmt.Errorf("muxrpc/legacy: failed pouring to new sink: %w", err)

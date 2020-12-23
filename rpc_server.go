@@ -6,13 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"strings"
 	"sync"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/karrick/bufpool"
@@ -22,8 +20,10 @@ import (
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
+// HandleOption are used to configure rpc handler instances
 type HandleOption func(*rpc)
 
+// WithContext sets the context for the whole lifetime of the rpc session
 func WithContext(ctx context.Context) HandleOption {
 	return func(r *rpc) {
 		r.serveCtx = ctx
@@ -45,6 +45,7 @@ func WithLogger(l log.Logger) HandleOption {
 	}
 }
 
+// WithIsServer sets wether the Handle should be in the server (true) or client (false) role
 func WithIsServer(yes bool) HandleOption {
 	return func(r *rpc) {
 		r.isServer = yes
@@ -72,9 +73,11 @@ func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 		root: handler,
 	}
 
+	// apply options
 	for _, o := range opts {
 		o(r)
 	}
+
 	// defaults
 	if r.logger == nil {
 		logger := log.NewLogfmtLogger(os.Stderr)
@@ -199,48 +202,48 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 	if pkt.Req >= 0 {
 		// request numbers should have been inverted by now
-		return nil, errors.New("expected negative request id")
+		return nil, errors.New("muxrpc: expected negative request id")
 	}
 
-	// buf := r.bpool.Get()
-	reqBody := make([]byte, pkt.Len)
-	rd := r.pkr.r.NextBodyReader(pkt.Len)
+	if !pkt.Flag.Get(codec.FlagJSON) {
+		return nil, fmt.Errorf("muxrpc: expected JSON flag for call manifest")
+	}
 
-	_, err := io.ReadFull(rd, reqBody)
+	buf := r.bpool.Get()
+	buf.Reset()
+
+	// make sure the whole body fits
+	if n := buf.Cap() - int(pkt.Len); n < 0 {
+		buf.Grow(-n)
+	}
+
+	rd := r.pkr.r.NextBodyReader(pkt.Len)
+	_, err := buf.ReadFrom(rd)
 	if err != nil {
 		return nil, errors.Wrap(err, "error copying request body")
 	}
 
-	// TODO: move be before reading the body - just debugging
-	if !pkt.Flag.Get(codec.FlagJSON) {
-		return nil, fmt.Errorf("expected JSON flag (%d)", len(reqBody))
-	}
-
 	var req Request
-	err = json.Unmarshal(reqBody, &req)
-	// err := json.NewDecoder(rd).Decode(&req)
+	err = json.NewDecoder(buf).Decode(&req)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "\nSPEW\n%s", spew.Sdump(reqBody))
 		return nil, errors.Wrap(err, "error decoding packet")
 	}
 
-	// horray!
-	req.id = pkt.Req
+	r.bpool.Put(buf)
 
-	todoCtx := context.TODO() // merge in with v2 changes to get serve() context
+	req.id = pkt.Req
 
 	// the capabailitys are nice guard rails but in the end
 	// we still need to be able to error on a source
 	// ie write to something which is supposed to be read-only.
 
-	req.sink = newByteSink(todoCtx, r.pkr.w)
+	req.sink = newByteSink(r.serveCtx, r.pkr.w)
 	req.sink.pkt.Req = req.id
-	req.sink.pkt.Flag = pkt.Flag
 
-	req.source = newByteSource(todoCtx, r.bpool)
-	req.source.hdrFlag = pkt.Flag
+	req.source = newByteSource(r.serveCtx, r.bpool)
 
 	if pkt.Flag.Get(codec.FlagStream) {
+		req.sink.pkt.Flag = req.sink.pkt.Flag.Set(codec.FlagStream)
 		switch req.Type {
 		case "duplex":
 			req.Stream = &streamDuplex{src: req.source.AsStream(), snk: req.sink.AsStream()}
@@ -315,7 +318,7 @@ func (r *rpc) Serve() (err error) {
 			return
 		}
 
-		// error handling and cleanup
+		// error/endstream handling and cleanup
 		var req *Request
 		if hdr.Flag.Get(codec.FlagEndErr) {
 			getReq := func(req int32) (*Request, bool) {
@@ -356,17 +359,21 @@ func (r *rpc) Serve() (err error) {
 			continue
 		}
 
+		// data muxing
+
+		// pick the requests or create a new one
 		var isNew bool
 		req, isNew, err = r.fetchRequest(r.serveCtx, &hdr)
 		if err != nil {
 			err = errors.Wrap(err, "muxrpc: error unpacking request")
 			return
 		}
-		if isNew {
+
+		if isNew { // the first packet is just the request data, nothing else to do
 			continue
 		}
 
-		err = req.source.consume(hdr.Len, r.pkr.r.NextBodyReader(hdr.Len))
+		err = req.source.consume(hdr.Len, hdr.Flag, r.pkr.r.NextBodyReader(hdr.Len))
 		if err != nil {
 			err = errors.Wrap(err, "muxrpc: error pouring data to handler")
 			return

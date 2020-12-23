@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -30,11 +31,9 @@ func (rt RequestEncoding) IsValid() bool {
 	if rt < 0 {
 		return false
 	}
-
 	if rt > TypeJSON {
 		return false
 	}
-
 	return true
 }
 
@@ -44,7 +43,7 @@ func (rt RequestEncoding) asCodecFlag() (codec.Flag, error) {
 	}
 	switch rt {
 	case TypeBinary:
-		return codec.FlagBinary, nil
+		return 0, nil
 	case TypeString:
 		return codec.FlagString, nil
 	case TypeJSON:
@@ -54,13 +53,16 @@ func (rt RequestEncoding) asCodecFlag() (codec.Flag, error) {
 	}
 }
 
+// Method defines the name of the endpoint.
 type Method []string
 
+// UnmarshalJSON decodes the
 func (m *Method) UnmarshalJSON(d []byte) error {
 	var newM []string
 
 	err := json.Unmarshal(d, &newM)
 	if err != nil {
+		// ugly 'manifest' hack. everything else is an array of strings (ie ['whoami'])
 		var meth string
 		err := json.Unmarshal(d, &meth)
 		if err != nil {
@@ -69,9 +71,9 @@ func (m *Method) UnmarshalJSON(d []byte) error {
 		newM = Method{meth}
 	}
 	*m = newM
-
 	return nil
 }
+
 func (m Method) String() string {
 	return strings.Join(m, ".")
 }
@@ -112,15 +114,16 @@ func (wst ErrWrongStreamType) Error() string {
 	return fmt.Sprintf("muxrpc: wrong stream type: %s", wst.ct)
 }
 
-func (req *Request) GetSink() (*ByteSink, error) {
-	if req.sink == nil {
+// GetResponseSink returns the response writer for incoming source requests.
+func (req *Request) GetResponseSink() (*ByteSink, error) {
+	if req.Type != "source" {
 		return nil, ErrWrongStreamType{req.Type}
 	}
 	return req.sink, nil
 }
 
-func (req *Request) GetSource() (*ByteSource, error) {
-	if req.source == nil {
+func (req *Request) GetResponseSource() (*ByteSource, error) {
+	if req.Type != "sink" {
 		return nil, ErrWrongStreamType{req.Type}
 	}
 	return req.source, nil
@@ -128,6 +131,8 @@ func (req *Request) GetSource() (*ByteSource, error) {
 
 // Args is a legacy stub to get the unmarshaled json arguments
 func (req *Request) Args() []interface{} {
+	fmt.Println("muxrpc: please use RawArgs where ever possible")
+	debug.PrintStack()
 	var v []interface{}
 	json.Unmarshal(req.RawArgs, &v)
 	return v
@@ -139,13 +144,26 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 		return errors.Errorf("cannot return value on %q stream", req.Type)
 	}
 
-	b, err := json.Marshal(v)
-	if err != nil {
-		return errors.Wrap(err, "error marshaling return value")
+	var b []byte
+	switch tv := v.(type) {
+
+	case string:
+		fmt.Println("returning string")
+		req.sink.pkt.Flag = req.sink.pkt.Flag.Set(codec.FlagString)
+
+		b = []byte(tv)
+
+	default:
+		req.sink.pkt.Flag = req.sink.pkt.Flag.Set(codec.FlagJSON)
+		fmt.Printf("returning JSON for %T\n", v)
+		var err error
+		b, err = json.Marshal(v)
+		if err != nil {
+			return errors.Wrap(err, "error marshaling return value")
+		}
 	}
 
-	_, err = req.sink.Write(b)
-	if err != nil {
+	if _, err := req.sink.Write(b); err != nil {
 		return errors.Wrap(err, "error writing return value")
 	}
 
