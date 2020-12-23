@@ -5,12 +5,11 @@ package muxrpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"runtime/debug"
 	"strings"
-
-	"github.com/pkg/errors"
-	"go.cryptoscope.co/luigi"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
@@ -66,7 +65,7 @@ func (m *Method) UnmarshalJSON(d []byte) error {
 		var meth string
 		err := json.Unmarshal(d, &meth)
 		if err != nil {
-			return errors.Wrap(err, "muxrpc/method: error decoding packet")
+			return fmt.Errorf("muxrpc/method: error decoding packet: %w", err)
 		}
 		newM = Method{meth}
 	}
@@ -141,7 +140,7 @@ func (req *Request) Args() []interface{} {
 // Return is a helper that returns on an async call
 func (req *Request) Return(ctx context.Context, v interface{}) error {
 	if req.Type != "async" && req.Type != "sync" {
-		return errors.Errorf("cannot return value on %q stream", req.Type)
+		return fmt.Errorf("cannot return value on %q stream", req.Type)
 	}
 
 	var b []byte
@@ -159,19 +158,19 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 		var err error
 		b, err = json.Marshal(v)
 		if err != nil {
-			return errors.Wrap(err, "error marshaling return value")
+			return fmt.Errorf("muxrpc: error marshaling return value: %w", err)
 		}
 	}
 
 	if _, err := req.sink.Write(b); err != nil {
-		return errors.Wrap(err, "error writing return value")
+		return fmt.Errorf("muxrpc: error writing return value: %w", err)
 	}
 
 	return nil
 }
 
 func (req *Request) CloseWithError(cerr error) error {
-	if cerr == nil || luigi.IsEOS(errors.Cause(cerr)) {
+	if cerr == nil || errors.Is(cerr, io.EOF) {
 		req.source.Cancel(nil)
 		req.sink.Cancel(nil)
 	} else {
@@ -182,7 +181,7 @@ func (req *Request) CloseWithError(cerr error) error {
 }
 
 func (req *Request) Close() error {
-	return req.CloseWithError(luigi.EOS{})
+	return req.CloseWithError(io.EOF)
 }
 
 // CallType is the type of a call

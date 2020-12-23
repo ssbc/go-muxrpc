@@ -4,6 +4,7 @@ package muxrpc
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
@@ -74,7 +75,7 @@ func newJSONPacket(stream bool, req int32, v interface{}) (*codec.Packet, error)
 
 	body, err := json.Marshal(v)
 	if err != nil {
-		return nil, errors.Wrap(err, "error marshaling value")
+		return nil, fmt.Errorf("error marshaling value: %w", err)
 	}
 
 	return &codec.Packet{
@@ -104,7 +105,7 @@ func newEndErrPacket(req int32, stream bool, err error) (*codec.Packet, error) {
 		Name:    "Error",
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "error marshaling value")
+		return nil, fmt.Errorf("error marshaling value: %w", err)
 	}
 	pkt := codec.Packet{
 		Req:  req,

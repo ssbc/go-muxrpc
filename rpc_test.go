@@ -26,7 +26,7 @@ import (
 func serve(_ context.Context, r Server, errc chan<- error, done ...chan<- struct{}) {
 	err := r.Serve()
 	if err != nil && errors.Cause(err) != context.Canceled {
-		errc <- errors.Wrap(err, "Serve failed")
+		errc <- fmt.Errorf("Serve failed: %w", err)
 	}
 	if len(done) > 0 { // might want to use a waitGroup here instead?
 		close(done[0])
@@ -74,7 +74,7 @@ func BuildTestAsync(pkr1, pkr2 *Packer) func(*testing.T) {
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				err := req.Return(ctx, "you are a test")
 				if err != nil {
-					errc <- errors.Wrap(err, "return errored")
+					errc <- fmt.Errorf("return errored: %w", err)
 				}
 			}
 		})
@@ -215,10 +215,14 @@ func TestSourceString(t *testing.T) {
 		if len(req.Method) == 1 && req.Method[0] == "srcstring" {
 			for _, v := range expRx {
 				err := req.Stream.Pour(ctx, v)
-				ckFatal(errors.Wrap(err, "h2 pour errored"))
+				if err != nil {
+					ckFatal(fmt.Errorf("h2 pour errored: %w", err))
+				}
 			}
 			err := req.Stream.Close()
-			ckFatal(errors.Wrap(err, "h2 end pour errored"))
+			if err != nil {
+				ckFatal(fmt.Errorf("h2 end pour errored: %w", err))
+			}
 		}
 	})
 
@@ -327,10 +331,14 @@ func TestSourceJSON(t *testing.T) {
 		if len(req.Method) == 1 && req.Method[0] == "srcjson" {
 			for _, v := range expRx {
 				err := req.Stream.Pour(ctx, v)
-				ckFatal(errors.Wrap(err, "h2 pour errored"))
+				if err != nil {
+					ckFatal(fmt.Errorf("h2 pour errored: %w", err))
+				}
 			}
 			err := req.Stream.Close()
-			ckFatal(errors.Wrap(err, "h2 end pour errored"))
+			if err != nil {
+				ckFatal(fmt.Errorf("h2 end pour errored: %w", err))
+			}
 		}
 	})
 
@@ -549,7 +557,9 @@ func XTestDuplexString(t *testing.T) {
 		if len(req.Method) == 1 && req.Method[0] == "testduplex" {
 			for _, exp := range expRx {
 				v, err := req.Stream.Next(ctx)
-				ckFatal(errors.Wrap(err, "pour errored"))
+				if err != nil {
+					ckFatal(fmt.Errorf("pour errored: %w", err))
+				}
 
 				if v != exp {
 					err = errors.Errorf("expected value %v, got %v", exp, v)
@@ -773,7 +783,7 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 			if luigi.IsEOS(err) {
 				break
 			}
-			h.failed <- errors.Wrap(err, "drined input stream")
+			h.failed <- fmt.Errorf("drined input stream: %w", err)
 			return
 		}
 		switch rv := v.(type) {

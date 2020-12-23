@@ -4,6 +4,7 @@ package muxrpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
@@ -80,12 +80,12 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 		ckFatal(err)
 
 		if v.Foo != "you are a test" {
-			err = errors.Errorf("unexpected response text %q", v.Foo)
+			err = fmt.Errorf("unexpected response text %q", v.Foo)
 			ckFatal(err)
 		}
 
 		if v.Bar != 42 {
-			err = errors.Errorf("unexpected response int %q", v.Bar)
+			err = fmt.Errorf("unexpected response int %q", v.Bar)
 			ckFatal(err)
 		}
 
@@ -106,12 +106,12 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 		ckFatal(err)
 
 		if v.Foo != "you are a test" {
-			err = errors.Errorf("unexpected response text %q", v.Foo)
+			err = fmt.Errorf("unexpected response text %q", v.Foo)
 			ckFatal(err)
 		}
 
 		if v.Bar != 23 {
-			err = errors.Errorf("unexpected response int %q", v.Bar)
+			err = fmt.Errorf("unexpected response int %q", v.Bar)
 			ckFatal(err)
 		}
 
@@ -213,7 +213,7 @@ func TestBothwaysAsyncString(t *testing.T) {
 		ckFatal(err)
 
 		if v != "you are a test" {
-			err = errors.Errorf("unexpected response message %q", v)
+			err = fmt.Errorf("unexpected response message %q", v)
 			ckFatal(err)
 		}
 
@@ -234,7 +234,7 @@ func TestBothwaysAsyncString(t *testing.T) {
 		ckFatal(err)
 
 		if v != "you are a test" {
-			err = errors.Errorf("unexpected response message %q", v)
+			err = fmt.Errorf("unexpected response message %q", v)
 			ckFatal(err)
 		}
 
@@ -307,11 +307,15 @@ func TestBothwaysSource(t *testing.T) {
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
 			for i, v := range expRx {
 				err := req.Stream.Pour(ctx, v)
-				ckFatal(errors.Wrapf(err, "test pour %d failed", i))
+				if err != nil {
+					ckFatal(fmt.Errorf("test pour %d failed: %w", i, err))
+				}
 			}
 
 			err := req.Stream.Close()
-			ckFatal(errors.Wrap(err, "test close failed"))
+			if err != nil {
+				ckFatal(fmt.Errorf("test close failed: %w", err))
+			}
 		}
 	})
 
@@ -326,11 +330,15 @@ func TestBothwaysSource(t *testing.T) {
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
 			for i, v := range expRx {
 				err := req.Stream.Pour(ctx, v)
-				ckFatal(errors.Wrapf(err, "test pour %d failed", i))
+				if err != nil {
+					ckFatal(fmt.Errorf("test pour %d failed: %w", i, err))
+				}
 			}
 
 			err := req.Stream.Close()
-			ckFatal(errors.Wrap(err, "test close failed"))
+			if err != nil {
+				ckFatal(fmt.Errorf("test close failed: %w", err))
+			}
 		}
 	})
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
@@ -359,7 +367,7 @@ func TestBothwaysSource(t *testing.T) {
 		for _, exp := range expRx {
 			more := src.Next(ctx)
 			if !more {
-				ckFatal(errors.Errorf("expected more"))
+				ckFatal(fmt.Errorf("expected more"))
 			}
 
 			buf = make([]byte, len(exp))
@@ -373,14 +381,14 @@ func TestBothwaysSource(t *testing.T) {
 			}
 
 			if v := string(buf); v != exp {
-				err = errors.Errorf("unexpected response message %q, expected %v", v, exp)
+				err = fmt.Errorf("unexpected response message %q, expected %v", v, exp)
 				ckFatal(err)
 			}
 		}
 
 		more := src.Next(ctx)
 		if more {
-			ckFatal(errors.Errorf("expected no more"))
+			ckFatal(fmt.Errorf("expected no more"))
 		}
 		if err := src.Err(); err != nil {
 			b, bodyErr := src.Bytes()
@@ -388,7 +396,7 @@ func TestBothwaysSource(t *testing.T) {
 				panic(err)
 			}
 			val := string(b)
-			err = errors.Errorf("expected end of stream, got value %v and error %+v", val, err)
+			err = fmt.Errorf("expected end of stream, got value %v and error %+v", val, err)
 			ckFatal(err)
 		}
 
@@ -407,7 +415,7 @@ func TestBothwaysSource(t *testing.T) {
 		for _, exp := range expRx {
 			more := src.Next(ctx)
 			if !more {
-				ckFatal(errors.Errorf("expected more"))
+				ckFatal(fmt.Errorf("expected more"))
 			}
 
 			buf = make([]byte, len(exp))
@@ -417,7 +425,7 @@ func TestBothwaysSource(t *testing.T) {
 					return err
 				}
 				if n != len(exp) {
-					return errors.Errorf("expected %d bytes but got %d", n, len(exp))
+					return fmt.Errorf("expected %d bytes but got %d", n, len(exp))
 				}
 				return nil
 			})
@@ -427,14 +435,14 @@ func TestBothwaysSource(t *testing.T) {
 			}
 
 			if v := string(buf); v != exp {
-				err = errors.Errorf("unexpected response message %q, expected %v", v, exp)
+				err = fmt.Errorf("unexpected response message %q, expected %v", v, exp)
 				ckFatal(err)
 			}
 		}
 
 		more := src.Next(ctx)
 		if more {
-			ckFatal(errors.Errorf("expected no more"))
+			ckFatal(fmt.Errorf("expected no more"))
 		}
 		if err := src.Err(); err != nil {
 			b, bodyErr := src.Bytes()
@@ -442,7 +450,7 @@ func TestBothwaysSource(t *testing.T) {
 				panic(err)
 			}
 			val := string(b)
-			err = errors.Errorf("expected end of stream, got value %v and error %+v", val, err)
+			err = fmt.Errorf("expected end of stream, got value %v and error %+v", val, err)
 			ckFatal(err)
 		}
 
@@ -515,13 +523,13 @@ func TestBothwaysSink(t *testing.T) {
 					fmt.Printf("bothwaysSink: calling Next() %d\n", i)
 					v, err := req.Stream.Next(ctx)
 					if err != nil {
-						errc <- errors.Wrapf(err, "stream next errored")
+						errc <- fmt.Errorf("stream next errored: %w", err)
 						return
 					}
 					fmt.Println("Next()", i, "returned", v)
 
 					if v != exp {
-						errc <- errors.Errorf("expected value %v, got %v", exp, v)
+						errc <- fmt.Errorf("expected value %v, got %v", exp, v)
 						return
 					}
 				}
@@ -661,20 +669,22 @@ func XTestBothwayDuplex(t *testing.T) {
 				for _, exp := range expRx {
 					v, err := req.Stream.Next(ctx)
 					if err != nil {
-						ckFatal(errors.Wrap(err, "err from stream next"))
+						ckFatal(fmt.Errorf("err from stream next: %w", err))
 						return
 					}
 					if v != exp {
-						ckFatal(errors.Errorf("expected value %v, got %v", exp, v))
+						ckFatal(fmt.Errorf("expected value %v, got %v", exp, v))
 					}
 				}
 				for _, v := range expTx {
 					err := req.Stream.Pour(ctx, v)
-					ckFatal(errors.Wrap(err, "err pouring to stream"))
+					if err != nil {
+						ckFatal(fmt.Errorf("err pouring to stream: %w", err))
+					}
 				}
 				err := req.Stream.Close()
 				if err != nil && !IsSinkClosed(err) {
-					ckFatal(errors.Wrap(err, "failed to close stream"))
+					ckFatal(fmt.Errorf("failed to close stream: %w", err))
 				}
 				wg.Done()
 			}
@@ -769,7 +779,7 @@ func XTestBothwayDuplex(t *testing.T) {
 
 			v := string(buf)
 			if v != exp {
-				err = errors.Errorf("expected %v, got %v", exp, v)
+				err = fmt.Errorf("expected %v, got %v", exp, v)
 				ckFatal(err)
 				return
 			}
@@ -788,7 +798,7 @@ func XTestBothwayDuplex(t *testing.T) {
 
 	i := 0
 	for err := range errc {
-		if err != nil && errors.Cause(err) != os.ErrClosed {
+		if err != nil && !errors.Is(err, os.ErrClosed) {
 			t.Errorf("err#%d from goroutine:\n%+v", i, err)
 			i++
 		}

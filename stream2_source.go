@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 
 	"github.com/karrick/bufpool"
-	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
@@ -65,7 +64,7 @@ func (bs *ByteSource) Cancel(err error) {
 func (bs *ByteSource) CloseWithError(err error) error {
 	// cant lock here because we might block in next
 	if err == nil {
-		bs.failed = luigi.EOS{}
+		bs.failed = io.EOF
 	} else {
 		bs.failed = err
 	}
@@ -85,7 +84,7 @@ func (bs *ByteSource) Err() error {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 
-	if luigi.IsEOS(bs.failed) || errors.Is(bs.failed, context.Canceled) {
+	if errors.Is(bs.failed, io.EOF) || errors.Is(bs.failed, context.Canceled) {
 		return nil
 	}
 

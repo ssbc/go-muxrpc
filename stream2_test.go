@@ -152,7 +152,7 @@ func setupSource(t testing.TB, expRx []map[string]interface{}) Endpoint {
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Errorf("h1 called %+v!\n", req)
 		err := req.Stream.Close()
-		ckFatal(errors.Wrap(err, "test close failed"))
+		ckFatal(fmt.Errorf("test close failed: %w", err))
 	})
 
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
@@ -168,7 +168,7 @@ func setupSource(t testing.TB, expRx []map[string]interface{}) Endpoint {
 			}
 
 			err := req.Stream.Close()
-			ckFatal(errors.Wrap(err, "test close failed"))
+			ckFatal(fmt.Errorf("test close failed: %w", err))
 		}
 	})
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {

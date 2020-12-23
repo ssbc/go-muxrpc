@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
@@ -112,7 +111,7 @@ func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, arg
 	req.Stream = req.source.AsStream()
 
 	if err := r.start(ctx, req); err != nil {
-		return nil, errors.Wrap(err, "error sending request")
+		return nil, fmt.Errorf("error sending request: %w", err)
 	}
 
 	req.sink.pkt.Flag = req.sink.pkt.Flag.Set(encFlag)
@@ -147,7 +146,7 @@ func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args 
 	req.Stream = bs.AsStream()
 
 	if err := r.start(ctx, req); err != nil {
-		return nil, errors.Wrap(err, "error sending request")
+		return nil, fmt.Errorf("error sending request: %w", err)
 	}
 
 	return bs, nil
@@ -183,7 +182,7 @@ func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, arg
 	req.Stream = &streamDuplex{bSrc.AsStream(), bSink.AsStream()}
 
 	if err := r.start(ctx, req); err != nil {
-		return nil, nil, errors.Wrap(err, "error sending request")
+		return nil, nil, fmt.Errorf("error sending request: %w", err)
 	}
 
 	return bSrc, bSink, nil

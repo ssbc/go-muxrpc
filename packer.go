@@ -5,14 +5,12 @@ package muxrpc
 import (
 	"context"
 	stderr "errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
 	"sync"
 	"syscall"
-
-	"github.com/pkg/errors"
-	"go.cryptoscope.co/luigi"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
@@ -53,19 +51,23 @@ func (pkr *Packer) NextHeader(ctx context.Context, hdr *codec.Header) error {
 	select {
 	case <-pkr.closing:
 		if err != nil {
-			return luigi.EOS{}
+			return io.EOF
 		}
 	case <-ctx.Done():
-		return errors.Wrap(ctx.Err(), "muxrpc/packer: read packet canceled")
+		err := ctx.Err()
+		if err != nil {
+			return fmt.Errorf("muxrpc/packer: read packet canceled: %w", err)
+		}
+		return err
 	default:
 	}
 
 	if err != nil {
-		if errors.Cause(err) == io.EOF {
-			return luigi.EOS{}
+		if stderr.Is(err, io.EOF) {
+			return io.EOF
 		}
 
-		return errors.Wrap(err, "error reading packet")
+		return fmt.Errorf("muxrpc: error reading packet %w", err)
 	}
 
 	hdr.Req = -hdr.Req
@@ -80,12 +82,12 @@ func IsSinkClosed(err error) bool {
 	if err == nil {
 		return false
 	}
-	causeErr := errors.Cause(err)
-	if causeErr == errSinkClosed {
+
+	if err == errSinkClosed {
 		return true
 	}
 
-	if causeErr == ErrSessionTerminated {
+	if err == ErrSessionTerminated {
 		return true
 	}
 
@@ -101,19 +103,18 @@ func isAlreadyClosed(err error) bool {
 		return false
 	}
 
-	causeErr := errors.Cause(err)
-	if causeErr == os.ErrClosed || causeErr == io.ErrClosedPipe {
+	if stderr.Is(err, io.EOF) || stderr.Is(err, os.ErrClosed) || stderr.Is(err, io.ErrClosedPipe) {
 		return true
 	}
 
-	if sysErr, ok := (causeErr).(*os.PathError); ok {
+	if sysErr, ok := (err).(*os.PathError); ok {
 		if sysErr.Err == os.ErrClosed {
-			// fmt.Printf("debug: found syscall err: %T) %s\n", causeErr, causeErr)
+			// fmt.Printf("debug: found syscall err: %T) %s\n", err, err)
 			return true
 		}
 	}
 
-	if opErr, ok := causeErr.(*net.OpError); ok {
+	if opErr, ok := err.(*net.OpError); ok {
 		if syscallErr, ok := opErr.Err.(*os.SyscallError); ok {
 			if errNo, ok := syscallErr.Err.(syscall.Errno); ok {
 				if errNo == syscall.EPIPE {
@@ -134,7 +135,7 @@ func (pkr *Packer) Close() error {
 		if isAlreadyClosed(pkr.closeErr) {
 			return nil
 		}
-		return errors.Wrap(pkr.closeErr, "packer: already closed")
+		return fmt.Errorf("packer: already closed: %w", pkr.closeErr)
 	default:
 	}
 
@@ -144,7 +145,9 @@ func (pkr *Packer) Close() error {
 		err = pkr.c.Close()
 		close(pkr.closing)
 	})
-	err = errors.Wrap(err, "error closing underlying closer")
+	if err != nil {
+		err = fmt.Errorf("error closing underlying closer: %w", err)
+	}
 	pkr.closeErr = err
 	return err
 }

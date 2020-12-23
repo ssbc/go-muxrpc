@@ -4,10 +4,9 @@ package muxrpc
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
-
-	"github.com/pkg/errors"
-	"go.cryptoscope.co/luigi"
 )
 
 const ChunkSize = 65536
@@ -70,11 +69,11 @@ func (r *srcReader) Read(data []byte) (int, error) {
 	more := r.src.Next(context.TODO())
 	if !more {
 		srcErr := r.src.Err()
-		if luigi.IsEOS(srcErr) {
+		if errors.Is(srcErr, io.EOF) {
 			return 0, io.EOF
 		}
 
-		return 0, errors.Wrap(srcErr, "error getting next block")
+		return 0, fmt.Errorf("muxrpc: error getting next block: %w", srcErr)
 	}
 
 	var err error

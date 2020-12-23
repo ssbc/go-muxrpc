@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/karrick/bufpool"
 	"github.com/pkg/errors"
-	"go.cryptoscope.co/luigi"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
@@ -123,7 +122,7 @@ func marshalCallArgs(args []interface{}) ([]byte, error) {
 		var err error
 		argData, err = json.Marshal(args)
 		if err != nil {
-			return nil, errors.Wrap(err, "error marshaling request arguments")
+			return nil, fmt.Errorf("error marshaling request arguments: %w", err)
 		}
 	}
 	return argData, nil
@@ -182,7 +181,7 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 
 	req, err = r.parseNewRequest(hdr)
 	if err != nil {
-		return nil, false, errors.Wrap(err, "error parsing request")
+		return nil, false, fmt.Errorf("error parsing request: %w", err)
 	}
 	ctx, req.abort = context.WithCancel(ctx)
 
@@ -220,13 +219,13 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 	rd := r.pkr.r.NextBodyReader(pkt.Len)
 	_, err := buf.ReadFrom(rd)
 	if err != nil {
-		return nil, errors.Wrap(err, "error copying request body")
+		return nil, fmt.Errorf("error copying request body: %w", err)
 	}
 
 	var req Request
 	err = json.NewDecoder(buf).Decode(&req)
 	if err != nil {
-		return nil, errors.Wrap(err, "error decoding packet")
+		return nil, fmt.Errorf("error decoding packet: %w", err)
 	}
 
 	r.bpool.Put(buf)
@@ -279,7 +278,7 @@ type Server interface {
 func (r *rpc) Serve() (err error) {
 	level.Debug(r.logger).Log("event", "serving")
 	defer func() {
-		if luigi.IsEOS(err) || isAlreadyClosed(err) {
+		if isAlreadyClosed(err) {
 			err = nil
 		}
 		cerr := r.pkr.Close()
@@ -294,7 +293,7 @@ func (r *rpc) Serve() (err error) {
 		// read next packet from connection
 		doRet := func() bool {
 			err = r.pkr.NextHeader(r.serveCtx, &hdr)
-			if luigi.IsEOS(err) || isAlreadyClosed(err) {
+			if isAlreadyClosed(err) {
 				err = nil
 				return true
 			}
@@ -307,7 +306,7 @@ func (r *rpc) Serve() (err error) {
 					err = nil
 					return true
 				}
-				err = errors.Wrap(err, "serve failed to read from packer")
+				err = fmt.Errorf("muxrpc: serve failed to read from packer: %w", err)
 				return true
 			}
 
@@ -346,7 +345,7 @@ func (r *rpc) Serve() (err error) {
 				if !isTrue(body) {
 					streamErr, err = parseError(body)
 					if err != nil {
-						return errors.Wrap(err, "error parsing error packet")
+						return fmt.Errorf("error parsing error packet: %w", err)
 					}
 				}
 				go func() {
@@ -365,7 +364,7 @@ func (r *rpc) Serve() (err error) {
 		var isNew bool
 		req, isNew, err = r.fetchRequest(r.serveCtx, &hdr)
 		if err != nil {
-			err = errors.Wrap(err, "muxrpc: error unpacking request")
+			err = fmt.Errorf("muxrpc: error unpacking request: %w", err)
 			return
 		}
 
@@ -375,7 +374,7 @@ func (r *rpc) Serve() (err error) {
 
 		err = req.source.consume(hdr.Len, hdr.Flag, r.pkr.r.NextBodyReader(hdr.Len))
 		if err != nil {
-			err = errors.Wrap(err, "muxrpc: error pouring data to handler")
+			err = fmt.Errorf("muxrpc: error pouring data to handler: %w", err)
 			return
 		}
 	}
@@ -440,7 +439,7 @@ func parseError(data []byte) (*CallError, error) {
 
 	err := json.Unmarshal(data, &e)
 	if err != nil {
-		return nil, errors.Wrap(err, "error unmarshaling error packet")
+		return nil, fmt.Errorf("error unmarshaling error packet: %w", err)
 	}
 
 	// There are also TypeErrors and numerous other things we might get from this..

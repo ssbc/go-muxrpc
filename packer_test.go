@@ -5,12 +5,12 @@ package muxrpc
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"net"
 	"reflect"
 	"testing"
-
-	"github.com/pkg/errors"
-	"go.cryptoscope.co/luigi"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
@@ -34,7 +34,7 @@ func TestPacker(t *testing.T) {
 	go func() {
 		err := pkr1.w.WritePacket(&pkt)
 		if err != nil {
-			errc <- errors.Wrap(err, "failed to send test packet (wat)")
+			errc <- fmt.Errorf("failed to send test packet (wat): %w", err)
 		}
 		close(errc)
 	}()
@@ -76,8 +76,8 @@ func TestPacker(t *testing.T) {
 	// hdr, err := pkr2.NextHeader(ctx)
 
 	err = pkr2.NextHeader(ctx, &hdr)
-	if !luigi.IsEOS(err) {
-		t.Fatal("expected EOS, got:", err)
+	if !errors.Is(err, io.EOF) {
+		t.Fatal("expected EOF, got:", err)
 	}
 
 	err = pkr1.w.WritePacket(pkt_)
