@@ -10,7 +10,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-type Reader struct{ io.Reader }
+type Reader struct {
+	r io.Reader
+}
 
 func NewReader(r io.Reader) *Reader { return &Reader{r} }
 
@@ -18,7 +20,7 @@ func NewReader(r io.Reader) *Reader { return &Reader{r} }
 // TODO: pass in packet pointer as arg to reduce allocations
 func (r Reader) ReadPacket() (*Packet, error) {
 	var hdr Header
-	err := binary.Read(r, binary.BigEndian, &hdr)
+	err := binary.Read(r.r, binary.BigEndian, &hdr)
 	// TODO does os.ErrClosed belong here?!
 	if e := errors.Cause(err); e == os.ErrClosed || e == io.EOF || e == io.ErrClosedPipe {
 		return nil, io.EOF
@@ -38,7 +40,7 @@ func (r Reader) ReadPacket() (*Packet, error) {
 		Body: make([]byte, hdr.Len), // yiiikes!
 	}
 
-	_, err = io.ReadFull(r, p.Body)
+	_, err = io.ReadFull(r.r, p.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, "pkt-codec: read body failed.")
 	}
@@ -48,7 +50,7 @@ func (r Reader) ReadPacket() (*Packet, error) {
 
 // ReadHeader only reads the header packet data (flag, len, req id). Use the exposed io.Reader to read the body.
 func (r Reader) ReadHeader(hdr *Header) error {
-	err := binary.Read(r, binary.BigEndian, hdr)
+	err := binary.Read(r.r, binary.BigEndian, hdr)
 	// TODO does os.ErrClosed belong here?!
 	if e := errors.Cause(err); e == os.ErrClosed || e == io.EOF || e == io.ErrClosedPipe {
 		return io.EOF
@@ -64,11 +66,11 @@ func (r Reader) ReadHeader(hdr *Header) error {
 }
 
 func (r Reader) NextBodyReader(pktLen uint32) io.Reader {
-	return io.LimitReader(r, int64(pktLen))
+	return io.LimitReader(r.r, int64(pktLen))
 }
 
 func (r Reader) ReadBodyInto(w io.Writer, pktLen uint32) error {
-	n, err := io.Copy(w, io.LimitReader(r, int64(pktLen)))
+	n, err := io.Copy(w, io.LimitReader(r.r, int64(pktLen)))
 	if err != nil {
 		return errors.Wrap(err, "pkt-codec: failed to read full body")
 	}
