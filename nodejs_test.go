@@ -27,7 +27,7 @@ import (
 func TestJSGettingCalledSource(t *testing.T) {
 	r := require.New(t)
 
-	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "nodejs_test.js")
 	r.NoError(err, "nodejs startup")
 
 	gotCall := make(chan struct{})
@@ -111,7 +111,7 @@ func TestJSGettingCalledAsync(t *testing.T) {
 		close(errc)
 	}()
 
-	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "nodejs_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
@@ -170,7 +170,7 @@ sbot.whoami((err, who) => {
 func TestJSSyncString(t *testing.T) {
 	r := require.New(t)
 
-	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "nodejs_test.js")
 	r.NoError(err, "nodejs startup")
 
 	muxdbgPath := filepath.Join("testrun", t.Name())
@@ -220,7 +220,7 @@ func TestJSSyncString(t *testing.T) {
 func TestJSAsyncString(t *testing.T) {
 	r := require.New(t)
 
-	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "nodejs_test.js")
 	r.NoError(err, "nodejs startup")
 
 	muxdbgPath := filepath.Join("testrun", t.Name())
@@ -266,7 +266,7 @@ func TestJSAsyncString(t *testing.T) {
 func TestJSAsyncObject(t *testing.T) {
 	r := require.New(t)
 
-	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "nodejs_test.js")
 	r.NoError(err, "nodejs startup")
 
 	muxdbgPath := filepath.Join("testrun", t.Name())
@@ -316,7 +316,7 @@ func TestJSAsyncObject(t *testing.T) {
 func TestJSSource(t *testing.T) {
 	r := require.New(t)
 
-	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "nodejs_test.js")
 	r.NoError(err, "nodejs startup")
 
 	muxdbgPath := filepath.Join("testrun", t.Name())
@@ -383,7 +383,7 @@ func TestJSSource(t *testing.T) {
 func TestJSDuplex(t *testing.T) {
 	r := require.New(t)
 
-	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "nodejs_test.js")
 	r.NoError(err, "nodejs startup")
 
 	muxdbgPath := filepath.Join("testrun", t.Name())
@@ -459,7 +459,7 @@ func TestJSDuplexToUs(t *testing.T) {
 	r := require.New(t)
 	jsLog := log.NewLogfmtLogger(os.Stderr)
 
-	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "nodejs_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var h hDuplex
@@ -513,7 +513,7 @@ func XTestJSSupportAbort(t *testing.T) {
 	r := require.New(t)
 	jsLog := log.NewLogfmtLogger(os.Stderr)
 
-	serv, err := proc.StartStdioProcess("node", os.Stderr, "client_test.js")
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "nodejs_test.js")
 	r.NoError(err, "nodejs startup")
 
 	var h hAbortMe
