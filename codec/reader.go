@@ -10,9 +10,7 @@ import (
 	"os"
 )
 
-type Reader struct {
-	r io.Reader
-}
+type Reader struct{ r io.Reader }
 
 func NewReader(r io.Reader) *Reader { return &Reader{r} }
 
@@ -20,24 +18,16 @@ func NewReader(r io.Reader) *Reader { return &Reader{r} }
 // TODO: pass in packet pointer as arg to reduce allocations
 func (r Reader) ReadPacket() (*Packet, error) {
 	var hdr Header
-	err := binary.Read(r.r, binary.BigEndian, &hdr)
-	// TODO does os.ErrClosed belong here?!
-	if readerClosed(err) {
-		return nil, io.EOF
-	} else if err != nil {
-		return nil, fmt.Errorf("pkt-codec: header read failed: %w", err)
-	}
-
-	// detect EOF pkt. TODO: not sure how to do this nicer
-	if hdr.Flag == 0 && hdr.Len == 0 && hdr.Req == 0 {
-		return nil, io.EOF
+	err := r.ReadHeader(&hdr)
+	if err != nil {
+		return nil, err
 	}
 
 	// copy header info
 	var p = Packet{
 		Flag: hdr.Flag,
 		Req:  hdr.Req,
-		Body: make([]byte, hdr.Len), // yiiikes!
+		Body: make([]byte, hdr.Len), // yiiikes! lot's of single-use allocations
 	}
 
 	_, err = io.ReadFull(r.r, p.Body)
@@ -51,7 +41,7 @@ func (r Reader) ReadPacket() (*Packet, error) {
 // ReadHeader only reads the header packet data (flag, len, req id). Use the exposed io.Reader to read the body.
 func (r Reader) ReadHeader(hdr *Header) error {
 	err := binary.Read(r.r, binary.BigEndian, hdr)
-	if readerClosed(err) {
+	if errors.Is(err, os.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
 		return io.EOF
 	} else if err != nil {
 		return fmt.Errorf("pkt-codec: header read failed: %w", err)
@@ -62,10 +52,6 @@ func (r Reader) ReadHeader(hdr *Header) error {
 		return io.EOF
 	}
 	return nil
-}
-
-func readerClosed(err error) bool {
-	return errors.Is(err, os.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe)
 }
 
 func (r Reader) NextBodyReader(pktLen uint32) io.Reader {
