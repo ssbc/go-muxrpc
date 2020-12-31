@@ -68,12 +68,12 @@ func (r *srcReader) Read(data []byte) (int, error) {
 
 	more := r.src.Next(context.TODO())
 	if !more {
-		srcErr := r.src.Err()
-		if errors.Is(srcErr, io.EOF) {
+		err := r.src.Err()
+		if err == nil || errors.Is(err, io.EOF) {
 			return 0, io.EOF
 		}
 
-		return 0, fmt.Errorf("muxrpc: error getting next block: %w", srcErr)
+		return 0, fmt.Errorf("muxrpc: error getting next block: %w", err)
 	}
 
 	var err error
