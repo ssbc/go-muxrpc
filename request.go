@@ -115,14 +115,14 @@ func (wst ErrWrongStreamType) Error() string {
 
 // GetResponseSink returns the response writer for incoming source requests.
 func (req *Request) GetResponseSink() (*ByteSink, error) {
-	if req.Type != "source" {
+	if req.Type != "source" && req.Type != "duplex" {
 		return nil, ErrWrongStreamType{req.Type}
 	}
 	return req.sink, nil
 }
 
 func (req *Request) GetResponseSource() (*ByteSource, error) {
-	if req.Type != "sink" {
+	if req.Type != "sink" && req.Type != "duplex" {
 		return nil, ErrWrongStreamType{req.Type}
 	}
 	return req.source, nil

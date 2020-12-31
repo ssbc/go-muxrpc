@@ -440,7 +440,7 @@ func TestJSDuplex(t *testing.T) {
 	fmt.Println("filled sink")
 
 	print := luigi.FuncSink(func(_ context.Context, v interface{}, err error) error {
-		fmt.Println("from src:", v.(int), err)
+		fmt.Println("from src:", v, err)
 		return err
 	})
 
@@ -566,9 +566,19 @@ func (h *hAbortMe) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 		return
 	}
 
+	snk, err := req.GetResponseSink()
+	if err != nil {
+		require.NoError(h.t, err)
+		req.Stream.CloseWithError(err)
+		return
+	}
 	var i int
+
+	snk.SetEncoding(TypeJSON)
+
+	enc := json.NewEncoder(snk)
 	for ; i < h.want+10; i++ {
-		err := req.Stream.Pour(ctx, i)
+		err := enc.Encode(i)
 		if err != nil {
 			h.logger.Log("evt", "failed to pour", "i", i, "err", err)
 			if errors.Cause(err) == context.Canceled {

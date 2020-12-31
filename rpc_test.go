@@ -767,8 +767,19 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 	h.logger.Log("correct", "signature")
 
 	go func() {
+
+		snk, err := req.GetResponseSink()
+		if err != nil {
+			req.Stream.CloseWithError(err)
+			h.logger.Log("get-sink-err", err)
+			return
+		}
+
+		snk.SetEncoding(TypeJSON)
+		enc := json.NewEncoder(snk)
+
 		for i, tx := range h.txvals {
-			err := req.Stream.Pour(ctx, tx)
+			err := enc.Encode(tx)
 			if err != nil {
 				h.failed <- fmt.Errorf("failed to tx val %d: %w", i, err)
 				return
@@ -776,12 +787,47 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 			h.logger.Log("event", "sent", "err", err, "i", i, "tx", fmt.Sprintf("%+v", tx))
 			time.Sleep(250 * time.Millisecond)
 		}
-		// req.Stream.Close()
+		err = snk.Close()
+		if err != nil {
+			h.failed <- fmt.Errorf("failed to close sink: %w", err)
+			return
+		}
 	}()
 
+	src, err := req.GetResponseSource()
+	if err != nil {
+		req.Stream.CloseWithError(err)
+		h.logger.Log("get-src-err", err)
+		return
+	}
+
 	j := 0
-	for {
-		v, err := req.Stream.Next(ctx)
+	for src.Next(ctx) {
+
+		err := src.Reader(func(rd io.Reader) error {
+			var v interface{}
+			err := json.NewDecoder(rd).Decode(&v)
+			if err != nil {
+				h.logger.Log("src-decode-err", err)
+				return err
+			}
+
+			switch rv := v.(type) {
+			case float64:
+				h.rxvals = append(h.rxvals, rv)
+			case string:
+				h.rxvals = append(h.rxvals, rv)
+			case map[string]interface{}:
+				var v testStruct
+				v.A = int(rv["A"].(float64))
+				v.N = int(rv["N"].(float64))
+				v.Str = rv["Str"].(string)
+				h.rxvals = append(h.rxvals, v)
+			default:
+				return fmt.Errorf("got unhandled duplex msg type: %T", v)
+			}
+			return nil
+		})
 		if err != nil {
 			if luigi.IsEOS(err) {
 				break
@@ -789,21 +835,7 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 			h.failed <- fmt.Errorf("drined input stream: %w", err)
 			return
 		}
-		switch rv := v.(type) {
-		case float64:
-			h.rxvals = append(h.rxvals, rv)
-		case string:
-			h.rxvals = append(h.rxvals, rv)
-		case map[string]interface{}:
-			var v testStruct
-			v.A = int(rv["A"].(float64))
-			v.N = int(rv["N"].(float64))
-			v.Str = rv["Str"].(string)
-			h.rxvals = append(h.rxvals, v)
-		default:
-			h.failed <- fmt.Errorf("got unhandled duplex msg type: %T", v)
-			return
-		}
+
 		j++
 	}
 	// req.Stream.Close()

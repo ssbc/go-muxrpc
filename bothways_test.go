@@ -669,7 +669,13 @@ func TestBothwayDuplex(t *testing.T) {
 	handler := func(name string) func(context.Context, *Request, Endpoint) {
 		return func(ctx context.Context, req *Request, edp Endpoint) {
 			t.Logf("%s called %+v\n", name, req)
-			if len(req.Method) == 1 && req.Method[0] == "test.duplex" {
+			if req.Method.String() == "test.duplex" {
+				for _, v := range expTx {
+					err := req.Stream.Pour(ctx, v)
+					if err != nil {
+						ckFatal(fmt.Errorf("err pouring to stream: %w", err))
+					}
+				}
 				for _, exp := range expRx {
 					v, err := req.Stream.Next(ctx)
 					if err != nil {
@@ -680,12 +686,7 @@ func TestBothwayDuplex(t *testing.T) {
 						ckFatal(fmt.Errorf("expected value %v, got %v", exp, v))
 					}
 				}
-				for _, v := range expTx {
-					err := req.Stream.Pour(ctx, v)
-					if err != nil {
-						ckFatal(fmt.Errorf("err pouring to stream: %w", err))
-					}
-				}
+
 				err := req.Stream.Close()
 				if err != nil && !IsSinkClosed(err) {
 					ckFatal(fmt.Errorf("failed to close stream: %w", err))
