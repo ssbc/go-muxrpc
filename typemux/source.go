@@ -3,19 +3,20 @@ package typemux
 import (
 	"context"
 
-	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/v2"
 )
 
-type SourceFunc func(context.Context, *muxrpc.Request, luigi.Sink) error
+type SourceFunc func(context.Context, *muxrpc.Request, *muxrpc.ByteSink, muxrpc.Endpoint) error
 
-func (sf SourceFunc) HandleSource(ctx context.Context, r *muxrpc.Request, snk luigi.Sink) error {
-	return sf(ctx, r, snk)
+func (sf SourceFunc) HandleSource(ctx context.Context, r *muxrpc.Request, src *muxrpc.ByteSink, edp muxrpc.Endpoint) error {
+	return sf(ctx, r, src, edp)
 }
+
+var _ SourceHandler = (*SourceFunc)(nil)
 
 // SourceHandler initiates a 'source' call, so the handler is supposed to send a stream of stuff to the peer.
 type SourceHandler interface {
-	HandleSource(context.Context, *muxrpc.Request, luigi.Sink, muxrpc.Endpoint) error
+	HandleSource(context.Context, *muxrpc.Request, *muxrpc.ByteSink, muxrpc.Endpoint) error
 }
 
 type sourceStub struct {
@@ -25,7 +26,13 @@ type sourceStub struct {
 func (hm sourceStub) HandleCall(ctx context.Context, req *muxrpc.Request, edp muxrpc.Endpoint) {
 	// TODO: check call type
 
-	err := hm.h.HandleSource(ctx, req, req.Stream, edp)
+	w, err := req.GetResponseSink()
+	if err != nil {
+		req.CloseWithError(err)
+		return
+	}
+
+	err = hm.h.HandleSource(ctx, req, w, edp)
 	if err != nil {
 		req.CloseWithError(err)
 		return

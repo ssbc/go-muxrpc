@@ -43,7 +43,7 @@ func (hm *HandlerMux) HandleCall(ctx context.Context, req *muxrpc.Request, edp m
 			return
 		}
 	}
-	req.Stream.CloseWithError(errors.Errorf("no such command: %v", req.Method))
+	req.CloseWithError(errors.Errorf("no such command: %v", req.Method))
 }
 
 // HandleConnect does nothing on this mux since it's only intended for function calls, not connect events
