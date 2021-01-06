@@ -5,6 +5,7 @@ package muxrpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/karrick/bufpool"
-	"github.com/pkg/errors"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
@@ -205,7 +205,7 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 	}
 
 	if !pkt.Flag.Get(codec.FlagJSON) {
-		return nil, fmt.Errorf("muxrpc: expected JSON flag for call manifest")
+		return nil, errors.New("muxrpc: expected JSON flag for call manifest")
 	}
 
 	buf := r.bpool.Get()
@@ -251,14 +251,14 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 		case "sink":
 			req.Stream = req.source.AsStream()
 		default:
-			return nil, errors.Errorf("unhandled request type: %q", req.Type)
+			return nil, fmt.Errorf("unhandled request type: %q", req.Type)
 		}
 	} else {
 		if req.Type == "" {
 			req.Type = "async"
 		}
 		if req.Type != "async" {
-			return nil, errors.Errorf("unhandled request type: %q", req.Type)
+			return nil, fmt.Errorf("unhandled request type: %q", req.Type)
 		}
 		req.Stream = req.sink.AsStream()
 	}
@@ -337,7 +337,7 @@ func (r *rpc) Serve() (err error) {
 
 				err = r.pkr.r.ReadBodyInto(buf, hdr.Len)
 				if err != nil {
-					return errors.Wrapf(err, "muxrpc: failed to get error body for closing of req: %d (len:%d)", hdr.Req, hdr.Len)
+					return fmt.Errorf("muxrpc: failed to get error body for closing of req: %d (len:%d): %w", hdr.Req, hdr.Len, err)
 				}
 
 				body := buf.Bytes()
@@ -444,7 +444,7 @@ func parseError(data []byte) (*CallError, error) {
 
 	// There are also TypeErrors and numerous other things we might get from this..
 	// if e.Name != "Error" {
-	// 	return nil, errors.Errorf(`name is not "Error" but %q`, e.Name)
+	// 	return nil, fmt.Errorf(`name is not "Error" but %q`, e.Name)
 	// }
 
 	return &e, nil

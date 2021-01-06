@@ -367,7 +367,7 @@ func TestBothwaysSource(t *testing.T) {
 		for _, exp := range expRx {
 			more := src.Next(ctx)
 			if !more {
-				ckFatal(fmt.Errorf("expected more"))
+				ckFatal(errors.New("expected more"))
 			}
 
 			buf = make([]byte, len(exp))
@@ -388,7 +388,7 @@ func TestBothwaysSource(t *testing.T) {
 
 		more := src.Next(ctx)
 		if more {
-			ckFatal(fmt.Errorf("expected no more"))
+			ckFatal(errors.New("expected no more"))
 		}
 		if err := src.Err(); err != nil {
 			b, bodyErr := src.Bytes()
@@ -415,7 +415,7 @@ func TestBothwaysSource(t *testing.T) {
 		for _, exp := range expRx {
 			more := src.Next(ctx)
 			if !more {
-				ckFatal(fmt.Errorf("expected more"))
+				ckFatal(errors.New("expected more"))
 			}
 
 			buf = make([]byte, len(exp))
@@ -442,7 +442,7 @@ func TestBothwaysSource(t *testing.T) {
 
 		more := src.Next(ctx)
 		if more {
-			ckFatal(fmt.Errorf("expected no more"))
+			ckFatal(errors.New("expected no more"))
 		}
 		if err := src.Err(); err != nil {
 			b, bodyErr := src.Bytes()
@@ -734,7 +734,7 @@ func TestBothwayDuplex(t *testing.T) {
 		for _, exp := range expTx {
 			has := src.Next(ctx)
 			if !has {
-				ckFatal(fmt.Errorf("expected more from source"))
+				ckFatal(errors.New("expected more from source"))
 				return
 			}
 
@@ -768,7 +768,7 @@ func TestBothwayDuplex(t *testing.T) {
 		for _, exp := range expTx {
 			has := src.Next(ctx)
 			if !has {
-				ckFatal(fmt.Errorf("expected more from source"))
+				ckFatal(errors.New("expected more from source"))
 				return
 			}
 

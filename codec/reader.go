@@ -65,7 +65,7 @@ func (r Reader) ReadBodyInto(w io.Writer, pktLen uint32) error {
 	}
 
 	if uint32(n) != pktLen {
-		return fmt.Errorf("pkt-codec: failed to read full body")
+		return errors.New("pkt-codec: failed to read full body")
 	}
 
 	return nil

@@ -118,7 +118,7 @@ func TestJSGettingCalledAsync(t *testing.T) {
 	fh.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("got call: %+v", req)
 		if len(req.Method) != 1 || req.Method[0] != "hello" {
-			ckFatal(errors.Errorf("unexpected method name: %s", req.Method))
+			ckFatal(fmt.Errorf("unexpected method name: %s", req.Method))
 		}
 		err := req.Return(ctx, "meow")
 		ckFatal(err)

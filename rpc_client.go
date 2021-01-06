@@ -5,6 +5,7 @@ package muxrpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -50,7 +51,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 		switch tv := ret.(type) {
 		case *[]byte:
 			if re != TypeBinary {
-				return fmt.Errorf("muxrpc: unexpected requst encoding, need TypeBinary")
+				return errors.New("muxrpc: unexpected requst encoding, need TypeBinary")
 			}
 			var bs []byte
 			bs, err = ioutil.ReadAll(rd)
@@ -61,7 +62,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 
 		case *string:
 			if re != TypeString {
-				return fmt.Errorf("muxrpc: unexpected requst encoding, need TypeString")
+				return errors.New("muxrpc: unexpected requst encoding, need TypeString")
 			}
 			var bs []byte
 			bs, err = ioutil.ReadAll(rd)
@@ -73,7 +74,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 
 		default:
 			if re != TypeJSON {
-				return fmt.Errorf("muxrpc: unexpected requst encoding, need TypeJSON")
+				return errors.New("muxrpc: unexpected requst encoding, need TypeJSON")
 			}
 			level.Debug(r.logger).Log("asynctype", "any")
 			err = json.NewDecoder(rd).Decode(ret)

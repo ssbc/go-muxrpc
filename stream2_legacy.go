@@ -5,6 +5,7 @@ package muxrpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -90,7 +91,7 @@ func (stream *streamSource) Pour(ctx context.Context, v interface{}) error {
 }
 
 func (stream *streamSource) Close() error {
-	return fmt.Errorf("muxrpc: can't close byte source?")
+	return errors.New("muxrpc: can't close byte source?")
 }
 
 func (stream *streamSource) CloseWithError(e error) error {
@@ -117,7 +118,7 @@ func (bs *ByteSink) AsStream() *streamSink {
 type streamSink struct{ sink *ByteSink }
 
 func (stream *streamSink) Next(ctx context.Context) (interface{}, error) {
-	return nil, fmt.Errorf("muxrpc: can't read from a sink")
+	return nil, errors.New("muxrpc: can't read from a sink")
 }
 
 func (stream *streamSink) Pour(ctx context.Context, v interface{}) error {

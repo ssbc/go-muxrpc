@@ -4,9 +4,8 @@ package muxrpc
 
 import (
 	"context"
+	"fmt"
 	"sync"
-
-	"github.com/pkg/errors"
 )
 
 // Handler allows handling connections.
@@ -45,7 +44,7 @@ func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request, edp Endpoint
 		}
 	}
 
-	req.CloseWithError(errors.Errorf("no such command: %v", req.Method))
+	req.CloseWithError(fmt.Errorf("no such command: %v", req.Method))
 }
 
 func (hm *HandlerMux) HandleConnect(ctx context.Context, edp Endpoint) {

@@ -662,10 +662,10 @@ func XTestErrorAsync(t *testing.T) {
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
-			err := req.Stream.CloseWithError(fmt.Errorf("omg an error"))
+			err := req.Stream.CloseWithError(errors.New("omg an error"))
 			ckFatal(err)
 		} else {
-			err := req.Stream.CloseWithError(fmt.Errorf("unexpected"))
+			err := req.Stream.CloseWithError(errors.New("unexpected"))
 			ckFatal(err)
 		}
 	})
@@ -689,7 +689,7 @@ func XTestErrorAsync(t *testing.T) {
 		var v string
 		err := rpc1.Async(ctx, &v, TypeString, Method{"whoami"})
 		if err == nil {
-			ckFatal(fmt.Errorf("expected an error"))
+			ckFatal(errors.New("expected an error"))
 		} else if err.Error() != "omg an error" {
 			ckFatal(fmt.Errorf("expected error %q, got %q", "omg an error", err))
 		}
@@ -701,7 +701,7 @@ func XTestErrorAsync(t *testing.T) {
 		}
 
 		if e.Message != "omg an error" {
-			ckFatal(fmt.Errorf("unexpected error message"))
+			ckFatal(errors.New("unexpected error message"))
 		}
 
 		if e.Name != "Error" {

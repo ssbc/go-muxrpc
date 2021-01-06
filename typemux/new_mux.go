@@ -5,9 +5,9 @@ package typemux
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-kit/kit/log"
-	"github.com/pkg/errors"
 	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/v2"
 )
@@ -43,7 +43,7 @@ func (hm *HandlerMux) HandleCall(ctx context.Context, req *muxrpc.Request, edp m
 			return
 		}
 	}
-	req.CloseWithError(errors.Errorf("no such command: %v", req.Method))
+	req.CloseWithError(fmt.Errorf("no such command: %v", req.Method))
 }
 
 // HandleConnect does nothing on this mux since it's only intended for function calls, not connect events

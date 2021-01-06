@@ -48,7 +48,7 @@ func TestHandlerMux(t *testing.T) {
 		if exp.Method.String() == req.Method.String() {
 			req.Stream.Close()
 		} else {
-			req.Stream.CloseWithError(errors.Errorf("test failed"))
+			req.Stream.CloseWithError(fmt.Errorf("test failed"))
 		}
 		wg.Done()
 	})

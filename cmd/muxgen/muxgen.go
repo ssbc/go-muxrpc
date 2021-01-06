@@ -33,7 +33,7 @@ type Arg struct {
 func parseArg(arg string) (Arg, error) {
 	split := strings.Split(arg, ":")
 	if len(split) != 2 {
-		return Arg{}, errors.Errorf("not exactly one : in %q", arg)
+		return Arg{}, fmt.Errorf("not exactly one : in %q", arg)
 	}
 
 	return Arg{name: split[0], tipe: split[1]}, nil
@@ -117,7 +117,7 @@ func Parse(args []string) (*Func, error) {
 	args = set.Args()
 
 	if len(args) != 3 {
-		return nil, errors.Errorf("expected 3 args, got %d", len(args))
+		return nil, fmt.Errorf("expected 3 args, got %d", len(args))
 	}
 
 	m := &Func{
@@ -191,7 +191,7 @@ func (m *Func) Generate() (string, error) {
 	case "duplex":
 		return m.generateDuplex()
 	default:
-		return "", errors.Errorf("unknown call type %q", m.Type)
+		return "", fmt.Errorf("unknown call type %q", m.Type)
 	}
 }
 

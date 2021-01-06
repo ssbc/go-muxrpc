@@ -90,7 +90,7 @@ func TestStreamAsyncErr(t *testing.T) {
 
 	str := newStream(iSrc, oWriter, req, streamCapOnce, streamCapNone)
 
-	err := iSink.(luigi.ErrorCloser).CloseWithError(errors.Errorf("some error"))
+	err := iSink.(luigi.ErrorCloser).CloseWithError(fmt.Errorf("some error"))
 	r.NoError(err)
 
 	v, err := str.Next(ctx)

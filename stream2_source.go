@@ -205,7 +205,7 @@ func (fw *frameBuffer) copyBody(pktLen uint32, rd io.Reader) error {
 	}
 
 	if uint32(copied) != pktLen {
-		return fmt.Errorf("frameBuffer: failed to consume whole body")
+		return errors.New("frameBuffer: failed to consume whole body")
 	}
 
 	atomic.AddUint32(&fw.frames, 1)
