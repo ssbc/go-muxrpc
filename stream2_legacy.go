@@ -37,7 +37,7 @@ func (stream *streamSource) Next(ctx context.Context) (interface{}, error) {
 		if err == nil {
 			return nil, luigi.EOS{}
 		}
-		return nil, fmt.Errorf("muxrcp: no more elemts from source: %w", err)
+		return nil, fmt.Errorf("muxrpc: no more elemts from source: %w", err)
 	}
 
 	// TODO: flag is known at creation tyme and doesnt change other then end
@@ -61,7 +61,7 @@ func (stream *streamSource) Next(ctx context.Context) (interface{}, error) {
 		err := stream.source.Reader(func(rd io.Reader) error {
 			err := json.NewDecoder(rd).Decode(&dst)
 			if err != nil {
-				return fmt.Errorf("muxrcp: failed to decode json from source: %w", err)
+				return fmt.Errorf("muxrpc: failed to decode json from source: %w", err)
 			}
 			return nil
 		})

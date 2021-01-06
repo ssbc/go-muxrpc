@@ -147,14 +147,12 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 	switch tv := v.(type) {
 
 	case string:
-		fmt.Println("returning string")
 		req.sink.pkt.Flag = req.sink.pkt.Flag.Set(codec.FlagString)
 
 		b = []byte(tv)
 
 	default:
 		req.sink.pkt.Flag = req.sink.pkt.Flag.Set(codec.FlagJSON)
-		fmt.Printf("returning JSON for %T\n", v)
 		var err error
 		b, err = json.Marshal(v)
 		if err != nil {

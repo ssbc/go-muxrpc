@@ -203,7 +203,7 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 		first codec.Packet
 		err   error
 
-		dbg = log.With(level.Warn(r.logger),
+		dbg = log.With(level.Debug(r.logger),
 			"call", req.Type,
 			"method", req.Method.String())
 	)
