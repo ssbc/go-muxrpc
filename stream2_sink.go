@@ -4,6 +4,7 @@ package muxrpc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 
@@ -33,11 +34,29 @@ func newByteSink(ctx context.Context, w *codec.Writer) *ByteSink {
 	}
 }
 
-func (bs *ByteSink) Cancel(err error) { bs.closed = err }
+func (bs *ByteSink) Cancel(err error) {
+	bs.closed = err
+
+	body, err := json.Marshal(CallError{
+		Message: err.Error(),
+		Name:    "Error",
+	})
+	if err != nil {
+		err = fmt.Errorf("error marshaling value: %w", err)
+		panic(err)
+	}
+	pkt := codec.Packet{
+		Req:  bs.pkt.Req,
+		Flag: bs.pkt.Flag | codec.FlagEndErr,
+		Body: body,
+	}
+	bs.w.WritePacket(&pkt)
+}
 
 func (bs *ByteSink) SetEncoding(re RequestEncoding) {
 	encFlag, err := re.asCodecFlag()
 	if err != nil {
+		panic(err)
 		return
 	}
 	bs.pkt.Flag = bs.pkt.Flag.Set(encFlag)
