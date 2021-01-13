@@ -4,10 +4,8 @@ package muxrpc
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 
 	"github.com/pkg/errors"
 
@@ -90,14 +88,4 @@ func (bs *ByteSink) CloseWithError(err error) error {
 
 func (bs *ByteSink) Close() error {
 	return bs.CloseWithError(io.EOF)
-}
-
-func (bs *ByteSink) consume(pktLen uint32, r io.Reader) error {
-	fmt.Println("bsink: ", pktLen)
-	buf, err := ioutil.ReadAll(r)
-	if err != nil {
-		return err
-	}
-	fmt.Println(hex.Dump(buf))
-	panic("writing to sink?!")
 }
