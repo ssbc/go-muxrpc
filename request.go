@@ -130,7 +130,7 @@ func (req *Request) GetResponseSource() (*ByteSource, error) {
 
 // Args is a legacy stub to get the unmarshaled json arguments
 func (req *Request) Args() []interface{} {
-	fmt.Println("muxrpc: please use RawArgs where ever possible")
+	fmt.Println("[muxrpc/deprecation] warning: please use RawArgs where ever possible")
 	debug.PrintStack()
 	var v []interface{}
 	json.Unmarshal(req.RawArgs, &v)
@@ -147,12 +147,13 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 	switch tv := v.(type) {
 
 	case string:
-		req.sink.pkt.Flag = req.sink.pkt.Flag.Set(codec.FlagString)
+		req.sink.SetEncoding(TypeString)
 
 		b = []byte(tv)
 
 	default:
-		req.sink.pkt.Flag = req.sink.pkt.Flag.Set(codec.FlagJSON)
+		req.sink.SetEncoding(TypeJSON)
+
 		var err error
 		b, err = json.Marshal(v)
 		if err != nil {

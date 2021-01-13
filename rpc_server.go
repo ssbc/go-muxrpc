@@ -354,6 +354,7 @@ func (r *rpc) Serve() (err error) {
 				}()
 			} else {
 				level.Warn(r.logger).Log("event", "unhandled packet", "reqID", hdr.Req)
+				r.Terminate()
 			}
 			continue
 		}
@@ -374,8 +375,14 @@ func (r *rpc) Serve() (err error) {
 
 		err = req.source.consume(hdr.Len, hdr.Flag, r.pkr.r.NextBodyReader(hdr.Len))
 		if err != nil {
-			err = fmt.Errorf("muxrpc: error pouring data to handler: %w", err)
-			return
+			// TODO: remove request?!
+			level.Warn(r.logger).Log(
+				"event", "consume failed",
+				"req", hdr.Req,
+				"method", req.Method.String(),
+				"err", err)
+			// err = fmt.Errorf("muxrpc: error pouring data to handler: %w", err)
+			continue
 		}
 	}
 }

@@ -17,6 +17,8 @@ import (
 
 // AsStream returns a legacy stream adapter for luigi code
 func (bs *ByteSource) AsStream() *streamSource {
+	// fmt.Println("[muxrpc/deprecation] warning: please use ByteSource where ever possible")
+	// debug.PrintStack()
 	return &streamSource{
 		source: bs,
 		tipe:   nil, // nil for defaulting to empty-interface auto-typing
@@ -27,11 +29,11 @@ type streamSource struct {
 	source *ByteSource
 
 	tipe interface{}
-
-	buf [1024]byte // hmmmm.. fixed size?!
 }
 
 func (stream *streamSource) Next(ctx context.Context) (interface{}, error) {
+	// fmt.Println("[muxrpc/deprecation] warning: please use ByteSink where ever possible")
+	// debug.PrintStack()
 	if !stream.source.Next(ctx) {
 		err := stream.source.Err()
 		if err == nil {
@@ -122,6 +124,8 @@ func (stream *streamSink) Next(ctx context.Context) (interface{}, error) {
 }
 
 func (stream *streamSink) Pour(ctx context.Context, v interface{}) error {
+	// fmt.Println("[muxrpc/deprecation] warning: please use ByteSink where ever possible")
+	// debug.PrintStack()
 	var err error
 	switch tv := v.(type) {
 	case []byte:
@@ -153,12 +157,12 @@ func (stream *streamSink) CloseWithError(e error) error {
 
 // WithType tells the stream in what type JSON data should be unmarshalled into
 func (stream *streamSink) WithType(tipe interface{}) {
-	fmt.Printf("muxrpc: chaging marshal type to %T\n", tipe)
+	// fmt.Printf("muxrpc: chaging marshal type to %T\n", tipe)
 }
 
 // WithReq tells the stream what request number should be used for sent messages
 func (stream *streamSink) WithReq(req int32) {
-	fmt.Printf("muxrpc/legacy: chaging request ID of sink to %d\n", req)
+	// fmt.Printf("muxrpc/legacy: chaging request ID of sink to %d\n", req)
 	stream.sink.pkt.Req = req
 }
 
