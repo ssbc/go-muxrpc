@@ -20,7 +20,7 @@ import (
 // ByteSource is inspired by sql.Rows but without the Scan(), it just reads plain []bytes, one per muxrpc packet.
 type ByteSource struct {
 	bpool bufpool.FreeList
-	buf   frameBuffer
+	buf   *frameBuffer
 
 	mu     sync.Mutex
 	closed chan struct{}
@@ -35,7 +35,7 @@ type ByteSource struct {
 func newByteSource(ctx context.Context, pool bufpool.FreeList) *ByteSource {
 	bs := &ByteSource{
 		bpool: pool,
-		buf: frameBuffer{
+		buf: &frameBuffer{
 			store: pool.Get(),
 		},
 		closed: make(chan struct{}),
