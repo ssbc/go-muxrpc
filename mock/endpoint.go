@@ -6,128 +6,120 @@ import (
 	"net"
 	"sync"
 
-	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/v2"
+	muxrpc "go.cryptoscope.co/muxrpc/v2"
 )
 
 type FakeEndpoint struct {
-	AsyncStub        func(ctx context.Context, tipe interface{}, method muxrpc.Method, args ...interface{}) (interface{}, error)
+	AsyncStub        func(context.Context, interface{}, muxrpc.RequestEncoding, muxrpc.Method, ...interface{}) error
 	asyncMutex       sync.RWMutex
 	asyncArgsForCall []struct {
-		ctx    context.Context
-		tipe   interface{}
-		method muxrpc.Method
-		args   []interface{}
+		arg1 context.Context
+		arg2 interface{}
+		arg3 muxrpc.RequestEncoding
+		arg4 muxrpc.Method
+		arg5 []interface{}
 	}
 	asyncReturns struct {
-		result1 interface{}
-		result2 error
+		result1 error
 	}
 	asyncReturnsOnCall map[int]struct {
-		result1 interface{}
-		result2 error
+		result1 error
 	}
-	SourceStub        func(ctx context.Context, tipe interface{}, method muxrpc.Method, args ...interface{}) (luigi.Source, error)
-	sourceMutex       sync.RWMutex
-	sourceArgsForCall []struct {
-		ctx    context.Context
-		tipe   interface{}
-		method muxrpc.Method
-		args   []interface{}
-	}
-	sourceReturns struct {
-		result1 luigi.Source
-		result2 error
-	}
-	sourceReturnsOnCall map[int]struct {
-		result1 luigi.Source
-		result2 error
-	}
-	SinkStub        func(ctx context.Context, method muxrpc.Method, args ...interface{}) (luigi.Sink, error)
-	sinkMutex       sync.RWMutex
-	sinkArgsForCall []struct {
-		ctx    context.Context
-		method muxrpc.Method
-		args   []interface{}
-	}
-	sinkReturns struct {
-		result1 luigi.Sink
-		result2 error
-	}
-	sinkReturnsOnCall map[int]struct {
-		result1 luigi.Sink
-		result2 error
-	}
-	DuplexStub        func(ctx context.Context, tipe interface{}, method muxrpc.Method, args ...interface{}) (luigi.Source, luigi.Sink, error)
+	DuplexStub        func(context.Context, muxrpc.RequestEncoding, muxrpc.Method, ...interface{}) (*muxrpc.ByteSource, *muxrpc.ByteSink, error)
 	duplexMutex       sync.RWMutex
 	duplexArgsForCall []struct {
-		ctx    context.Context
-		tipe   interface{}
-		method muxrpc.Method
-		args   []interface{}
+		arg1 context.Context
+		arg2 muxrpc.RequestEncoding
+		arg3 muxrpc.Method
+		arg4 []interface{}
 	}
 	duplexReturns struct {
-		result1 luigi.Source
-		result2 luigi.Sink
+		result1 *muxrpc.ByteSource
+		result2 *muxrpc.ByteSink
 		result3 error
 	}
 	duplexReturnsOnCall map[int]struct {
-		result1 luigi.Source
-		result2 luigi.Sink
+		result1 *muxrpc.ByteSource
+		result2 *muxrpc.ByteSink
 		result3 error
-	}
-	DoStub        func(ctx context.Context, req *muxrpc.Request) error
-	doMutex       sync.RWMutex
-	doArgsForCall []struct {
-		ctx context.Context
-		req *muxrpc.Request
-	}
-	doReturns struct {
-		result1 error
-	}
-	doReturnsOnCall map[int]struct {
-		result1 error
-	}
-	TerminateStub        func() error
-	terminateMutex       sync.RWMutex
-	terminateArgsForCall []struct{}
-	terminateReturns     struct {
-		result1 error
-	}
-	terminateReturnsOnCall map[int]struct {
-		result1 error
 	}
 	RemoteStub        func() net.Addr
 	remoteMutex       sync.RWMutex
-	remoteArgsForCall []struct{}
-	remoteReturns     struct {
+	remoteArgsForCall []struct {
+	}
+	remoteReturns struct {
 		result1 net.Addr
 	}
 	remoteReturnsOnCall map[int]struct {
 		result1 net.Addr
 	}
+	SinkStub        func(context.Context, muxrpc.RequestEncoding, muxrpc.Method, ...interface{}) (*muxrpc.ByteSink, error)
+	sinkMutex       sync.RWMutex
+	sinkArgsForCall []struct {
+		arg1 context.Context
+		arg2 muxrpc.RequestEncoding
+		arg3 muxrpc.Method
+		arg4 []interface{}
+	}
+	sinkReturns struct {
+		result1 *muxrpc.ByteSink
+		result2 error
+	}
+	sinkReturnsOnCall map[int]struct {
+		result1 *muxrpc.ByteSink
+		result2 error
+	}
+	SourceStub        func(context.Context, muxrpc.RequestEncoding, muxrpc.Method, ...interface{}) (*muxrpc.ByteSource, error)
+	sourceMutex       sync.RWMutex
+	sourceArgsForCall []struct {
+		arg1 context.Context
+		arg2 muxrpc.RequestEncoding
+		arg3 muxrpc.Method
+		arg4 []interface{}
+	}
+	sourceReturns struct {
+		result1 *muxrpc.ByteSource
+		result2 error
+	}
+	sourceReturnsOnCall map[int]struct {
+		result1 *muxrpc.ByteSource
+		result2 error
+	}
+	TerminateStub        func() error
+	terminateMutex       sync.RWMutex
+	terminateArgsForCall []struct {
+	}
+	terminateReturns struct {
+		result1 error
+	}
+	terminateReturnsOnCall map[int]struct {
+		result1 error
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeEndpoint) Async(ctx context.Context, tipe interface{}, method muxrpc.Method, args ...interface{}) (interface{}, error) {
+func (fake *FakeEndpoint) Async(arg1 context.Context, arg2 interface{}, arg3 muxrpc.RequestEncoding, arg4 muxrpc.Method, arg5 ...interface{}) error {
 	fake.asyncMutex.Lock()
 	ret, specificReturn := fake.asyncReturnsOnCall[len(fake.asyncArgsForCall)]
 	fake.asyncArgsForCall = append(fake.asyncArgsForCall, struct {
-		ctx    context.Context
-		tipe   interface{}
-		method muxrpc.Method
-		args   []interface{}
-	}{ctx, tipe, method, args})
-	fake.recordInvocation("Async", []interface{}{ctx, tipe, method, args})
+		arg1 context.Context
+		arg2 interface{}
+		arg3 muxrpc.RequestEncoding
+		arg4 muxrpc.Method
+		arg5 []interface{}
+	}{arg1, arg2, arg3, arg4, arg5})
+	stub := fake.AsyncStub
+	fakeReturns := fake.asyncReturns
+	fake.recordInvocation("Async", []interface{}{arg1, arg2, arg3, arg4, arg5})
 	fake.asyncMutex.Unlock()
-	if fake.AsyncStub != nil {
-		return fake.AsyncStub(ctx, tipe, method, args...)
+	if stub != nil {
+		return stub(arg1, arg2, arg3, arg4, arg5...)
 	}
 	if specificReturn {
-		return ret.result1, ret.result2
+		return ret.result1
 	}
-	return fake.asyncReturns.result1, fake.asyncReturns.result2
+	return fakeReturns.result1
 }
 
 func (fake *FakeEndpoint) AsyncCallCount() int {
@@ -136,159 +128,62 @@ func (fake *FakeEndpoint) AsyncCallCount() int {
 	return len(fake.asyncArgsForCall)
 }
 
-func (fake *FakeEndpoint) AsyncArgsForCall(i int) (context.Context, interface{}, muxrpc.Method, []interface{}) {
+func (fake *FakeEndpoint) AsyncCalls(stub func(context.Context, interface{}, muxrpc.RequestEncoding, muxrpc.Method, ...interface{}) error) {
+	fake.asyncMutex.Lock()
+	defer fake.asyncMutex.Unlock()
+	fake.AsyncStub = stub
+}
+
+func (fake *FakeEndpoint) AsyncArgsForCall(i int) (context.Context, interface{}, muxrpc.RequestEncoding, muxrpc.Method, []interface{}) {
 	fake.asyncMutex.RLock()
 	defer fake.asyncMutex.RUnlock()
-	return fake.asyncArgsForCall[i].ctx, fake.asyncArgsForCall[i].tipe, fake.asyncArgsForCall[i].method, fake.asyncArgsForCall[i].args
+	argsForCall := fake.asyncArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
 }
 
-func (fake *FakeEndpoint) AsyncReturns(result1 interface{}, result2 error) {
+func (fake *FakeEndpoint) AsyncReturns(result1 error) {
+	fake.asyncMutex.Lock()
+	defer fake.asyncMutex.Unlock()
 	fake.AsyncStub = nil
 	fake.asyncReturns = struct {
-		result1 interface{}
-		result2 error
-	}{result1, result2}
+		result1 error
+	}{result1}
 }
 
-func (fake *FakeEndpoint) AsyncReturnsOnCall(i int, result1 interface{}, result2 error) {
+func (fake *FakeEndpoint) AsyncReturnsOnCall(i int, result1 error) {
+	fake.asyncMutex.Lock()
+	defer fake.asyncMutex.Unlock()
 	fake.AsyncStub = nil
 	if fake.asyncReturnsOnCall == nil {
 		fake.asyncReturnsOnCall = make(map[int]struct {
-			result1 interface{}
-			result2 error
+			result1 error
 		})
 	}
 	fake.asyncReturnsOnCall[i] = struct {
-		result1 interface{}
-		result2 error
-	}{result1, result2}
+		result1 error
+	}{result1}
 }
 
-func (fake *FakeEndpoint) Source(ctx context.Context, tipe interface{}, method muxrpc.Method, args ...interface{}) (luigi.Source, error) {
-	fake.sourceMutex.Lock()
-	ret, specificReturn := fake.sourceReturnsOnCall[len(fake.sourceArgsForCall)]
-	fake.sourceArgsForCall = append(fake.sourceArgsForCall, struct {
-		ctx    context.Context
-		tipe   interface{}
-		method muxrpc.Method
-		args   []interface{}
-	}{ctx, tipe, method, args})
-	fake.recordInvocation("Source", []interface{}{ctx, tipe, method, args})
-	fake.sourceMutex.Unlock()
-	if fake.SourceStub != nil {
-		return fake.SourceStub(ctx, tipe, method, args...)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fake.sourceReturns.result1, fake.sourceReturns.result2
-}
-
-func (fake *FakeEndpoint) SourceCallCount() int {
-	fake.sourceMutex.RLock()
-	defer fake.sourceMutex.RUnlock()
-	return len(fake.sourceArgsForCall)
-}
-
-func (fake *FakeEndpoint) SourceArgsForCall(i int) (context.Context, interface{}, muxrpc.Method, []interface{}) {
-	fake.sourceMutex.RLock()
-	defer fake.sourceMutex.RUnlock()
-	return fake.sourceArgsForCall[i].ctx, fake.sourceArgsForCall[i].tipe, fake.sourceArgsForCall[i].method, fake.sourceArgsForCall[i].args
-}
-
-func (fake *FakeEndpoint) SourceReturns(result1 luigi.Source, result2 error) {
-	fake.SourceStub = nil
-	fake.sourceReturns = struct {
-		result1 luigi.Source
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeEndpoint) SourceReturnsOnCall(i int, result1 luigi.Source, result2 error) {
-	fake.SourceStub = nil
-	if fake.sourceReturnsOnCall == nil {
-		fake.sourceReturnsOnCall = make(map[int]struct {
-			result1 luigi.Source
-			result2 error
-		})
-	}
-	fake.sourceReturnsOnCall[i] = struct {
-		result1 luigi.Source
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeEndpoint) Sink(ctx context.Context, method muxrpc.Method, args ...interface{}) (luigi.Sink, error) {
-	fake.sinkMutex.Lock()
-	ret, specificReturn := fake.sinkReturnsOnCall[len(fake.sinkArgsForCall)]
-	fake.sinkArgsForCall = append(fake.sinkArgsForCall, struct {
-		ctx    context.Context
-		method muxrpc.Method
-		args   []interface{}
-	}{ctx, method, args})
-	fake.recordInvocation("Sink", []interface{}{ctx, method, args})
-	fake.sinkMutex.Unlock()
-	if fake.SinkStub != nil {
-		return fake.SinkStub(ctx, method, args...)
-	}
-	if specificReturn {
-		return ret.result1, ret.result2
-	}
-	return fake.sinkReturns.result1, fake.sinkReturns.result2
-}
-
-func (fake *FakeEndpoint) SinkCallCount() int {
-	fake.sinkMutex.RLock()
-	defer fake.sinkMutex.RUnlock()
-	return len(fake.sinkArgsForCall)
-}
-
-func (fake *FakeEndpoint) SinkArgsForCall(i int) (context.Context, muxrpc.Method, []interface{}) {
-	fake.sinkMutex.RLock()
-	defer fake.sinkMutex.RUnlock()
-	return fake.sinkArgsForCall[i].ctx, fake.sinkArgsForCall[i].method, fake.sinkArgsForCall[i].args
-}
-
-func (fake *FakeEndpoint) SinkReturns(result1 luigi.Sink, result2 error) {
-	fake.SinkStub = nil
-	fake.sinkReturns = struct {
-		result1 luigi.Sink
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeEndpoint) SinkReturnsOnCall(i int, result1 luigi.Sink, result2 error) {
-	fake.SinkStub = nil
-	if fake.sinkReturnsOnCall == nil {
-		fake.sinkReturnsOnCall = make(map[int]struct {
-			result1 luigi.Sink
-			result2 error
-		})
-	}
-	fake.sinkReturnsOnCall[i] = struct {
-		result1 luigi.Sink
-		result2 error
-	}{result1, result2}
-}
-
-func (fake *FakeEndpoint) Duplex(ctx context.Context, tipe interface{}, method muxrpc.Method, args ...interface{}) (luigi.Source, luigi.Sink, error) {
+func (fake *FakeEndpoint) Duplex(arg1 context.Context, arg2 muxrpc.RequestEncoding, arg3 muxrpc.Method, arg4 ...interface{}) (*muxrpc.ByteSource, *muxrpc.ByteSink, error) {
 	fake.duplexMutex.Lock()
 	ret, specificReturn := fake.duplexReturnsOnCall[len(fake.duplexArgsForCall)]
 	fake.duplexArgsForCall = append(fake.duplexArgsForCall, struct {
-		ctx    context.Context
-		tipe   interface{}
-		method muxrpc.Method
-		args   []interface{}
-	}{ctx, tipe, method, args})
-	fake.recordInvocation("Duplex", []interface{}{ctx, tipe, method, args})
+		arg1 context.Context
+		arg2 muxrpc.RequestEncoding
+		arg3 muxrpc.Method
+		arg4 []interface{}
+	}{arg1, arg2, arg3, arg4})
+	stub := fake.DuplexStub
+	fakeReturns := fake.duplexReturns
+	fake.recordInvocation("Duplex", []interface{}{arg1, arg2, arg3, arg4})
 	fake.duplexMutex.Unlock()
-	if fake.DuplexStub != nil {
-		return fake.DuplexStub(ctx, tipe, method, args...)
+	if stub != nil {
+		return stub(arg1, arg2, arg3, arg4...)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2, ret.result3
 	}
-	return fake.duplexReturns.result1, fake.duplexReturns.result2, fake.duplexReturns.result3
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
 }
 
 func (fake *FakeEndpoint) DuplexCallCount() int {
@@ -297,139 +192,64 @@ func (fake *FakeEndpoint) DuplexCallCount() int {
 	return len(fake.duplexArgsForCall)
 }
 
-func (fake *FakeEndpoint) DuplexArgsForCall(i int) (context.Context, interface{}, muxrpc.Method, []interface{}) {
-	fake.duplexMutex.RLock()
-	defer fake.duplexMutex.RUnlock()
-	return fake.duplexArgsForCall[i].ctx, fake.duplexArgsForCall[i].tipe, fake.duplexArgsForCall[i].method, fake.duplexArgsForCall[i].args
+func (fake *FakeEndpoint) DuplexCalls(stub func(context.Context, muxrpc.RequestEncoding, muxrpc.Method, ...interface{}) (*muxrpc.ByteSource, *muxrpc.ByteSink, error)) {
+	fake.duplexMutex.Lock()
+	defer fake.duplexMutex.Unlock()
+	fake.DuplexStub = stub
 }
 
-func (fake *FakeEndpoint) DuplexReturns(result1 luigi.Source, result2 luigi.Sink, result3 error) {
+func (fake *FakeEndpoint) DuplexArgsForCall(i int) (context.Context, muxrpc.RequestEncoding, muxrpc.Method, []interface{}) {
+	fake.duplexMutex.RLock()
+	defer fake.duplexMutex.RUnlock()
+	argsForCall := fake.duplexArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+}
+
+func (fake *FakeEndpoint) DuplexReturns(result1 *muxrpc.ByteSource, result2 *muxrpc.ByteSink, result3 error) {
+	fake.duplexMutex.Lock()
+	defer fake.duplexMutex.Unlock()
 	fake.DuplexStub = nil
 	fake.duplexReturns = struct {
-		result1 luigi.Source
-		result2 luigi.Sink
+		result1 *muxrpc.ByteSource
+		result2 *muxrpc.ByteSink
 		result3 error
 	}{result1, result2, result3}
 }
 
-func (fake *FakeEndpoint) DuplexReturnsOnCall(i int, result1 luigi.Source, result2 luigi.Sink, result3 error) {
+func (fake *FakeEndpoint) DuplexReturnsOnCall(i int, result1 *muxrpc.ByteSource, result2 *muxrpc.ByteSink, result3 error) {
+	fake.duplexMutex.Lock()
+	defer fake.duplexMutex.Unlock()
 	fake.DuplexStub = nil
 	if fake.duplexReturnsOnCall == nil {
 		fake.duplexReturnsOnCall = make(map[int]struct {
-			result1 luigi.Source
-			result2 luigi.Sink
+			result1 *muxrpc.ByteSource
+			result2 *muxrpc.ByteSink
 			result3 error
 		})
 	}
 	fake.duplexReturnsOnCall[i] = struct {
-		result1 luigi.Source
-		result2 luigi.Sink
+		result1 *muxrpc.ByteSource
+		result2 *muxrpc.ByteSink
 		result3 error
 	}{result1, result2, result3}
-}
-
-func (fake *FakeEndpoint) Do(ctx context.Context, req *muxrpc.Request) error {
-	fake.doMutex.Lock()
-	ret, specificReturn := fake.doReturnsOnCall[len(fake.doArgsForCall)]
-	fake.doArgsForCall = append(fake.doArgsForCall, struct {
-		ctx context.Context
-		req *muxrpc.Request
-	}{ctx, req})
-	fake.recordInvocation("Do", []interface{}{ctx, req})
-	fake.doMutex.Unlock()
-	if fake.DoStub != nil {
-		return fake.DoStub(ctx, req)
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fake.doReturns.result1
-}
-
-func (fake *FakeEndpoint) DoCallCount() int {
-	fake.doMutex.RLock()
-	defer fake.doMutex.RUnlock()
-	return len(fake.doArgsForCall)
-}
-
-func (fake *FakeEndpoint) DoArgsForCall(i int) (context.Context, *muxrpc.Request) {
-	fake.doMutex.RLock()
-	defer fake.doMutex.RUnlock()
-	return fake.doArgsForCall[i].ctx, fake.doArgsForCall[i].req
-}
-
-func (fake *FakeEndpoint) DoReturns(result1 error) {
-	fake.DoStub = nil
-	fake.doReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeEndpoint) DoReturnsOnCall(i int, result1 error) {
-	fake.DoStub = nil
-	if fake.doReturnsOnCall == nil {
-		fake.doReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.doReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeEndpoint) Terminate() error {
-	fake.terminateMutex.Lock()
-	ret, specificReturn := fake.terminateReturnsOnCall[len(fake.terminateArgsForCall)]
-	fake.terminateArgsForCall = append(fake.terminateArgsForCall, struct{}{})
-	fake.recordInvocation("Terminate", []interface{}{})
-	fake.terminateMutex.Unlock()
-	if fake.TerminateStub != nil {
-		return fake.TerminateStub()
-	}
-	if specificReturn {
-		return ret.result1
-	}
-	return fake.terminateReturns.result1
-}
-
-func (fake *FakeEndpoint) TerminateCallCount() int {
-	fake.terminateMutex.RLock()
-	defer fake.terminateMutex.RUnlock()
-	return len(fake.terminateArgsForCall)
-}
-
-func (fake *FakeEndpoint) TerminateReturns(result1 error) {
-	fake.TerminateStub = nil
-	fake.terminateReturns = struct {
-		result1 error
-	}{result1}
-}
-
-func (fake *FakeEndpoint) TerminateReturnsOnCall(i int, result1 error) {
-	fake.TerminateStub = nil
-	if fake.terminateReturnsOnCall == nil {
-		fake.terminateReturnsOnCall = make(map[int]struct {
-			result1 error
-		})
-	}
-	fake.terminateReturnsOnCall[i] = struct {
-		result1 error
-	}{result1}
 }
 
 func (fake *FakeEndpoint) Remote() net.Addr {
 	fake.remoteMutex.Lock()
 	ret, specificReturn := fake.remoteReturnsOnCall[len(fake.remoteArgsForCall)]
-	fake.remoteArgsForCall = append(fake.remoteArgsForCall, struct{}{})
+	fake.remoteArgsForCall = append(fake.remoteArgsForCall, struct {
+	}{})
+	stub := fake.RemoteStub
+	fakeReturns := fake.remoteReturns
 	fake.recordInvocation("Remote", []interface{}{})
 	fake.remoteMutex.Unlock()
-	if fake.RemoteStub != nil {
-		return fake.RemoteStub()
+	if stub != nil {
+		return stub()
 	}
 	if specificReturn {
 		return ret.result1
 	}
-	return fake.remoteReturns.result1
+	return fakeReturns.result1
 }
 
 func (fake *FakeEndpoint) RemoteCallCount() int {
@@ -438,7 +258,15 @@ func (fake *FakeEndpoint) RemoteCallCount() int {
 	return len(fake.remoteArgsForCall)
 }
 
+func (fake *FakeEndpoint) RemoteCalls(stub func() net.Addr) {
+	fake.remoteMutex.Lock()
+	defer fake.remoteMutex.Unlock()
+	fake.RemoteStub = stub
+}
+
 func (fake *FakeEndpoint) RemoteReturns(result1 net.Addr) {
+	fake.remoteMutex.Lock()
+	defer fake.remoteMutex.Unlock()
 	fake.RemoteStub = nil
 	fake.remoteReturns = struct {
 		result1 net.Addr
@@ -446,6 +274,8 @@ func (fake *FakeEndpoint) RemoteReturns(result1 net.Addr) {
 }
 
 func (fake *FakeEndpoint) RemoteReturnsOnCall(i int, result1 net.Addr) {
+	fake.remoteMutex.Lock()
+	defer fake.remoteMutex.Unlock()
 	fake.RemoteStub = nil
 	if fake.remoteReturnsOnCall == nil {
 		fake.remoteReturnsOnCall = make(map[int]struct {
@@ -457,23 +287,208 @@ func (fake *FakeEndpoint) RemoteReturnsOnCall(i int, result1 net.Addr) {
 	}{result1}
 }
 
+func (fake *FakeEndpoint) Sink(arg1 context.Context, arg2 muxrpc.RequestEncoding, arg3 muxrpc.Method, arg4 ...interface{}) (*muxrpc.ByteSink, error) {
+	fake.sinkMutex.Lock()
+	ret, specificReturn := fake.sinkReturnsOnCall[len(fake.sinkArgsForCall)]
+	fake.sinkArgsForCall = append(fake.sinkArgsForCall, struct {
+		arg1 context.Context
+		arg2 muxrpc.RequestEncoding
+		arg3 muxrpc.Method
+		arg4 []interface{}
+	}{arg1, arg2, arg3, arg4})
+	stub := fake.SinkStub
+	fakeReturns := fake.sinkReturns
+	fake.recordInvocation("Sink", []interface{}{arg1, arg2, arg3, arg4})
+	fake.sinkMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3, arg4...)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeEndpoint) SinkCallCount() int {
+	fake.sinkMutex.RLock()
+	defer fake.sinkMutex.RUnlock()
+	return len(fake.sinkArgsForCall)
+}
+
+func (fake *FakeEndpoint) SinkCalls(stub func(context.Context, muxrpc.RequestEncoding, muxrpc.Method, ...interface{}) (*muxrpc.ByteSink, error)) {
+	fake.sinkMutex.Lock()
+	defer fake.sinkMutex.Unlock()
+	fake.SinkStub = stub
+}
+
+func (fake *FakeEndpoint) SinkArgsForCall(i int) (context.Context, muxrpc.RequestEncoding, muxrpc.Method, []interface{}) {
+	fake.sinkMutex.RLock()
+	defer fake.sinkMutex.RUnlock()
+	argsForCall := fake.sinkArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+}
+
+func (fake *FakeEndpoint) SinkReturns(result1 *muxrpc.ByteSink, result2 error) {
+	fake.sinkMutex.Lock()
+	defer fake.sinkMutex.Unlock()
+	fake.SinkStub = nil
+	fake.sinkReturns = struct {
+		result1 *muxrpc.ByteSink
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeEndpoint) SinkReturnsOnCall(i int, result1 *muxrpc.ByteSink, result2 error) {
+	fake.sinkMutex.Lock()
+	defer fake.sinkMutex.Unlock()
+	fake.SinkStub = nil
+	if fake.sinkReturnsOnCall == nil {
+		fake.sinkReturnsOnCall = make(map[int]struct {
+			result1 *muxrpc.ByteSink
+			result2 error
+		})
+	}
+	fake.sinkReturnsOnCall[i] = struct {
+		result1 *muxrpc.ByteSink
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeEndpoint) Source(arg1 context.Context, arg2 muxrpc.RequestEncoding, arg3 muxrpc.Method, arg4 ...interface{}) (*muxrpc.ByteSource, error) {
+	fake.sourceMutex.Lock()
+	ret, specificReturn := fake.sourceReturnsOnCall[len(fake.sourceArgsForCall)]
+	fake.sourceArgsForCall = append(fake.sourceArgsForCall, struct {
+		arg1 context.Context
+		arg2 muxrpc.RequestEncoding
+		arg3 muxrpc.Method
+		arg4 []interface{}
+	}{arg1, arg2, arg3, arg4})
+	stub := fake.SourceStub
+	fakeReturns := fake.sourceReturns
+	fake.recordInvocation("Source", []interface{}{arg1, arg2, arg3, arg4})
+	fake.sourceMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2, arg3, arg4...)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeEndpoint) SourceCallCount() int {
+	fake.sourceMutex.RLock()
+	defer fake.sourceMutex.RUnlock()
+	return len(fake.sourceArgsForCall)
+}
+
+func (fake *FakeEndpoint) SourceCalls(stub func(context.Context, muxrpc.RequestEncoding, muxrpc.Method, ...interface{}) (*muxrpc.ByteSource, error)) {
+	fake.sourceMutex.Lock()
+	defer fake.sourceMutex.Unlock()
+	fake.SourceStub = stub
+}
+
+func (fake *FakeEndpoint) SourceArgsForCall(i int) (context.Context, muxrpc.RequestEncoding, muxrpc.Method, []interface{}) {
+	fake.sourceMutex.RLock()
+	defer fake.sourceMutex.RUnlock()
+	argsForCall := fake.sourceArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+}
+
+func (fake *FakeEndpoint) SourceReturns(result1 *muxrpc.ByteSource, result2 error) {
+	fake.sourceMutex.Lock()
+	defer fake.sourceMutex.Unlock()
+	fake.SourceStub = nil
+	fake.sourceReturns = struct {
+		result1 *muxrpc.ByteSource
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeEndpoint) SourceReturnsOnCall(i int, result1 *muxrpc.ByteSource, result2 error) {
+	fake.sourceMutex.Lock()
+	defer fake.sourceMutex.Unlock()
+	fake.SourceStub = nil
+	if fake.sourceReturnsOnCall == nil {
+		fake.sourceReturnsOnCall = make(map[int]struct {
+			result1 *muxrpc.ByteSource
+			result2 error
+		})
+	}
+	fake.sourceReturnsOnCall[i] = struct {
+		result1 *muxrpc.ByteSource
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeEndpoint) Terminate() error {
+	fake.terminateMutex.Lock()
+	ret, specificReturn := fake.terminateReturnsOnCall[len(fake.terminateArgsForCall)]
+	fake.terminateArgsForCall = append(fake.terminateArgsForCall, struct {
+	}{})
+	stub := fake.TerminateStub
+	fakeReturns := fake.terminateReturns
+	fake.recordInvocation("Terminate", []interface{}{})
+	fake.terminateMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeEndpoint) TerminateCallCount() int {
+	fake.terminateMutex.RLock()
+	defer fake.terminateMutex.RUnlock()
+	return len(fake.terminateArgsForCall)
+}
+
+func (fake *FakeEndpoint) TerminateCalls(stub func() error) {
+	fake.terminateMutex.Lock()
+	defer fake.terminateMutex.Unlock()
+	fake.TerminateStub = stub
+}
+
+func (fake *FakeEndpoint) TerminateReturns(result1 error) {
+	fake.terminateMutex.Lock()
+	defer fake.terminateMutex.Unlock()
+	fake.TerminateStub = nil
+	fake.terminateReturns = struct {
+		result1 error
+	}{result1}
+}
+
+func (fake *FakeEndpoint) TerminateReturnsOnCall(i int, result1 error) {
+	fake.terminateMutex.Lock()
+	defer fake.terminateMutex.Unlock()
+	fake.TerminateStub = nil
+	if fake.terminateReturnsOnCall == nil {
+		fake.terminateReturnsOnCall = make(map[int]struct {
+			result1 error
+		})
+	}
+	fake.terminateReturnsOnCall[i] = struct {
+		result1 error
+	}{result1}
+}
+
 func (fake *FakeEndpoint) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
 	fake.asyncMutex.RLock()
 	defer fake.asyncMutex.RUnlock()
-	fake.sourceMutex.RLock()
-	defer fake.sourceMutex.RUnlock()
-	fake.sinkMutex.RLock()
-	defer fake.sinkMutex.RUnlock()
 	fake.duplexMutex.RLock()
 	defer fake.duplexMutex.RUnlock()
-	fake.doMutex.RLock()
-	defer fake.doMutex.RUnlock()
-	fake.terminateMutex.RLock()
-	defer fake.terminateMutex.RUnlock()
 	fake.remoteMutex.RLock()
 	defer fake.remoteMutex.RUnlock()
+	fake.sinkMutex.RLock()
+	defer fake.sinkMutex.RUnlock()
+	fake.sourceMutex.RLock()
+	defer fake.sourceMutex.RUnlock()
+	fake.terminateMutex.RLock()
+	defer fake.terminateMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value
