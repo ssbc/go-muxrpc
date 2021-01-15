@@ -12,6 +12,16 @@ import (
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
+type ByteSinker interface {
+	io.WriteCloser
+
+	// sometimes we want to close a query early before it is drained
+	// (this sends a EndErr packet back )
+	CloseWithError(error) error
+}
+
+var _ ByteSinker = (*ByteSink)(nil)
+
 // ByteSink exposes a WriteCloser which wrapps each write into a muxrpc packet for that stream with the correct flags set.
 type ByteSink struct {
 	w *codec.Writer

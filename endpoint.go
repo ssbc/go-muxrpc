@@ -4,7 +4,6 @@ package muxrpc
 
 import (
 	"context"
-	"io"
 	"net"
 )
 
@@ -23,12 +22,4 @@ type Endpoint interface {
 
 	// Remote returns the network address of the remote
 	Remote() net.Addr
-}
-
-type ByteSinker interface {
-	io.WriteCloser
-
-	// sometimes we want to close a query early before it is drained
-	// (this sends a EndErr packet back )
-	Cancel(error)
 }

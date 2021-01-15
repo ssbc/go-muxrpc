@@ -17,6 +17,20 @@ import (
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
+// ReadFn is what a ByteSource needs for it's ReadFn. The passed reader is only valid during the call to it.
+type ReadFn func(r io.Reader) error
+
+type ByteSourcer interface {
+	Next(context.Context) bool
+	Reader(ReadFn) error
+
+	// sometimes we want to close a query early before it is drained
+	// (this sends a EndErr packet back )
+	Cancel(error)
+}
+
+var _ ByteSourcer = (*ByteSource)(nil)
+
 // ByteSource is inspired by sql.Rows but without the Scan(), it just reads plain []bytes, one per muxrpc packet.
 type ByteSource struct {
 	bpool bufpool.FreeList
@@ -122,9 +136,6 @@ func (bs *ByteSource) Next(ctx context.Context) bool {
 		return true
 	}
 }
-
-// ReadFn is what a ByteSource needs for it's ReadFn. The passed reader is only valid during the call to it.
-type ReadFn func(r io.Reader) error
 
 // Reader passes a (limited) reader for the next segment to the passed .
 // Since the stream can't be written while it's read, the reader is only valid during the call to the passed function.
