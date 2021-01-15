@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
@@ -169,12 +170,12 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 }
 
 func (req *Request) CloseWithError(cerr error) error {
-	if cerr == nil || errors.Is(cerr, io.EOF) {
+	if cerr == nil || errors.Is(cerr, io.EOF) || errors.Is(cerr, luigi.EOS{}) {
 		req.source.Cancel(nil)
-		req.sink.Cancel(nil)
+		req.sink.Close()
 	} else {
 		req.source.Cancel(cerr)
-		req.sink.Cancel(cerr)
+		req.sink.CloseWithError(cerr)
 	}
 	return nil
 }
