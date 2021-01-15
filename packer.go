@@ -4,6 +4,7 @@ package muxrpc
 
 import (
 	"context"
+	"errors"
 	stderr "errors"
 	"fmt"
 	"io"
@@ -92,6 +93,11 @@ func IsSinkClosed(err error) bool {
 	}
 
 	if isAlreadyClosed(err) {
+		return true
+	}
+
+	var ce *CallError
+	if errors.As(err, &ce) && ce.Message == "unexpected end of parent stream" {
 		return true
 	}
 
