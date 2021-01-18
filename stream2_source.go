@@ -67,7 +67,6 @@ func (bs *ByteSource) Cancel(err error) {
 	// fmt.Println("muxrpc: byte source canceled with", err)
 
 	if bs.failed != nil {
-		fmt.Println("muxrpc: byte source already canceld", bs.failed)
 		return
 	}
 
