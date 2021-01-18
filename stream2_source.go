@@ -67,29 +67,17 @@ func (bs *ByteSource) Cancel(err error) {
 	// fmt.Println("muxrpc: byte source canceled with", err)
 
 	if bs.failed != nil {
-		// fmt.Println("muxrpc: byte source already canceld", bs.failed)
+		fmt.Println("muxrpc: byte source already canceld", bs.failed)
 		return
 	}
-	// TODO: send EndErr packet back on stream
-	bs.CloseWithError(err)
-}
 
-// CloseWithError sends a EndErr packet back with the passed error inside.
-func (bs *ByteSource) CloseWithError(err error) error {
-	// cant lock here because we might block in next
+	// TODO: send EndErr packet back on stream
 	if err == nil {
 		bs.failed = io.EOF
 	} else {
 		bs.failed = err
 	}
 	close(bs.closed)
-	return nil
-}
-
-// Close returns the buffer for this sourc to the pool
-// TODO: remove close and closewitherr?!
-func (bs *ByteSource) Close() error {
-	return bs.CloseWithError(nil)
 }
 
 // Err returns nill or an error when processing fails or the context was canceled

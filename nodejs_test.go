@@ -7,6 +7,7 @@ package muxrpc
 import (
 	"context"
 	"encoding/json"
+	stderr "errors"
 	"fmt"
 	"io"
 	"os"
@@ -501,7 +502,80 @@ func TestJSDuplexToUs(t *testing.T) {
 	}
 }
 
-func XTestJSSupportAbort(t *testing.T) {
+func TestJSNoSuchCommand(t *testing.T) {
+	r := require.New(t)
+
+	serv, err := proc.StartStdioProcess("node", os.Stderr, "nodejs_test.js")
+	r.NoError(err, "nodejs startup")
+
+	muxdbgPath := filepath.Join("testrun", t.Name())
+	os.RemoveAll(muxdbgPath)
+	os.MkdirAll(muxdbgPath, 0700)
+	packer := NewPacker(debug.Dump(muxdbgPath, serv))
+
+	var h FakeHandler
+	rpc1 := Handle(packer, &h)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := make(chan error)
+
+	go serve(ctx, rpc1.(Server), errc)
+
+	// async
+	var ret string
+	err = rpc1.Async(ctx, &ret, TypeString, Method{"nosuch", "async"})
+	r.Error(err, "call executed - async")
+	r.EqualValues("", ret)
+
+	var ce *CallError
+	r.True(stderr.As(err, &ce))
+	r.Equal("Error", ce.Name)
+	r.Equal("no async:nosuch,async", ce.Message)
+
+	// source
+	src, err := rpc1.Source(ctx, TypeString, Method{"nosuch", "source"})
+	r.Error(err, "call executed - source")
+	r.Nil(src)
+
+	ce = nil
+	r.True(stderr.As(err, &ce))
+	r.Equal("Error", ce.Name)
+	r.Equal("no source:nosuch,source", ce.Message)
+
+	// sink
+	snk, err := rpc1.Sink(ctx, TypeString, Method{"nosuch", "sink"})
+	r.Error(err, "call executed - sink")
+	r.Nil(snk)
+
+	ce = nil
+	r.True(stderr.As(err, &ce))
+	r.Equal("Error", ce.Name)
+	r.Equal("no sink:nosuch,sink", ce.Message)
+
+	// duplex
+	src, snk, err = rpc1.Duplex(ctx, TypeString, Method{"nosuch", "duplex"})
+	r.Error(err, "call executed - duplex")
+	r.Nil(snk)
+
+	ce = nil
+	r.True(stderr.As(err, &ce))
+	r.Equal("Error", ce.Name)
+	r.Equal("no duplex:nosuch,duplex", ce.Message)
+
+	// cleanup
+	err = rpc1.Async(ctx, &ret, TypeString, Method{"finalCall"}, 2000)
+	r.NoError(err, "rcp shutdown call")
+	r.Equal("ty", ret, "expected call result")
+
+	cancel()
+	rpc1.Terminate()
+	close(errc)
+	for err := range errc {
+		r.NoError(err)
+	}
+}
+
+func TestJSSupportAbort(t *testing.T) {
 	ctx := context.Background()
 	if dl, ok := t.Deadline(); ok {
 		dl = dl.Add(-10 * time.Second)
@@ -581,7 +655,7 @@ func (h *hAbortMe) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 		err := enc.Encode(i)
 		if err != nil {
 			h.logger.Log("evt", "failed to pour", "i", i, "err", err)
-			if errors.Cause(err) == context.Canceled {
+			if errors.Cause(err) == context.Canceled || stderr.Is(err, io.EOF) {
 				break
 			}
 			require.NoError(h.t, err)

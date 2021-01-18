@@ -117,6 +117,11 @@ func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, arg
 
 	req.sink.pkt.Flag = req.sink.pkt.Flag.Set(encFlag)
 
+	req.source.Next(ctx)
+	if err := req.source.failed; err != nil {
+		return nil, err
+	}
+
 	return req.source, nil
 }
 
@@ -148,6 +153,11 @@ func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args 
 
 	if err := r.start(ctx, req); err != nil {
 		return nil, fmt.Errorf("error sending request: %w", err)
+	}
+
+	req.source.Next(ctx)
+	if err := req.source.failed; err != nil {
+		return nil, err
 	}
 
 	return bs, nil
@@ -184,6 +194,11 @@ func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, arg
 
 	if err := r.start(ctx, req); err != nil {
 		return nil, nil, fmt.Errorf("error sending request: %w", err)
+	}
+
+	req.source.Next(ctx)
+	if err := req.source.failed; err != nil {
+		return nil, nil, err
 	}
 
 	return bSrc, bSink, nil
