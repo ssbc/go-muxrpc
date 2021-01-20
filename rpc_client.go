@@ -235,9 +235,8 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 		first.Req = r.highest
 		r.reqs[first.Req] = req
 
-		req.Stream.WithReq(first.Req)
-
 		req.id = first.Req
+		req.sink.pkt.Req = first.Req
 	}()
 	if err != nil {
 		dbg.Log("event", "request create failed", "reqID", req.id, "err", err)

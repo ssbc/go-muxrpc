@@ -70,7 +70,6 @@ func (bs *ByteSource) Cancel(err error) {
 		return
 	}
 
-	// TODO: send EndErr packet back on stream
 	if err == nil {
 		bs.failed = io.EOF
 	} else {

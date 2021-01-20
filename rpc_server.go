@@ -281,7 +281,7 @@ func (r *rpc) Serve() (err error) {
 		if isAlreadyClosed(err) {
 			err = nil
 		}
-		cerr := r.pkr.Close()
+		cerr := r.Terminate()
 		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
 			level.Info(r.logger).Log("event", "closed", "handleErr", err, "closeErr", cerr)
 		}
@@ -298,10 +298,10 @@ func (r *rpc) Serve() (err error) {
 				return true
 			}
 
-			r.tLock.Lock()
-			defer r.tLock.Unlock()
-
 			if err != nil {
+				r.tLock.Lock()
+				defer r.tLock.Unlock()
+
 				if r.terminated {
 					err = nil
 					return true
@@ -313,7 +313,6 @@ func (r *rpc) Serve() (err error) {
 			return false
 		}()
 		if doRet {
-			r.Terminate()
 			return
 		}
 
@@ -329,33 +328,32 @@ func (r *rpc) Serve() (err error) {
 			}
 
 			var ok bool
-			if req, ok = getReq(hdr.Req); ok {
-				var streamErr error
-				req.abort()
-
-				buf := r.bpool.Get()
-
-				err = r.pkr.r.ReadBodyInto(buf, hdr.Len)
-				if err != nil {
-					return fmt.Errorf("muxrpc: failed to get error body for closing of req: %d (len:%d): %w", hdr.Req, hdr.Len, err)
-				}
-
-				body := buf.Bytes()
-				r.bpool.Put(buf)
-
-				if !isTrue(body) {
-					streamErr, err = parseError(body)
-					if err != nil {
-						return fmt.Errorf("error parsing error packet: %w", err)
-					}
-				}
-				go func() {
-					r.closeStream(req, streamErr)
-				}()
-			} else {
-				level.Warn(r.logger).Log("event", "unhandled packet", "reqID", hdr.Req)
-				r.Terminate()
+			if req, ok = getReq(hdr.Req); !ok {
+				level.Warn(r.logger).Log("event", "unhandled packet", "reqID", hdr.Req, "len", hdr.Len, "flags", hdr.Flag)
+				return
 			}
+
+			var streamErr error
+			req.abort()
+
+			buf := r.bpool.Get()
+
+			err = r.pkr.r.ReadBodyInto(buf, hdr.Len)
+			if err != nil {
+				return fmt.Errorf("muxrpc: failed to get error body for closing of req: %d (len:%d): %w", hdr.Req, hdr.Len, err)
+			}
+
+			body := buf.Bytes()
+			r.bpool.Put(buf)
+
+			if !isTrue(body) {
+				streamErr, err = parseError(body)
+				if err != nil {
+					return fmt.Errorf("error parsing error packet: %w", err)
+				}
+			}
+
+			r.closeStream(req, streamErr)
 			continue
 		}
 
@@ -375,13 +373,12 @@ func (r *rpc) Serve() (err error) {
 
 		err = req.source.consume(hdr.Len, hdr.Flag, r.pkr.r.NextBodyReader(hdr.Len))
 		if err != nil {
-			// TODO: remove request?!
 			level.Warn(r.logger).Log(
 				"event", "consume failed",
 				"req", hdr.Req,
 				"method", req.Method.String(),
 				"err", err)
-			// err = fmt.Errorf("muxrpc: error pouring data to handler: %w", err)
+			r.closeStream(req, err)
 			continue
 		}
 	}
@@ -418,10 +415,9 @@ func (r *rpc) Terminate() error {
 	r.terminated = true
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
-	if n := len(r.reqs); n > 0 { // close active requests
-		for _, req := range r.reqs {
-			req.CloseWithError(ErrSessionTerminated)
-		}
+	// close active requests
+	for _, req := range r.reqs {
+		req.CloseWithError(ErrSessionTerminated)
 	}
 	return r.pkr.Close()
 }
