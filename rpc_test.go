@@ -437,27 +437,35 @@ func TestSink(t *testing.T) {
 	var fh1 FakeHandler
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h1 connected")
-		close(conn1) // I think this _should_ terminate e?
+		close(conn1)
 	})
 
 	var fh2 FakeHandler
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "sinktest" {
+
+			src, err := req.GetResponseSource()
+			ckFatal(err)
+
 			for i, exp := range expRx {
 				t.Log("calling Next()", i)
-				v, err := req.Stream.Next(ctx)
-				ckFatal(err)
-				t.Log("Next()", i, "returned", v)
-
-				str, ok := v.(string)
-				if !ok {
-					err = fmt.Errorf("expected value %q, got %v (%T)", exp, v, v)
-					ckFatal(err)
-					continue
+				more := src.Next(ctx)
+				if !more {
+					t.Error("expected more from source")
+					ckFatal(src.Err())
 				}
+
+				t.Log("Next()", i, "returned")
+
+				var str string
+				err = src.Reader(func(r io.Reader) error {
+					return json.NewDecoder(r).Decode(&str)
+				})
+				ckFatal(err)
+
 				if str != exp {
-					err = fmt.Errorf("expected value %q, got %v (%T)", exp, v, v)
+					err = fmt.Errorf("expected value %q, got %q", exp, str)
 					ckFatal(err)
 				}
 			}
@@ -471,7 +479,10 @@ func TestSink(t *testing.T) {
 		close(conn2)
 	})
 
-	rpc1 := Handle(NewPacker(c1), &fh1)
+	tpath := filepath.Join("testrun", t.Name())
+	c1dbg := debug.Dump(tpath, c1)
+
+	rpc1 := Handle(NewPacker(c1dbg), &fh1)
 	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
@@ -483,13 +494,17 @@ func TestSink(t *testing.T) {
 	r.NoError(err)
 
 	enc := json.NewEncoder(sink)
-	for _, v := range expRx {
+	for i, v := range expRx {
 		err := enc.Encode(v)
 		r.NoError(err)
+		t.Log("encoded", i)
 	}
+
 	t.Log("waiting for wait...")
 	<-wait
+
 	t.Log("got wait!")
+
 	err = sink.Close()
 	r.NoError(err)
 
@@ -558,6 +573,11 @@ func TestDuplexString(t *testing.T) {
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "testduplex" {
+			for _, v := range expTx {
+				err := req.Stream.Pour(ctx, v)
+				ckFatal(err)
+			}
+
 			for _, exp := range expRx {
 				v, err := req.Stream.Next(ctx)
 				if err != nil {
@@ -568,11 +588,6 @@ func TestDuplexString(t *testing.T) {
 					err = fmt.Errorf("expected value %v, got %v", exp, v)
 					ckFatal(err)
 				}
-			}
-
-			for _, v := range expTx {
-				err := req.Stream.Pour(ctx, v)
-				ckFatal(err)
 			}
 
 			err := req.Stream.Close()
@@ -602,12 +617,14 @@ func TestDuplexString(t *testing.T) {
 	src, sink, err := rpc1.Duplex(ctx, TypeString, Method{"testduplex"})
 	r.NoError(err)
 
-	for _, v := range expRx {
+	for i, v := range expRx {
 		_, err := fmt.Fprint(sink, v)
 		r.NoError(err)
+
+		t.Log("sent", i)
 	}
 
-	for _, exp := range expTx {
+	for i, exp := range expTx {
 		has := src.Next(ctx)
 		r.True(has, "expected more from source")
 
@@ -619,6 +636,7 @@ func TestDuplexString(t *testing.T) {
 		r.NoError(err)
 
 		r.Equal(exp, string(buf), "wrong value from source")
+		t.Log("received", i)
 	}
 
 	err = sink.Close()
@@ -662,10 +680,10 @@ func XTestErrorAsync(t *testing.T) {
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
-			err := req.Stream.CloseWithError(errors.New("omg an error"))
+			err := req.CloseWithError(errors.New("omg an error"))
 			ckFatal(err)
 		} else {
-			err := req.Stream.CloseWithError(errors.New("unexpected"))
+			err := req.CloseWithError(errors.New("unexpected"))
 			ckFatal(err)
 		}
 	})
@@ -770,7 +788,7 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 
 		snk, err := req.GetResponseSink()
 		if err != nil {
-			req.Stream.CloseWithError(err)
+			req.CloseWithError(err)
 			h.logger.Log("get-sink-err", err)
 			return
 		}
@@ -796,7 +814,7 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 
 	src, err := req.GetResponseSource()
 	if err != nil {
-		req.Stream.CloseWithError(err)
+		req.CloseWithError(err)
 		h.logger.Log("get-src-err", err)
 		return
 	}

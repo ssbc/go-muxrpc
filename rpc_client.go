@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -41,10 +42,6 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 
 	if err := r.start(ctx, req); err != nil {
 		return fmt.Errorf("muxrpc: error sending request: %w", err)
-	}
-
-	if !req.source.Next(ctx) {
-		return req.source.Err()
 	}
 
 	processEntry := func(rd io.Reader) error {
@@ -117,11 +114,6 @@ func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, arg
 
 	req.sink.pkt.Flag = req.sink.pkt.Flag.Set(encFlag)
 
-	req.source.Next(ctx)
-	if err := req.source.failed; err != nil {
-		return nil, err
-	}
-
 	return req.source, nil
 }
 
@@ -153,11 +145,6 @@ func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args 
 
 	if err := r.start(ctx, req); err != nil {
 		return nil, fmt.Errorf("error sending request: %w", err)
-	}
-
-	req.source.Next(ctx)
-	if err := req.source.failed; err != nil {
-		return nil, err
 	}
 
 	return bs, nil
@@ -194,11 +181,6 @@ func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, arg
 
 	if err := r.start(ctx, req); err != nil {
 		return nil, nil, fmt.Errorf("error sending request: %w", err)
-	}
-
-	req.source.Next(ctx)
-	if err := req.source.failed; err != nil {
-		return nil, nil, err
 	}
 
 	return bSrc, bSink, nil
@@ -244,9 +226,37 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 	}
 
 	err = r.pkr.w.WritePacket(&first)
+	if err != nil {
+		return err
+	}
+
 	dbg.Log("event", "request sent",
 		"reqID", req.id,
-		"err", err,
 		"flag", first.Flag.String())
-	return err
+
+	// this is pretty bad :-/
+	// if we want to handle _no such method_ as an error from the Source()/Sink() calls, not from the returned streams,
+	// we need to wait for the first packet...
+	// on a valid call however, this first packet might take a very long time...
+	received := make(chan struct{})
+	go func() {
+		req.source.Next(ctx)
+		close(received)
+	}()
+
+	select {
+	// arbitrary durration...
+	// could take longer on overloaded peers... very meh
+	// preferably there would be an _okay_ packet when opening a stream
+	case <-time.After(3 * time.Second):
+
+	case <-received:
+
+	}
+
+	if err := req.source.Err(); err != nil {
+		return err
+	}
+
+	return nil
 }

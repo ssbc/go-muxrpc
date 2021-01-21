@@ -173,7 +173,7 @@ type frameBuffer struct {
 	mu    sync.Mutex
 	store *bytes.Buffer
 
-	waiting chan<- struct{}
+	waiting []chan<- struct{}
 
 	// how much of the current frame has been read
 	// to advance/skip store correctly
@@ -207,9 +207,11 @@ func (fw *frameBuffer) copyBody(pktLen uint32, rd io.Reader) error {
 
 	atomic.AddUint32(&fw.frames, 1)
 
-	if fw.waiting != nil {
-		close(fw.waiting)
-		fw.waiting = nil
+	if n := len(fw.waiting); n > 0 {
+		for _, ch := range fw.waiting {
+			close(ch)
+		}
+		fw.waiting = make([]chan<- struct{}, 0)
 	}
 	return nil
 }
@@ -225,11 +227,7 @@ func (fw *frameBuffer) waitForMore() <-chan struct{} {
 		return ch
 	}
 
-	if fw.waiting != nil {
-		panic("muxrpc: already waiting")
-	}
-	fw.waiting = ch
-
+	fw.waiting = append(fw.waiting, ch)
 	return ch
 }
 

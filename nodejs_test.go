@@ -528,7 +528,7 @@ func TestJSNoSuchCommand(t *testing.T) {
 	r.EqualValues("", ret)
 
 	var ce *CallError
-	r.True(stderr.As(err, &ce))
+	r.True(stderr.As(err, &ce), "wrong error: %s", err)
 	r.Equal("Error", ce.Name)
 	r.Equal("no async:nosuch,async", ce.Message)
 
@@ -538,7 +538,7 @@ func TestJSNoSuchCommand(t *testing.T) {
 	r.Nil(src)
 
 	ce = nil
-	r.True(stderr.As(err, &ce))
+	r.True(stderr.As(err, &ce), "got wrong error: %s", err)
 	r.Equal("Error", ce.Name)
 	r.Equal("no source:nosuch,source", ce.Message)
 

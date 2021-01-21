@@ -165,6 +165,8 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 	return nil
 }
 
+// CloseWithError is used to close an ongoing request. Ie instruct the remote to stop sending data
+// or notify it that a stream couldn't be fully filled because of an error
 func (req *Request) CloseWithError(cerr error) error {
 	if cerr == nil || errors.Is(cerr, io.EOF) || errors.Is(cerr, luigi.EOS{}) {
 		req.source.Cancel(nil)

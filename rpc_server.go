@@ -317,7 +317,6 @@ func (r *rpc) Serve() (err error) {
 		}
 
 		// error/endstream handling and cleanup
-		var req *Request
 		if hdr.Flag.Get(codec.FlagEndErr) {
 			getReq := func(req int32) (*Request, bool) {
 				r.rLock.RLock()
@@ -327,8 +326,8 @@ func (r *rpc) Serve() (err error) {
 				return r, ok
 			}
 
-			var ok bool
-			if req, ok = getReq(hdr.Req); !ok {
+			req, ok := getReq(hdr.Req)
+			if !ok {
 				level.Warn(r.logger).Log("event", "unhandled packet", "reqID", hdr.Req, "len", hdr.Len, "flags", hdr.Flag)
 				return
 			}
@@ -360,7 +359,10 @@ func (r *rpc) Serve() (err error) {
 		// data muxing
 
 		// pick the requests or create a new one
-		var isNew bool
+		var (
+			isNew bool
+			req   *Request
+		)
 		req, isNew, err = r.fetchRequest(r.serveCtx, &hdr)
 		if err != nil {
 			err = fmt.Errorf("muxrpc: error unpacking request: %w", err)
@@ -393,10 +395,7 @@ func isTrue(data []byte) bool {
 }
 
 func (r *rpc) closeStream(req *Request, streamErr error) {
-	err := req.CloseWithError(streamErr)
-	if err != nil {
-		level.Warn(r.logger).Log("event", "close stream failed", "reqID", req.id, "method", req.Method.String(), "err", err)
-	}
+	req.source.Cancel(streamErr)
 
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
