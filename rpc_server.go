@@ -201,31 +201,26 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 	if pkt.Req >= 0 {
 		// request numbers should have been inverted by now
-		return nil, errors.New("muxrpc: expected negative request id")
+		return nil, fmt.Errorf("request %d: expected negative request id", pkt.Req)
 	}
 
 	if !pkt.Flag.Get(codec.FlagJSON) {
-		return nil, errors.New("muxrpc: expected JSON flag for call manifest")
+		return nil, fmt.Errorf("request %d: expected JSON flag for new call, got %s", pkt.Req, pkt.Flag)
 	}
 
 	buf := r.bpool.Get()
 	buf.Reset()
 
-	// make sure the whole body fits
-	if n := buf.Cap() - int(pkt.Len); n < 0 {
-		buf.Grow(-n)
-	}
-
 	rd := r.pkr.r.NextBodyReader(pkt.Len)
 	_, err := buf.ReadFrom(rd)
 	if err != nil {
-		return nil, fmt.Errorf("error copying request body: %w", err)
+		return nil, fmt.Errorf("request %d: error copying request body: %w", pkt.Req, err)
 	}
 
 	var req Request
 	err = json.NewDecoder(buf).Decode(&req)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding packet: %w", err)
+		return nil, fmt.Errorf("request %d: error decoding packet: %w", pkt.Req, err)
 	}
 
 	r.bpool.Put(buf)
