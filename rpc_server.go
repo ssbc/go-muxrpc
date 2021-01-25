@@ -181,7 +181,7 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 
 	req, err = r.parseNewRequest(hdr)
 	if err != nil {
-		return nil, false, fmt.Errorf("error parsing request: %w", err)
+		return nil, false, err
 	}
 	ctx, req.abort = context.WithCancel(ctx)
 
@@ -201,11 +201,11 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 	if pkt.Req >= 0 {
 		// request numbers should have been inverted by now
-		return nil, fmt.Errorf("request %d: expected negative request id", pkt.Req)
+		return nil, fmt.Errorf("new request %d: expected negative request id", pkt.Req)
 	}
 
 	if !pkt.Flag.Get(codec.FlagJSON) {
-		return nil, fmt.Errorf("request %d: expected JSON flag for new call, got %s", pkt.Req, pkt.Flag)
+		return nil, fmt.Errorf("new request %d: expected JSON flag for new call, got %s", pkt.Req, pkt.Flag)
 	}
 
 	buf := r.bpool.Get()
@@ -214,13 +214,13 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 	rd := r.pkr.r.NextBodyReader(pkt.Len)
 	_, err := buf.ReadFrom(rd)
 	if err != nil {
-		return nil, fmt.Errorf("request %d: error copying request body: %w", pkt.Req, err)
+		return nil, fmt.Errorf("new request %d: error copying request body: %w", pkt.Req, err)
 	}
 
 	var req Request
 	err = json.NewDecoder(buf).Decode(&req)
 	if err != nil {
-		return nil, fmt.Errorf("request %d: error decoding packet: %w", pkt.Req, err)
+		return nil, fmt.Errorf("new request %d: error decoding packet: %w", pkt.Req, err)
 	}
 
 	r.bpool.Put(buf)
@@ -246,14 +246,14 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 		case "sink":
 			req.Stream = req.source.AsStream()
 		default:
-			return nil, fmt.Errorf("unhandled request type: %q", req.Type)
+			return nil, fmt.Errorf("new request %d: unhandled request type: %q", req.id, req.Type)
 		}
 	} else {
 		if req.Type == "" {
 			req.Type = "async"
 		}
 		if req.Type != "async" {
-			return nil, fmt.Errorf("unhandled request type: %q", req.Type)
+			return nil, fmt.Errorf("new request %d: unhandled request type: %q", req.id, req.Type)
 		}
 		req.Stream = req.sink.AsStream()
 	}
