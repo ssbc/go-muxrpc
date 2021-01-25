@@ -32,7 +32,13 @@ func main() {
 		if len(pkt.Body) > 128 {
 			pkt.Body = pkt.Body[:128]
 		}
-		fmt.Println(string(pkt.Body))
+
+		if pkt.Flag.Get(codec.FlagString) || pkt.Flag.Get(codec.FlagJSON) {
+			fmt.Println(string(pkt.Body))
+		} else {
+			fmt.Printf("%x\n", pkt.Body)
+		}
+
 	}
 	fmt.Println("done")
 }
