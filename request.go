@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"runtime/debug"
 	"strings"
 
@@ -102,6 +103,17 @@ type Request struct {
 	// used to stop producing more data on this request
 	// the calling sight might tell us they had enough of this stream
 	abort context.CancelFunc
+
+	remoteAddr net.Addr
+	endpoint   Endpoint
+}
+
+func (req Request) Endpoint() Endpoint {
+	return req.endpoint
+}
+
+func (req Request) RemoteAddr() net.Addr {
+	return req.remoteAddr
 }
 
 type ErrWrongStreamType struct{ ct CallType }
@@ -110,15 +122,15 @@ func (wst ErrWrongStreamType) Error() string {
 	return fmt.Sprintf("muxrpc: wrong stream type: %s", wst.ct)
 }
 
-// GetResponseSink returns the response writer for incoming source requests.
-func (req *Request) GetResponseSink() (*ByteSink, error) {
+// ResponseSink returns the response writer for incoming source requests.
+func (req *Request) ResponseSink() (*ByteSink, error) {
 	if req.Type != "source" && req.Type != "duplex" {
 		return nil, ErrWrongStreamType{req.Type}
 	}
 	return req.sink, nil
 }
 
-func (req *Request) GetResponseSource() (*ByteSource, error) {
+func (req *Request) ResponseSource() (*ByteSource, error) {
 	if req.Type != "sink" && req.Type != "duplex" {
 		return nil, ErrWrongStreamType{req.Type}
 	}

@@ -223,6 +223,9 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 		return nil, fmt.Errorf("new request %d: error decoding packet: %w", pkt.Req, err)
 	}
 
+	req.remoteAddr = r.remote
+	req.endpoint = r
+
 	r.bpool.Put(buf)
 
 	req.id = pkt.Req
