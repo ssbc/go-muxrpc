@@ -6,24 +6,27 @@ import (
 	"go.cryptoscope.co/muxrpc/v2"
 )
 
-type SourceFunc func(context.Context, *muxrpc.Request, *muxrpc.ByteSink, muxrpc.Endpoint) error
+var (
+	_ SourceHandler  = (*SourceFunc)(nil)
+	_ muxrpc.Handler = (*sourceStub)(nil)
+)
 
-func (sf SourceFunc) HandleSource(ctx context.Context, r *muxrpc.Request, src *muxrpc.ByteSink, edp muxrpc.Endpoint) error {
-	return sf(ctx, r, src, edp)
+type SourceFunc func(context.Context, *muxrpc.Request, *muxrpc.ByteSink) error
+
+func (sf SourceFunc) HandleSource(ctx context.Context, r *muxrpc.Request, src *muxrpc.ByteSink) error {
+	return sf(ctx, r, src)
 }
-
-var _ SourceHandler = (*SourceFunc)(nil)
 
 // SourceHandler initiates a 'source' call, so the handler is supposed to send a stream of stuff to the peer.
 type SourceHandler interface {
-	HandleSource(context.Context, *muxrpc.Request, *muxrpc.ByteSink, muxrpc.Endpoint) error
+	HandleSource(context.Context, *muxrpc.Request, *muxrpc.ByteSink) error
 }
 
 type sourceStub struct {
 	h SourceHandler
 }
 
-func (hm sourceStub) HandleCall(ctx context.Context, req *muxrpc.Request, edp muxrpc.Endpoint) {
+func (hm sourceStub) HandleCall(ctx context.Context, req *muxrpc.Request) {
 	// TODO: check call type
 
 	w, err := req.ResponseSink()
@@ -32,7 +35,7 @@ func (hm sourceStub) HandleCall(ctx context.Context, req *muxrpc.Request, edp mu
 		return
 	}
 
-	err = hm.h.HandleSource(ctx, req, w, edp)
+	err = hm.h.HandleSource(ctx, req, w)
 	if err != nil {
 		req.CloseWithError(err)
 		return

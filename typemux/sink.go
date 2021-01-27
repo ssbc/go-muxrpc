@@ -6,6 +6,11 @@ import (
 	"go.cryptoscope.co/muxrpc/v2"
 )
 
+var (
+	_ SinkHandler    = (*SinkFunc)(nil)
+	_ muxrpc.Handler = (*sinkStub)(nil)
+)
+
 // SinkFunc is a utility to fulfill SinkHandler just as a function, not a type with the named method
 type SinkFunc func(context.Context, *muxrpc.Request, *muxrpc.ByteSource) error
 
@@ -13,8 +18,6 @@ type SinkFunc func(context.Context, *muxrpc.Request, *muxrpc.ByteSource) error
 func (sf SinkFunc) HandleSink(ctx context.Context, r *muxrpc.Request, src *muxrpc.ByteSource) error {
 	return sf(ctx, r, src)
 }
-
-var _ SinkHandler = (*SinkFunc)(nil)
 
 // SinkHandler initiates a 'sink' call. The handler receives data from the peer through the passed source
 type SinkHandler interface {
@@ -25,7 +28,7 @@ type sinkStub struct {
 	h SinkHandler
 }
 
-func (hm sinkStub) HandleCall(ctx context.Context, req *muxrpc.Request, edp muxrpc.Endpoint) {
+func (hm sinkStub) HandleCall(ctx context.Context, req *muxrpc.Request) {
 	// TODO: check call type
 
 	src, err := req.ResponseSource()

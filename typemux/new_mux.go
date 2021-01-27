@@ -24,12 +24,12 @@ func New(log log.Logger) HandlerMux {
 	}
 }
 
-func (hm *HandlerMux) HandleCall(ctx context.Context, req *muxrpc.Request, edp muxrpc.Endpoint) {
+func (hm *HandlerMux) HandleCall(ctx context.Context, req *muxrpc.Request) {
 	for i := len(req.Method); i > 0; i-- {
 		m := req.Method[:i]
 		h, ok := hm.handlers[m.String()]
 		if ok {
-			h.HandleCall(ctx, req, edp)
+			h.HandleCall(ctx, req)
 			return
 		}
 	}

@@ -8,6 +8,11 @@ import (
 	"go.cryptoscope.co/muxrpc/v2"
 )
 
+var (
+	_ AsyncHandler   = (*AsyncFunc)(nil)
+	_ muxrpc.Handler = (*asyncStub)(nil)
+)
+
 type AsyncFunc func(context.Context, *muxrpc.Request) (interface{}, error)
 
 func (af AsyncFunc) HandleAsync(ctx context.Context, r *muxrpc.Request) (interface{}, error) {
@@ -24,7 +29,7 @@ type asyncStub struct {
 	h AsyncHandler
 }
 
-func (hm asyncStub) HandleCall(ctx context.Context, req *muxrpc.Request, edp muxrpc.Endpoint) {
+func (hm asyncStub) HandleCall(ctx context.Context, req *muxrpc.Request) {
 	// TODO: check call type?
 
 	v, err := hm.h.HandleAsync(ctx, req)

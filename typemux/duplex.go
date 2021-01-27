@@ -19,7 +19,10 @@ func (sf DuplexFunc) HandleDuplex(ctx context.Context, r *muxrpc.Request, src *m
 	return sf(ctx, r, src, snk)
 }
 
-var _ DuplexHandler = (*DuplexFunc)(nil)
+var (
+	_ DuplexHandler  = (*DuplexFunc)(nil)
+	_ muxrpc.Handler = (*duplexStub)(nil)
+)
 
 type duplexStub struct {
 	h DuplexHandler
