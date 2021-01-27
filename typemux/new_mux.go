@@ -8,18 +8,8 @@ import (
 	"fmt"
 
 	"github.com/go-kit/kit/log"
-	"go.cryptoscope.co/luigi"
 	"go.cryptoscope.co/muxrpc/v2"
 )
-
-// SinkHandler initiates a 'sink' call. The handler receives stuff from the peer through the passed source
-type SinkHandler interface {
-	HandleSource(context.Context, *muxrpc.Request, luigi.Source) error
-}
-
-type DuplexHandler interface {
-	HandleSource(context.Context, *muxrpc.Request, luigi.Source, luigi.Sink) error
-}
 
 type HandlerMux struct {
 	logger log.Logger
@@ -60,6 +50,22 @@ func (hm *HandlerMux) RegisterAsync(m muxrpc.Method, h AsyncHandler) {
 // RegisterSource registers a 'source' call for name method
 func (hm *HandlerMux) RegisterSource(m muxrpc.Method, h SourceHandler) {
 	hm.handlers[m.String()] = sourceStub{
+		// logger: hm.logger,
+		h: h,
+	}
+}
+
+// RegisterSink registers a 'sink' call for name method
+func (hm *HandlerMux) RegisterSink(m muxrpc.Method, h SinkHandler) {
+	hm.handlers[m.String()] = sinkStub{
+		// logger: hm.logger,
+		h: h,
+	}
+}
+
+// RegisterDuplex registers a 'sink' call for name method
+func (hm *HandlerMux) RegisterDuplex(m muxrpc.Method, h DuplexHandler) {
+	hm.handlers[m.String()] = duplexStub{
 		// logger: hm.logger,
 		h: h,
 	}

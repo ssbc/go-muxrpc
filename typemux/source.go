@@ -26,7 +26,7 @@ type sourceStub struct {
 func (hm sourceStub) HandleCall(ctx context.Context, req *muxrpc.Request, edp muxrpc.Endpoint) {
 	// TODO: check call type
 
-	w, err := req.GetResponseSink()
+	w, err := req.ResponseSink()
 	if err != nil {
 		req.CloseWithError(err)
 		return
