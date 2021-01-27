@@ -3,7 +3,6 @@
 package muxrpc
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -66,7 +65,7 @@ func (r *srcReader) Read(data []byte) (int, error) {
 		return n, nil
 	}
 
-	more := r.src.Next(context.TODO())
+	more := r.src.Next(r.src.streamCtx)
 	if !more {
 		err := r.src.Err()
 		if err == nil || errors.Is(err, io.EOF) {

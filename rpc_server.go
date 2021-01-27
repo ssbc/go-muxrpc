@@ -191,7 +191,7 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 	// and prioritize exisitng requests to unblock the connection time
 	// maybe use two maps
 	go func() {
-		r.root.HandleCall(ctx, req, r)
+		r.root.HandleCall(ctx, req)
 		level.Debug(r.logger).Log("call", "returned", "method", req.Method, "reqID", req.id)
 	}()
 	return req, true, nil

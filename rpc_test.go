@@ -69,7 +69,7 @@ func BuildTestAsync(pkr1, pkr2 *Packer) func(*testing.T) {
 		})
 
 		var fh2 FakeHandler
-		fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+		fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 			t.Logf("h2 called %+v\n", req)
 			if len(req.Method) == 1 && req.Method[0] == "whoami" {
 				err := req.Return(ctx, "you are a test")
@@ -200,7 +200,7 @@ func TestSourceString(t *testing.T) {
 	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
-	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Log("h1 called")
 		errc <- fmt.Errorf("unexpected call to rpc1: %#v", req)
 	})
@@ -210,7 +210,7 @@ func TestSourceString(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
-	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "srcstring" {
 			for _, v := range expRx {
@@ -319,7 +319,7 @@ func TestSourceJSON(t *testing.T) {
 	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
-	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Log("h1 called")
 		errc <- fmt.Errorf("unexpected call to rpc1: %#v", req)
 	})
@@ -329,7 +329,7 @@ func TestSourceJSON(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
-	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "srcjson" {
 			for _, v := range expRx {
@@ -441,11 +441,11 @@ func TestSink(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
-	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "sinktest" {
 
-			src, err := req.GetResponseSource()
+			src, err := req.ResponseSource()
 			ckFatal(err)
 
 			for i, exp := range expRx {
@@ -570,7 +570,7 @@ func TestDuplexString(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
-	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "testduplex" {
 			for _, v := range expTx {
@@ -677,7 +677,7 @@ func XTestErrorAsync(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
-	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
 			err := req.CloseWithError(errors.New("omg an error"))
@@ -770,23 +770,23 @@ func (h *hDuplex) HandleConnect(ctx context.Context, e Endpoint) {
 	h.logger.Log("connect:", e.Remote())
 }
 
-func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
+func (h *hDuplex) HandleCall(ctx context.Context, req *Request) {
 	defer close(h.failed)
 
 	if req.Method.String() != "magic" {
-		edp.Terminate()
+		req.Endpoint().Terminate()
 		return
 	}
 
 	if req.Type != "duplex" {
-		edp.Terminate()
+		req.Endpoint().Terminate()
 		return
 	}
 	h.logger.Log("correct", "signature")
 
 	go func() {
 
-		snk, err := req.GetResponseSink()
+		snk, err := req.ResponseSink()
 		if err != nil {
 			req.CloseWithError(err)
 			h.logger.Log("get-sink-err", err)
@@ -812,7 +812,7 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 		}
 	}()
 
-	src, err := req.GetResponseSource()
+	src, err := req.ResponseSource()
 	if err != nil {
 		req.CloseWithError(err)
 		h.logger.Log("get-src-err", err)

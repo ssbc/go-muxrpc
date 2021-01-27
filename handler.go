@@ -13,7 +13,7 @@ import (
 // When a connection is established, HandleConnect is called.
 // TODO: let HandleCall return an error
 type Handler interface {
-	HandleCall(ctx context.Context, req *Request, edp Endpoint)
+	HandleCall(ctx context.Context, req *Request)
 	HandleConnect(ctx context.Context, edp Endpoint)
 }
 
@@ -32,14 +32,14 @@ type HandlerMux struct {
 	handlers map[string]Handler
 }
 
-func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
+func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request) {
 	// hm.regLock.Lock()
 	// defer hm.regLock.Unlock()
 	for i := len(req.Method); i > 0; i-- {
 		m := req.Method[:i]
 		h, ok := hm.handlers[m.String()]
 		if ok {
-			h.HandleCall(ctx, req, edp)
+			h.HandleCall(ctx, req)
 			return
 		}
 	}

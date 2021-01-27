@@ -2,17 +2,16 @@
 package muxrpc
 
 import (
-	context "context"
-	sync "sync"
+	"context"
+	"sync"
 )
 
 type FakeHandler struct {
-	HandleCallStub        func(context.Context, *Request, Endpoint)
+	HandleCallStub        func(context.Context, *Request)
 	handleCallMutex       sync.RWMutex
 	handleCallArgsForCall []struct {
 		arg1 context.Context
 		arg2 *Request
-		arg3 Endpoint
 	}
 	HandleConnectStub        func(context.Context, Endpoint)
 	handleConnectMutex       sync.RWMutex
@@ -24,17 +23,17 @@ type FakeHandler struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeHandler) HandleCall(arg1 context.Context, arg2 *Request, arg3 Endpoint) {
+func (fake *FakeHandler) HandleCall(arg1 context.Context, arg2 *Request) {
 	fake.handleCallMutex.Lock()
 	fake.handleCallArgsForCall = append(fake.handleCallArgsForCall, struct {
 		arg1 context.Context
 		arg2 *Request
-		arg3 Endpoint
-	}{arg1, arg2, arg3})
-	fake.recordInvocation("HandleCall", []interface{}{arg1, arg2, arg3})
+	}{arg1, arg2})
+	stub := fake.HandleCallStub
+	fake.recordInvocation("HandleCall", []interface{}{arg1, arg2})
 	fake.handleCallMutex.Unlock()
-	if fake.HandleCallStub != nil {
-		fake.HandleCallStub(arg1, arg2, arg3)
+	if stub != nil {
+		fake.HandleCallStub(arg1, arg2)
 	}
 }
 
@@ -44,17 +43,17 @@ func (fake *FakeHandler) HandleCallCallCount() int {
 	return len(fake.handleCallArgsForCall)
 }
 
-func (fake *FakeHandler) HandleCallCalls(stub func(context.Context, *Request, Endpoint)) {
+func (fake *FakeHandler) HandleCallCalls(stub func(context.Context, *Request)) {
 	fake.handleCallMutex.Lock()
 	defer fake.handleCallMutex.Unlock()
 	fake.HandleCallStub = stub
 }
 
-func (fake *FakeHandler) HandleCallArgsForCall(i int) (context.Context, *Request, Endpoint) {
+func (fake *FakeHandler) HandleCallArgsForCall(i int) (context.Context, *Request) {
 	fake.handleCallMutex.RLock()
 	defer fake.handleCallMutex.RUnlock()
 	argsForCall := fake.handleCallArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakeHandler) HandleConnect(arg1 context.Context, arg2 Endpoint) {
@@ -63,9 +62,10 @@ func (fake *FakeHandler) HandleConnect(arg1 context.Context, arg2 Endpoint) {
 		arg1 context.Context
 		arg2 Endpoint
 	}{arg1, arg2})
+	stub := fake.HandleConnectStub
 	fake.recordInvocation("HandleConnect", []interface{}{arg1, arg2})
 	fake.handleConnectMutex.Unlock()
-	if fake.HandleConnectStub != nil {
+	if stub != nil {
 		fake.HandleConnectStub(arg1, arg2)
 	}
 }
@@ -115,4 +115,4 @@ func (fake *FakeHandler) recordInvocation(key string, args []interface{}) {
 	fake.invocations[key] = append(fake.invocations[key], args)
 }
 
-var _ = new(FakeHandler)
+var _ Handler = new(FakeHandler)

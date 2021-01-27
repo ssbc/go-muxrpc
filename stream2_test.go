@@ -149,7 +149,7 @@ func setupSource(t testing.TB, expRx []map[string]interface{}) Endpoint {
 	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
-	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Errorf("h1 called %+v!\n", req)
 		err := req.Stream.Close()
 		ckFatal(fmt.Errorf("test close failed: %w", err))
@@ -160,7 +160,7 @@ func setupSource(t testing.TB, expRx []map[string]interface{}) Endpoint {
 	})
 
 	var fh2 FakeHandler
-	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		if len(req.Method) == 1 && req.Method[0] == "srctest" {
 			for i, v := range expRx {
 				err := req.Stream.Pour(ctx, v)

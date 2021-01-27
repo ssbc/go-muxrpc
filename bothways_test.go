@@ -38,7 +38,7 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 	}
 
 	var fh1 FakeHandler
-	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h1 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "asyncObj" {
 			err := req.Return(ctx, testMsg{Foo: "you are a test", Bar: 23})
@@ -51,7 +51,7 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
-	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "asyncObj" {
 			err := req.Return(ctx, testMsg{Foo: "you are a test", Bar: 42})
@@ -171,7 +171,7 @@ func TestBothwaysAsyncString(t *testing.T) {
 	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
-	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h1 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "testasync" {
 			err := req.Return(ctx, "you are a test")
@@ -184,7 +184,7 @@ func TestBothwaysAsyncString(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
-	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "testasync" {
 			err := req.Return(ctx, "you are a test")
@@ -302,7 +302,7 @@ func TestBothwaysSource(t *testing.T) {
 	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
-	fh1.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h1 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
 			for i, v := range expRx {
@@ -325,7 +325,7 @@ func TestBothwaysSource(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
-	fh2.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "whoami" {
 			for i, v := range expRx {
@@ -515,8 +515,8 @@ func TestBothwaysSink(t *testing.T) {
 	errc := make(chan error)
 	ckFatal := mkCheck(errc)
 
-	handler := func(name string) func(context.Context, *Request, Endpoint) {
-		return func(ctx context.Context, req *Request, edp Endpoint) {
+	handler := func(name string) func(context.Context, *Request) {
+		return func(ctx context.Context, req *Request) {
 			fmt.Printf("bothwaysSink: %s called %+v\n", name, req)
 			if len(req.Method) == 1 && req.Method[0] == "sinktest" {
 				for i, exp := range expRx {
@@ -666,8 +666,8 @@ func TestBothwayDuplex(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(6)
-	handler := func(name string) func(context.Context, *Request, Endpoint) {
-		return func(ctx context.Context, req *Request, edp Endpoint) {
+	handler := func(name string) func(context.Context, *Request) {
+		return func(ctx context.Context, req *Request) {
 			t.Logf("%s called %+v\n", name, req)
 			if req.Method.String() == "test.duplex" {
 				for _, v := range expTx {

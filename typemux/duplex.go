@@ -25,7 +25,7 @@ type duplexStub struct {
 	h DuplexHandler
 }
 
-func (hm duplexStub) HandleCall(ctx context.Context, req *muxrpc.Request, edp muxrpc.Endpoint) {
+func (hm duplexStub) HandleCall(ctx context.Context, req *muxrpc.Request) {
 	// TODO: check call type
 
 	r, err := req.ResponseSource()
