@@ -333,15 +333,13 @@ func (r *rpc) Serve() (err error) {
 
 			req, ok := getReq(hdr.Req)
 			if !ok {
-				if _, ignore := r.reqsClosed[hdr.Req]; ignore {
-					rd := r.pkr.r.NextBodyReader(hdr.Len)
-					_, err := io.Copy(ioutil.Discard, rd)
-					if err != nil {
-						return err
+				err = r.maybeDiscardPacket(hdr)
+				if err != nil {
+					if err == errSkip {
+						continue
 					}
-					continue
+					return err
 				}
-
 				level.Warn(r.logger).Log("event", "unhandled packet", "reqID", hdr.Req, "len", hdr.Len, "flags", hdr.Flag)
 				continue
 			}
@@ -371,14 +369,12 @@ func (r *rpc) Serve() (err error) {
 		}
 
 		// data muxing
-
-		if _, ignore := r.reqsClosed[hdr.Req]; ignore {
-			rd := r.pkr.r.NextBodyReader(hdr.Len)
-			_, err := io.Copy(ioutil.Discard, rd)
-			if err != nil {
-				return err
+		err := r.maybeDiscardPacket(hdr)
+		if err != nil {
+			if err == errSkip {
+				continue
 			}
-			continue
+			return err
 		}
 
 		// pick the requests or create a new one
@@ -388,8 +384,7 @@ func (r *rpc) Serve() (err error) {
 		)
 		req, isNew, err = r.fetchRequest(r.serveCtx, &hdr)
 		if err != nil {
-			err = fmt.Errorf("muxrpc: error unpacking request: %w", err)
-			return
+			return fmt.Errorf("muxrpc: error unpacking request: %w", err)
 		}
 
 		if isNew { // the first packet is just the request data, nothing else to do
@@ -407,6 +402,22 @@ func (r *rpc) Serve() (err error) {
 			continue
 		}
 	}
+}
+
+var errSkip = errors.New("mxurpc: skip packet")
+
+func (r *rpc) maybeDiscardPacket(hdr codec.Header) error {
+	r.rLock.RLock()
+	defer r.rLock.RUnlock()
+	if _, ignore := r.reqsClosed[hdr.Req]; ignore {
+		rd := r.pkr.r.NextBodyReader(hdr.Len)
+		_, err := io.Copy(ioutil.Discard, rd)
+		if err != nil {
+			return err
+		}
+		return errSkip
+	}
+	return nil
 }
 
 func isTrue(data []byte) bool {
