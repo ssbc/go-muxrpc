@@ -1,43 +1,67 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 
-	"github.com/cryptix/go/logging"
 	"github.com/dustin/go-humanize"
 	"github.com/pkg/errors"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
 
-var check = logging.CheckFatal
+func check(err error) {
+	if err != nil {
+		fmt.Fprint(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+}
 
 func main() {
 	rd := codec.NewReader(os.Stdin)
 
-	for {
+	var (
+		hdr     codec.Header
+		bodyBuf = new(bytes.Buffer)
+	)
 
-		pkt, err := rd.ReadPacket()
+	for {
+		err := rd.ReadHeader(&hdr)
 		if err != nil {
 			if errors.Cause(err) == io.EOF {
 				break
 			}
-			check(err)
+			check(fmt.Errorf("failed to read header: %w", err))
 			return
 		}
 
-		fmt.Printf("\n  [Req: %04d Size:%s %s\n", pkt.Req, humanize.Bytes(uint64(len(pkt.Body))), pkt.Flag)
-		if len(pkt.Body) > 128 {
-			pkt.Body = pkt.Body[:128]
+		fmt.Printf("\n  [Req: %04d Size:%s %s\n", hdr.Req, humanize.Bytes(uint64(hdr.Len)), hdr.Flag)
+
+		err = rd.ReadBodyInto(bodyBuf, hdr.Len)
+		if err != nil {
+			if errors.Cause(err) == io.EOF {
+				break
+			}
+			check(fmt.Errorf("failed to read body: %w", err))
+			return
+		}
+		body := bodyBuf.Bytes()
+
+		if hdr.Flag.Get(codec.FlagString) || hdr.Flag.Get(codec.FlagJSON) {
+			if len(body) > 250 {
+				body = body[:250]
+			}
+			fmt.Println(string(body))
+		} else {
+			if len(body) > 32 {
+				body = body[:32]
+			}
+			fmt.Printf("%x\n", body)
 		}
 
-		if pkt.Flag.Get(codec.FlagString) || pkt.Flag.Get(codec.FlagJSON) {
-			fmt.Println(string(pkt.Body))
-		} else {
-			fmt.Printf("%x\n", pkt.Body)
-		}
+		bodyBuf.Reset()
 
 	}
 	fmt.Println("done")

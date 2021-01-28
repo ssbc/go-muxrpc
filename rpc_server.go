@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"strings"
@@ -67,9 +69,10 @@ func IsServer(edp Endpoint) bool {
 // Handle handles the connection of the packer using the specified handler.
 func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 	r := &rpc{
-		pkr:  pkr,
-		reqs: make(map[int32]*Request),
-		root: handler,
+		pkr:        pkr,
+		reqs:       make(map[int32]*Request),
+		reqsClosed: make(map[int32]struct{}),
+		root:       handler,
 	}
 
 	// apply options
@@ -147,8 +150,11 @@ type rpc struct {
 	bpool bufpool.FreeList
 
 	// reqs is the map we keep, tracking all requests
-	reqs  map[int32]*Request
-	rLock sync.RWMutex
+	reqs map[int32]*Request
+	// reqs we didnt accept still might send data
+	// like duplex or sink, the remote might send early data before we even get a chance to send an EndErr
+	reqsClosed map[int32]struct{}
+	rLock      sync.RWMutex
 
 	// highest is the highest request id we already allocated
 	highest int32
@@ -175,6 +181,7 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 		r.rLock.RUnlock()
 		return req, false, nil
 	}
+
 	r.rLock.RUnlock()
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
@@ -281,7 +288,7 @@ func (r *rpc) Serve() (err error) {
 		}
 		cerr := r.Terminate()
 		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
-			level.Info(r.logger).Log("event", "closed", "handleErr", err, "closeErr", cerr)
+			level.Warn(r.logger).Log("event", "closed", "handleErr", err, "closeErr", cerr)
 		}
 	}()
 
@@ -326,8 +333,17 @@ func (r *rpc) Serve() (err error) {
 
 			req, ok := getReq(hdr.Req)
 			if !ok {
+				if _, ignore := r.reqsClosed[hdr.Req]; ignore {
+					rd := r.pkr.r.NextBodyReader(hdr.Len)
+					_, err := io.Copy(ioutil.Discard, rd)
+					if err != nil {
+						return err
+					}
+					continue
+				}
+
 				level.Warn(r.logger).Log("event", "unhandled packet", "reqID", hdr.Req, "len", hdr.Len, "flags", hdr.Flag)
-				return
+				continue
 			}
 
 			var streamErr error
@@ -355,6 +371,15 @@ func (r *rpc) Serve() (err error) {
 		}
 
 		// data muxing
+
+		if _, ignore := r.reqsClosed[hdr.Req]; ignore {
+			rd := r.pkr.r.NextBodyReader(hdr.Len)
+			_, err := io.Copy(ioutil.Discard, rd)
+			if err != nil {
+				return err
+			}
+			continue
+		}
 
 		// pick the requests or create a new one
 		var (
@@ -398,6 +423,7 @@ func (r *rpc) closeStream(req *Request, streamErr error) {
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
 	delete(r.reqs, req.id)
+	r.reqsClosed[req.id] = struct{}{}
 	return
 }
 
@@ -410,11 +436,10 @@ func (r *rpc) Terminate() error {
 	r.tLock.Lock()
 	defer r.tLock.Unlock()
 	r.terminated = true
-	r.rLock.Lock()
-	defer r.rLock.Unlock()
+
 	// close active requests
 	for _, req := range r.reqs {
-		req.CloseWithError(ErrSessionTerminated)
+		r.closeStream(req, ErrSessionTerminated)
 	}
 	return r.pkr.Close()
 }

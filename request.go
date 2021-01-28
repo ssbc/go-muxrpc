@@ -105,7 +105,7 @@ type Request struct {
 	abort context.CancelFunc
 
 	remoteAddr net.Addr
-	endpoint   Endpoint
+	endpoint   *rpc
 }
 
 func (req Request) Endpoint() Endpoint {
@@ -187,6 +187,8 @@ func (req *Request) CloseWithError(cerr error) error {
 		req.source.Cancel(cerr)
 		req.sink.CloseWithError(cerr)
 	}
+	// this is a bit ugly but CloseWithError() is the function that HandlerMux uses when replying with "no such command"
+	req.endpoint.closeStream(req, cerr)
 	return nil
 }
 
