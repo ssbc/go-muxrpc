@@ -37,7 +37,11 @@ func (hm *HandlerMux) HandleCall(ctx context.Context, req *muxrpc.Request) {
 }
 
 // HandleConnect does nothing on this mux since it's only intended for function calls, not connect events
-func (hm *HandlerMux) HandleConnect(ctx context.Context, edp muxrpc.Endpoint) {}
+func (hm *HandlerMux) HandleConnect(ctx context.Context, edp muxrpc.Endpoint) {
+	for _, h := range hm.handlers {
+		go h.HandleConnect(ctx, edp)
+	}
+}
 
 // RegisterAsync registers a 'async' call for name method
 func (hm *HandlerMux) RegisterAsync(m muxrpc.Method, h AsyncHandler) {

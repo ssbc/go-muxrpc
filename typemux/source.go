@@ -42,4 +42,8 @@ func (hm sourceStub) HandleCall(ctx context.Context, req *muxrpc.Request) {
 	}
 }
 
-func (hm sourceStub) HandleConnect(ctx context.Context, edp muxrpc.Endpoint) {}
+func (hm sourceStub) HandleConnect(ctx context.Context, edp muxrpc.Endpoint) {
+	if ch, ok := hm.h.(muxrpc.ConnectHandler); ok {
+		ch.HandleConnect(ctx, edp)
+	}
+}

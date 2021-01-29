@@ -13,7 +13,15 @@ import (
 // When a connection is established, HandleConnect is called.
 // TODO: let HandleCall return an error
 type Handler interface {
+	CallHandler
+	ConnectHandler
+}
+
+type CallHandler interface {
 	HandleCall(ctx context.Context, req *Request)
+}
+
+type ConnectHandler interface {
 	HandleConnect(ctx context.Context, edp Endpoint)
 }
 

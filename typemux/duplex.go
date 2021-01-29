@@ -50,4 +50,8 @@ func (hm duplexStub) HandleCall(ctx context.Context, req *muxrpc.Request) {
 	}
 }
 
-func (hm duplexStub) HandleConnect(ctx context.Context, edp muxrpc.Endpoint) {}
+func (hm duplexStub) HandleConnect(ctx context.Context, edp muxrpc.Endpoint) {
+	if ch, ok := hm.h.(muxrpc.ConnectHandler); ok {
+		ch.HandleConnect(ctx, edp)
+	}
+}
