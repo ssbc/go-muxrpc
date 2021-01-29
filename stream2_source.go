@@ -108,11 +108,19 @@ func (bs *ByteSource) Next(ctx context.Context) bool {
 
 	select {
 	case <-bs.streamCtx.Done():
-		bs.failed = bs.streamCtx.Err()
+		bs.mu.Lock()
+		defer bs.mu.Unlock()
+		if bs.failed == nil {
+			bs.failed = bs.streamCtx.Err()
+		}
 		return bs.buf.Frames() > 0
 
 	case <-ctx.Done():
-		bs.failed = ctx.Err()
+		bs.mu.Lock()
+		defer bs.mu.Unlock()
+		if bs.failed == nil {
+			bs.failed = ctx.Err()
+		}
 		return false
 
 	case <-bs.closed:
