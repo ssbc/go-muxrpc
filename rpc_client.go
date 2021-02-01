@@ -105,14 +105,13 @@ func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, arg
 		Method:  method,
 		RawArgs: argData,
 	}
+	req.sink.pkt.Flag = req.sink.pkt.Flag.Set(encFlag)
 
 	req.Stream = req.source.AsStream()
 
 	if err := r.start(ctx, req); err != nil {
 		return nil, fmt.Errorf("error sending request: %w", err)
 	}
-
-	req.sink.pkt.Flag = req.sink.pkt.Flag.Set(encFlag)
 
 	return req.source, nil
 }
@@ -129,25 +128,23 @@ func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args 
 		return nil, err
 	}
 
-	bs := newByteSink(ctx, r.pkr.w)
-	bs.pkt.Flag = bs.pkt.Flag.Set(encFlag).Set(codec.FlagStream)
-
 	req := &Request{
 		Type: "sink",
 
-		sink:   bs,
+		sink:   newByteSink(ctx, r.pkr.w),
 		source: newByteSource(ctx, r.bpool),
 
 		Method:  method,
 		RawArgs: argData,
 	}
-	req.Stream = bs.AsStream()
+	req.sink.pkt.Flag = req.sink.pkt.Flag.Set(encFlag).Set(codec.FlagStream)
+	req.Stream = req.sink.AsStream()
 
 	if err := r.start(ctx, req); err != nil {
 		return nil, fmt.Errorf("error sending request: %w", err)
 	}
 
-	return bs, nil
+	return req.sink, nil
 }
 
 // Duplex does a duplex call on the remote.
@@ -163,7 +160,6 @@ func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, arg
 	}
 
 	bSrc := newByteSource(ctx, r.bpool)
-
 	bSink := newByteSink(ctx, r.pkr.w)
 	bSink.pkt.Flag = bSink.pkt.Flag.Set(encFlag).Set(codec.FlagStream)
 
