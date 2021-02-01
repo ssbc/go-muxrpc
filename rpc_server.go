@@ -449,8 +449,13 @@ func (r *rpc) Terminate() error {
 	r.terminated = true
 
 	// close active requests
+	r.rLock.Lock()
+	defer r.rLock.Unlock()
 	for _, req := range r.reqs {
-		r.closeStream(req, ErrSessionTerminated)
+		req.source.Cancel(ErrSessionTerminated)
+		req.sink.CloseWithError(ErrSessionTerminated)
+		delete(r.reqs, req.id)
+		r.reqsClosed[req.id] = struct{}{}
 	}
 	return r.pkr.Close()
 }

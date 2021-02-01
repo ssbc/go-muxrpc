@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/pkg/errors"
 
@@ -26,7 +27,8 @@ var _ ByteSinker = (*ByteSink)(nil)
 type ByteSink struct {
 	w *codec.Writer
 
-	closed error
+	closedMu sync.Mutex
+	closed   error
 
 	streamCtx context.Context
 
@@ -47,15 +49,17 @@ func (bs *ByteSink) SetEncoding(re RequestEncoding) {
 	encFlag, err := re.asCodecFlag()
 	if err != nil {
 		panic(err)
-		return
 	}
 	bs.pkt.Flag = bs.pkt.Flag.Set(encFlag)
 }
 
 func (bs *ByteSink) Write(b []byte) (int, error) {
+	bs.closedMu.Lock()
 	if bs.closed != nil {
+		bs.closedMu.Unlock()
 		return 0, bs.closed
 	}
+	bs.closedMu.Unlock()
 
 	if bs.pkt.Req == 0 {
 		return -1, fmt.Errorf("req ID not set (Flag: %s)", bs.pkt.Flag)
@@ -71,10 +75,12 @@ func (bs *ByteSink) Write(b []byte) (int, error) {
 }
 
 func (bs *ByteSink) CloseWithError(err error) error {
+	bs.closedMu.Lock()
+	defer bs.closedMu.Unlock()
+
 	if bs.closed != nil {
 		return bs.closed
 	}
-	bs.closed = err
 
 	var closePkt *codec.Packet
 	var isStream = bs.pkt.Flag.Get(codec.FlagStream)
@@ -92,6 +98,8 @@ func (bs *ByteSink) CloseWithError(err error) error {
 		bs.closed = werr
 		return werr
 	}
+	bs.closed = err
+
 	return nil
 }
 
