@@ -19,6 +19,18 @@ type FakeHandler struct {
 		arg1 context.Context
 		arg2 Endpoint
 	}
+	HandledStub        func(Method, CallType) bool
+	handledMutex       sync.RWMutex
+	handledArgsForCall []struct {
+		arg1 Method
+		arg2 CallType
+	}
+	handledReturns struct {
+		result1 bool
+	}
+	handledReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
 }
@@ -89,6 +101,68 @@ func (fake *FakeHandler) HandleConnectArgsForCall(i int) (context.Context, Endpo
 	return argsForCall.arg1, argsForCall.arg2
 }
 
+func (fake *FakeHandler) Handled(arg1 Method, arg2 CallType) bool {
+	fake.handledMutex.Lock()
+	ret, specificReturn := fake.handledReturnsOnCall[len(fake.handledArgsForCall)]
+	fake.handledArgsForCall = append(fake.handledArgsForCall, struct {
+		arg1 Method
+		arg2 CallType
+	}{arg1, arg2})
+	stub := fake.HandledStub
+	fakeReturns := fake.handledReturns
+	fake.recordInvocation("Handled", []interface{}{arg1, arg2})
+	fake.handledMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeHandler) HandledCallCount() int {
+	fake.handledMutex.RLock()
+	defer fake.handledMutex.RUnlock()
+	return len(fake.handledArgsForCall)
+}
+
+func (fake *FakeHandler) HandledCalls(stub func(Method, CallType) bool) {
+	fake.handledMutex.Lock()
+	defer fake.handledMutex.Unlock()
+	fake.HandledStub = stub
+}
+
+func (fake *FakeHandler) HandledArgsForCall(i int) (Method, CallType) {
+	fake.handledMutex.RLock()
+	defer fake.handledMutex.RUnlock()
+	argsForCall := fake.handledArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeHandler) HandledReturns(result1 bool) {
+	fake.handledMutex.Lock()
+	defer fake.handledMutex.Unlock()
+	fake.HandledStub = nil
+	fake.handledReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeHandler) HandledReturnsOnCall(i int, result1 bool) {
+	fake.handledMutex.Lock()
+	defer fake.handledMutex.Unlock()
+	fake.HandledStub = nil
+	if fake.handledReturnsOnCall == nil {
+		fake.handledReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.handledReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
 func (fake *FakeHandler) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
@@ -96,6 +170,8 @@ func (fake *FakeHandler) Invocations() map[string][][]interface{} {
 	defer fake.handleCallMutex.RUnlock()
 	fake.handleConnectMutex.RLock()
 	defer fake.handleConnectMutex.RUnlock()
+	fake.handledMutex.RLock()
+	defer fake.handledMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

@@ -7,11 +7,17 @@ import (
 	"fmt"
 )
 
+//go:generate counterfeiter -o fakehandler_test.go . Handler
+
 // Handler allows handling connections.
 // When we are being called, HandleCall is called.
 // When a connection is established, HandleConnect is called.
 // TODO: let HandleCall return an error
 type Handler interface {
+
+	// Handled returns true if the method and calltype are handled by the handler
+	Handled(Method, CallType) bool
+
 	CallHandler
 	ConnectHandler
 }

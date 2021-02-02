@@ -7,8 +7,9 @@ import (
 	"net"
 )
 
+//go:generate counterfeiter -o fakeendpoint_test.go . Endpoint
+
 // Endpoint allows calling functions on the RPC peer.
-//go:generate counterfeiter -o mock/endpoint.go . Endpoint
 type Endpoint interface {
 	// The different call types:
 	Async(ctx context.Context, ret interface{}, tipe RequestEncoding, method Method, args ...interface{}) error
