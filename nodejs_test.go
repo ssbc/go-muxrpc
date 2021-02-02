@@ -37,16 +37,16 @@ func TestJSGettingCalledSource(t *testing.T) {
 	ckFatal := mkCheck(errc)
 
 	var fh FakeHandler
-	fh.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh.HandledCalls(func(m Method) bool {
+		return len(m) == 1 && m[0] == "stuff"
+	})
+	fh.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("got call: %+v", req)
 		close(gotCall)
-		if len(req.Method) != 1 || req.Method[0] != "stuff" {
-			ckFatal(fmt.Errorf("unexpected method name: %s", req.Method))
-		}
 		if req.Type != "source" {
 			ckFatal(fmt.Errorf("request type: %s", req.Type))
 		}
-		binSink, err := req.GetResponseSink()
+		binSink, err := req.ResponseSink()
 		if err != nil {
 			ckFatal(fmt.Errorf("expected to get sink for replies: %w", err))
 		}
@@ -116,11 +116,11 @@ func TestJSGettingCalledAsync(t *testing.T) {
 	r.NoError(err, "nodejs startup")
 
 	var fh FakeHandler
-	fh.HandleCallCalls(func(ctx context.Context, req *Request, _ Endpoint) {
+	fh.HandledCalls(func(m Method) bool {
+		return len(m) == 1 && m[0] == "hello"
+	})
+	fh.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("got call: %+v", req)
-		if len(req.Method) != 1 || req.Method[0] != "hello" {
-			ckFatal(fmt.Errorf("unexpected method name: %s", req.Method))
-		}
 		err := req.Return(ctx, "meow")
 		ckFatal(err)
 	})
@@ -628,29 +628,26 @@ type hAbortMe struct {
 	t      *testing.T
 }
 
+func (h *hAbortMe) Handled(m Method) bool {
+	return len(m) == 1 && m[0] == "takeSome"
+}
+
 func (h *hAbortMe) HandleConnect(ctx context.Context, e Endpoint) {
 	h.logger.Log("connect:", e.Remote())
 }
 
-func (h *hAbortMe) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
-	if req.Method.String() != "takeSome" {
-		err := fmt.Errorf("wrong method: %s", req.Method.String())
-		require.NoError(h.t, err)
-		req.Stream.CloseWithError(err)
-		return
-	}
-
-	snk, err := req.GetResponseSink()
+func (h *hAbortMe) HandleCall(ctx context.Context, req *Request) {
+	snk, err := req.ResponseSink()
 	if err != nil {
 		require.NoError(h.t, err)
 		req.Stream.CloseWithError(err)
 		return
 	}
-	var i int
 
 	snk.SetEncoding(TypeJSON)
-
 	enc := json.NewEncoder(snk)
+
+	var i int
 	for ; i < h.want+10; i++ {
 		err := enc.Encode(i)
 		if err != nil {
@@ -661,7 +658,7 @@ func (h *hAbortMe) HandleCall(ctx context.Context, req *Request, edp Endpoint) {
 			require.NoError(h.t, err)
 			break
 		}
-		time.Sleep(time.Second / 100)
+		time.Sleep(5 * time.Second)
 	}
 	if i != h.want {
 		err := fmt.Errorf("expected %d but sent %d packets", h.want, i)

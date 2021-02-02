@@ -38,12 +38,13 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 	}
 
 	var fh1 FakeHandler
+	fh1.HandledCalls(func(m Method) bool {
+		return len(m) == 1 && m[0] == "asyncObj"
+	})
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h1 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "asyncObj" {
-			err := req.Return(ctx, testMsg{Foo: "you are a test", Bar: 23})
-			ckFatal(err)
-		}
+		err := req.Return(ctx, testMsg{Foo: "you are a test", Bar: 23})
+		ckFatal(err)
 	})
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h1 connected")
@@ -51,12 +52,13 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
+	fh2.HandledCalls(func(m Method) bool {
+		return len(m) == 1 && m[0] == "asyncObj"
+	})
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "asyncObj" {
-			err := req.Return(ctx, testMsg{Foo: "you are a test", Bar: 42})
-			ckFatal(err)
-		}
+		err := req.Return(ctx, testMsg{Foo: "you are a test", Bar: 42})
+		ckFatal(err)
 	})
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h2 connected")
@@ -77,7 +79,10 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 	go func() {
 		var v testMsg
 		err := rpc1.Async(ctx, &v, TypeJSON, Method{"asyncObj"})
-		ckFatal(err)
+		if err != nil {
+			ckFatal(fmt.Errorf("rpc1 failed to execute async(): %w", err))
+			return
+		}
 
 		if v.Foo != "you are a test" {
 			err = fmt.Errorf("unexpected response text %q", v.Foo)
@@ -103,7 +108,10 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 	go func() {
 		var v testMsg
 		err := rpc2.Async(ctx, &v, TypeJSON, Method{"asyncObj"})
-		ckFatal(err)
+		if err != nil {
+			ckFatal(fmt.Errorf("rpc2 failed to execute async(): %w", err))
+			return
+		}
 
 		if v.Foo != "you are a test" {
 			err = fmt.Errorf("unexpected response text %q", v.Foo)
