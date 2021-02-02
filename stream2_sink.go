@@ -46,6 +46,8 @@ func newByteSink(ctx context.Context, w *codec.Writer) *ByteSink {
 }
 
 func (bs *ByteSink) SetEncoding(re RequestEncoding) {
+	bs.closedMu.Lock()
+	defer bs.closedMu.Unlock()
 	encFlag, err := re.asCodecFlag()
 	if err != nil {
 		panic(err)
