@@ -604,64 +604,71 @@ func TestSinkDiscardEarlyData(t *testing.T) {
 	t.Log("reader has:", c1.r.Len())
 
 	// start the session against the fake rwc
-	conn1 := make(chan struct{})
 	serve1 := make(chan struct{})
 
 	errc := make(chan error)
 
 	var fh1 FakeHandler
-	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
-		req.CloseWithError(fmt.Errorf("unwanted"))
-	})
-
-	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
-		t.Log("h1 connected")
-		close(conn1)
-	})
+	fh1.HandledReturns(false)
 
 	tpath := filepath.Join("testrun", t.Name())
 	c1dbg := debug.Dump(tpath, &c1)
 
-	rpc1 := Handle(NewPacker(c1dbg), &fh1)
-
 	ctx := context.Background()
+	var cancel context.CancelFunc
+	if d, has := t.Deadline(); has {
+		// d = d.Add(-30 * time.Second)
+		ctx, cancel = context.WithDeadline(ctx, d)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
+	defer cancel()
+
+	rpc1 := Handle(NewPacker(c1dbg), &fh1, WithContext(ctx))
 
 	go serve(ctx, rpc1.(Server), errc, serve1)
 
 	select {
 	case <-done:
 		t.Log("connection closed")
+		cancel()
 
 	case ev := <-errc:
 		t.Log("error from channel")
 		if ev != nil {
 			t.Errorf("errorc: %s", ev)
 		}
+		cancel()
+
+	case <-ctx.Done():
+		t.Log("context ellapsed")
 	}
 
-	r.Equal(1, fh1.HandleCallCallCount())
+	r.Equal(0, fh1.HandleCallCallCount())
+	r.Equal(1, fh1.HandleConnectCallCount())
 
 	// ignoredCalls := rpc1.(*rpc).reqsClosed
 	// _, callIgnored := ignoredCalls[-666]
 	// spew.Dump(ignoredCalls)
 	// r.True(callIgnored, "call not ignored, has %d entries", len(ignoredCalls))
 
+	select {
+	case ev := <-errc:
+		t.Log("error from channel")
+		if ev != nil {
+			t.Errorf("errorc: %s", ev)
+		}
+	default:
+	}
+
 	// cleanup
 	err = rpc1.Terminate()
 	r.NoError(err)
 
 	t.Log("waiting for everything to shut down")
-	for conn1 != nil || serve1 != nil {
-		select {
+	<-serve1
+	t.Log("serve1 closed")
 
-		case <-conn1:
-			t.Log("conn1 closed")
-			conn1 = nil
-		case <-serve1:
-			t.Log("serve1 closed")
-			serve1 = nil
-		}
-	}
 }
 
 func TestDuplexString(t *testing.T) {
@@ -895,6 +902,10 @@ type hDuplex struct {
 	failed         chan error
 }
 
+func (h *hDuplex) Handled(m Method, t CallType) bool {
+	return m.String() == "magic" && t == "duplex"
+}
+
 func (h *hDuplex) HandleConnect(ctx context.Context, e Endpoint) {
 	h.logger.Log("connect:", e.Remote())
 }
@@ -902,15 +913,11 @@ func (h *hDuplex) HandleConnect(ctx context.Context, e Endpoint) {
 func (h *hDuplex) HandleCall(ctx context.Context, req *Request) {
 	defer close(h.failed)
 
-	if req.Method.String() != "magic" {
-		req.Endpoint().Terminate()
-		return
-	}
-
 	if req.Type != "duplex" {
 		req.Endpoint().Terminate()
 		return
 	}
+
 	h.logger.Log("correct", "signature")
 
 	go func() {

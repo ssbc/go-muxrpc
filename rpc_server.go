@@ -12,7 +12,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -210,7 +209,14 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 	}
 	ctx, req.abort = context.WithCancel(ctx)
 
+	if !r.root.Handled(req.Method, req.Type) {
+		r.reqsClosed[hdr.Req] = struct{}{}
+		// it is a new call in that there is nothing else to do
+		return nil, true, nil
+	}
+
 	r.reqs[hdr.Req] = req
+
 	// TODO:
 	// buffer new requests to not mindlessly spawn goroutines
 	// and prioritize exisitng requests to unblock the connection time
@@ -219,8 +225,7 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 		r.root.HandleCall(ctx, req)
 		level.Debug(r.logger).Log("call", "returned", "method", req.Method, "reqID", req.id)
 	}()
-	// <-req.processed
-	time.Sleep(1 * time.Second) // nasty hack to let HandleCall decide if it wants to accept this packet
+
 	return req, true, nil
 }
 
