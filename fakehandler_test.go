@@ -19,11 +19,10 @@ type FakeHandler struct {
 		arg1 context.Context
 		arg2 Endpoint
 	}
-	HandledStub        func(Method, CallType) bool
+	HandledStub        func(Method) bool
 	handledMutex       sync.RWMutex
 	handledArgsForCall []struct {
 		arg1 Method
-		arg2 CallType
 	}
 	handledReturns struct {
 		result1 bool
@@ -101,19 +100,18 @@ func (fake *FakeHandler) HandleConnectArgsForCall(i int) (context.Context, Endpo
 	return argsForCall.arg1, argsForCall.arg2
 }
 
-func (fake *FakeHandler) Handled(arg1 Method, arg2 CallType) bool {
+func (fake *FakeHandler) Handled(arg1 Method) bool {
 	fake.handledMutex.Lock()
 	ret, specificReturn := fake.handledReturnsOnCall[len(fake.handledArgsForCall)]
 	fake.handledArgsForCall = append(fake.handledArgsForCall, struct {
 		arg1 Method
-		arg2 CallType
-	}{arg1, arg2})
+	}{arg1})
 	stub := fake.HandledStub
 	fakeReturns := fake.handledReturns
-	fake.recordInvocation("Handled", []interface{}{arg1, arg2})
+	fake.recordInvocation("Handled", []interface{}{arg1})
 	fake.handledMutex.Unlock()
 	if stub != nil {
-		return stub(arg1, arg2)
+		return stub(arg1)
 	}
 	if specificReturn {
 		return ret.result1
@@ -127,17 +125,17 @@ func (fake *FakeHandler) HandledCallCount() int {
 	return len(fake.handledArgsForCall)
 }
 
-func (fake *FakeHandler) HandledCalls(stub func(Method, CallType) bool) {
+func (fake *FakeHandler) HandledCalls(stub func(Method) bool) {
 	fake.handledMutex.Lock()
 	defer fake.handledMutex.Unlock()
 	fake.HandledStub = stub
 }
 
-func (fake *FakeHandler) HandledArgsForCall(i int) (Method, CallType) {
+func (fake *FakeHandler) HandledArgsForCall(i int) Method {
 	fake.handledMutex.RLock()
 	defer fake.handledMutex.RUnlock()
 	argsForCall := fake.handledArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg1
 }
 
 func (fake *FakeHandler) HandledReturns(result1 bool) {

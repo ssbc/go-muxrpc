@@ -209,7 +209,7 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 	}
 	ctx, req.abort = context.WithCancel(ctx)
 
-	if !r.root.Handled(req.Method, req.Type) {
+	if !r.root.Handled(req.Method) {
 		r.reqsClosed[hdr.Req] = struct{}{}
 		// it is a new call in that there is nothing else to do
 		return nil, true, nil

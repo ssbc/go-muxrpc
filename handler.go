@@ -15,8 +15,8 @@ import (
 // TODO: let HandleCall return an error
 type Handler interface {
 
-	// Handled returns true if the method and calltype are handled by the handler
-	Handled(Method, CallType) bool
+	// Handled returns true if the method is handled by the handler
+	Handled(Method) bool
 
 	CallHandler
 	ConnectHandler
@@ -44,6 +44,15 @@ type HandlerMux struct {
 	handlers map[string]Handler
 }
 
+func (hm *HandlerMux) Handled(m Method) bool {
+	for _, h := range hm.handlers {
+		if h.Handled(m) {
+			return true
+		}
+	}
+	return false
+}
+
 func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request) {
 	for i := len(req.Method); i > 0; i-- {
 		m := req.Method[:i]
@@ -62,6 +71,8 @@ func (hm *HandlerMux) HandleConnect(ctx context.Context, edp Endpoint) {
 		go h.HandleConnect(ctx, edp)
 	}
 }
+
+var _ Handler = (*HandlerMux)(nil)
 
 func (hm *HandlerMux) Register(m Method, h Handler) {
 	if hm.handlers == nil {
