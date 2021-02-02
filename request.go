@@ -116,12 +116,6 @@ func (req Request) RemoteAddr() net.Addr {
 	return req.remoteAddr
 }
 
-type ErrWrongStreamType struct{ ct CallType }
-
-func (wst ErrWrongStreamType) Error() string {
-	return fmt.Sprintf("muxrpc: wrong stream type: %s", wst.ct)
-}
-
 // ResponseSink returns the response writer for incoming source requests.
 func (req *Request) ResponseSink() (*ByteSink, error) {
 	if req.Type != "source" && req.Type != "duplex" {
