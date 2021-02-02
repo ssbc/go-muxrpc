@@ -5,7 +5,6 @@ package muxrpc
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,10 +12,12 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/karrick/bufpool"
+	"github.com/pkg/errors"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
@@ -169,6 +170,23 @@ type rpc struct {
 	cancel   context.CancelFunc
 }
 
+var errSkip = errors.New("mxurpc: skip packet")
+
+// we might receive data for requests we chose to not handle
+func (r *rpc) maybeDiscardPacket(hdr codec.Header) error {
+	r.rLock.RLock()
+	defer r.rLock.RUnlock()
+	if _, ignore := r.reqsClosed[hdr.Req]; ignore {
+		rd := r.pkr.r.NextBodyReader(hdr.Len)
+		_, err := io.Copy(ioutil.Discard, rd)
+		if err != nil {
+			return err
+		}
+		return errSkip
+	}
+	return nil
+}
+
 // fetchRequest returns the request from the reqs map or, if it's not there yet, builds a new one.
 func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bool, error) {
 	var err error
@@ -201,6 +219,8 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 		r.root.HandleCall(ctx, req)
 		level.Debug(r.logger).Log("call", "returned", "method", req.Method, "reqID", req.id)
 	}()
+	// <-req.processed
+	time.Sleep(1 * time.Second) // nasty hack to let HandleCall decide if it wants to accept this packet
 	return req, true, nil
 }
 
@@ -216,7 +236,6 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 	}
 
 	buf := r.bpool.Get()
-	buf.Reset()
 
 	rd := r.pkr.r.NextBodyReader(pkt.Len)
 	_, err := buf.ReadFrom(rd)
@@ -288,7 +307,10 @@ func (r *rpc) Serve() (err error) {
 		}
 		cerr := r.Terminate()
 		if err != nil && !strings.Contains(err.Error(), "use of closed network connection") {
-			level.Warn(r.logger).Log("event", "closed", "handleErr", err, "closeErr", cerr)
+			level.Error(r.logger).Log(
+				"event", "closed",
+				"handleErr", err,
+				"closeErr", cerr)
 		}
 	}()
 
@@ -369,7 +391,7 @@ func (r *rpc) Serve() (err error) {
 		}
 
 		// data muxing
-		err := r.maybeDiscardPacket(hdr)
+		err = r.maybeDiscardPacket(hdr)
 		if err != nil {
 			if err == errSkip {
 				continue
@@ -404,22 +426,6 @@ func (r *rpc) Serve() (err error) {
 	}
 }
 
-var errSkip = errors.New("mxurpc: skip packet")
-
-func (r *rpc) maybeDiscardPacket(hdr codec.Header) error {
-	r.rLock.RLock()
-	defer r.rLock.RUnlock()
-	if _, ignore := r.reqsClosed[hdr.Req]; ignore {
-		rd := r.pkr.r.NextBodyReader(hdr.Len)
-		_, err := io.Copy(ioutil.Discard, rd)
-		if err != nil {
-			return err
-		}
-		return errSkip
-	}
-	return nil
-}
-
 func isTrue(data []byte) bool {
 	return len(data) == 4 &&
 		data[0] == 't' &&
@@ -430,6 +436,11 @@ func isTrue(data []byte) bool {
 
 func (r *rpc) closeStream(req *Request, streamErr error) {
 	req.source.Cancel(streamErr)
+
+	// req.processedOnce.Do(func() {
+	// 	debug.PrintStack()
+	// 	close(req.processed)
+	// })
 
 	r.rLock.Lock()
 	defer r.rLock.Unlock()

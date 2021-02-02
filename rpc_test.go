@@ -3,6 +3,7 @@
 package muxrpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,14 +20,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
 
+	"go.cryptoscope.co/muxrpc/v2/codec"
 	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
 // for some reason you can't use t.Fatal // t.Error in goroutines... :-/
 func serve(_ context.Context, r Server, errc chan<- error, done ...chan<- struct{}) {
 	err := r.Serve()
-	if err != nil && errors.Is(err, context.Canceled) {
-		errc <- fmt.Errorf("Serve failed: %w", err)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		errc <- fmt.Errorf("Serve() failed: %w", err)
 	}
 	if len(done) > 0 { // might want to use a waitGroup here instead?
 		close(done[0])
@@ -531,6 +533,133 @@ func TestSink(t *testing.T) {
 		case <-serve2:
 			t.Log("serve2 closed")
 			serve2 = nil
+		}
+	}
+}
+
+type fakeRWC struct {
+	closed bool
+	done   chan struct{}
+
+	w bytes.Buffer
+	r bytes.Buffer
+}
+
+func (f *fakeRWC) Read(b []byte) (int, error) {
+	if f.closed {
+		return -1, io.EOF
+	}
+	return f.r.Read(b)
+}
+
+func (f *fakeRWC) Write(b []byte) (int, error) {
+	if f.closed {
+		return -1, io.EOF
+	}
+	return f.w.Write(b)
+}
+
+func (f *fakeRWC) Close() error {
+	f.closed = true
+	close(f.done)
+	return nil
+}
+
+func TestSinkDiscardEarlyData(t *testing.T) {
+	r := require.New(t)
+
+	// craft a call + early data
+	var (
+		c1       fakeRWC
+		cw       = codec.NewWriter(&c1.r)
+		sinkCall codec.Packet
+		sinkReq  Request
+		err      error
+	)
+
+	sinkCall.Req = 666
+	sinkCall.Flag = sinkCall.Flag.Set(codec.FlagJSON).Set(codec.FlagStream)
+
+	sinkReq.Method = Method{"sink", "discardme"}
+	sinkReq.RawArgs = json.RawMessage(`[]`)
+	sinkReq.Type = "sink"
+
+	sinkCall.Body, err = json.Marshal(sinkReq)
+	r.NoError(err)
+
+	err = cw.WritePacket(&sinkCall)
+	r.NoError(err)
+
+	done := make(chan struct{})
+	c1.done = done
+
+	for _, s := range []string{"hello", "world", "some", "early", "data"} {
+		sinkCall.Body, err = json.Marshal(s)
+		r.NoError(err)
+
+		err = cw.WritePacket(&sinkCall)
+		r.NoError(err)
+	}
+
+	t.Log("reader has:", c1.r.Len())
+
+	// start the session against the fake rwc
+	conn1 := make(chan struct{})
+	serve1 := make(chan struct{})
+
+	errc := make(chan error)
+
+	var fh1 FakeHandler
+	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
+		req.CloseWithError(fmt.Errorf("unwanted"))
+	})
+
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1)
+	})
+
+	tpath := filepath.Join("testrun", t.Name())
+	c1dbg := debug.Dump(tpath, &c1)
+
+	rpc1 := Handle(NewPacker(c1dbg), &fh1)
+
+	ctx := context.Background()
+
+	go serve(ctx, rpc1.(Server), errc, serve1)
+
+	select {
+	case <-done:
+		t.Log("connection closed")
+
+	case ev := <-errc:
+		t.Log("error from channel")
+		if ev != nil {
+			t.Errorf("errorc: %s", ev)
+		}
+	}
+
+	r.Equal(1, fh1.HandleCallCallCount())
+
+	// ignoredCalls := rpc1.(*rpc).reqsClosed
+	// _, callIgnored := ignoredCalls[-666]
+	// spew.Dump(ignoredCalls)
+	// r.True(callIgnored, "call not ignored, has %d entries", len(ignoredCalls))
+
+	// cleanup
+	err = rpc1.Terminate()
+	r.NoError(err)
+
+	t.Log("waiting for everything to shut down")
+	for conn1 != nil || serve1 != nil {
+		select {
+
+		case <-conn1:
+			t.Log("conn1 closed")
+			conn1 = nil
+		case <-serve1:
+			t.Log("serve1 closed")
+			serve1 = nil
 		}
 	}
 }
