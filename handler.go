@@ -5,7 +5,6 @@ package muxrpc
 import (
 	"context"
 	"fmt"
-	"sync"
 )
 
 // Handler allows handling connections.
@@ -36,13 +35,10 @@ func ApplyHandlerWrappers(h Handler, hws ...HandlerWrapper) Handler {
 }
 
 type HandlerMux struct {
-	regLock  sync.Mutex // protects the map
 	handlers map[string]Handler
 }
 
 func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request) {
-	// hm.regLock.Lock()
-	// defer hm.regLock.Unlock()
 	for i := len(req.Method); i > 0; i-- {
 		m := req.Method[:i]
 		h, ok := hm.handlers[m.String()]
@@ -52,7 +48,7 @@ func (hm *HandlerMux) HandleCall(ctx context.Context, req *Request) {
 		}
 	}
 
-	req.CloseWithError(fmt.Errorf("no such command: %v", req.Method))
+	req.CloseWithError(fmt.Errorf("no such method: %s", req.Method))
 }
 
 func (hm *HandlerMux) HandleConnect(ctx context.Context, edp Endpoint) {
@@ -62,29 +58,9 @@ func (hm *HandlerMux) HandleConnect(ctx context.Context, edp Endpoint) {
 }
 
 func (hm *HandlerMux) Register(m Method, h Handler) {
-	hm.regLock.Lock()
-	defer hm.regLock.Unlock()
 	if hm.handlers == nil {
 		hm.handlers = make(map[string]Handler)
 	}
 
 	hm.handlers[m.String()] = h
-}
-
-type NamedHandler struct {
-	Method  Method
-	Handler Handler
-}
-
-func (hm *HandlerMux) RegisterAll(handlers ...NamedHandler) {
-	hm.regLock.Lock()
-	defer hm.regLock.Unlock()
-	if hm.handlers == nil {
-		hm.handlers = make(map[string]Handler)
-	}
-
-	for _, hn := range handlers {
-		hm.handlers[hn.Method.String()] = hn.Handler
-	}
-
 }

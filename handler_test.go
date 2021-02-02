@@ -13,7 +13,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"

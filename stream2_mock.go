@@ -3,7 +3,21 @@ package muxrpc
 import (
 	"bytes"
 	"context"
+	"io"
+
+	"go.cryptoscope.co/muxrpc/v2/codec"
 )
+
+func NewTestSink(w io.Writer) *ByteSink {
+	var bs ByteSink
+
+	bs.pkt = &codec.Packet{
+		Req: 666,
+	}
+	bs.w = codec.NewWriter(w)
+
+	return &bs
+}
 
 func NewTestSource(bodies ...[]byte) *ByteSource {
 	fb := &frameBuffer{

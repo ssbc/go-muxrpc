@@ -108,13 +108,11 @@ type Request struct {
 	endpoint   *rpc
 }
 
-func (req Request) Endpoint() Endpoint {
-	return req.endpoint
-}
+// Endpoint returns the client instance to start new calls. Mostly usefull inside handlers.
+func (req Request) Endpoint() Endpoint { return req.endpoint }
 
-func (req Request) RemoteAddr() net.Addr {
-	return req.remoteAddr
-}
+// RemoteAddr returns the netwrap'ed network adddress of the underlying connection. This is usually a pair of secretstream.Addr and TCP
+func (req Request) RemoteAddr() net.Addr { return req.remoteAddr }
 
 // ResponseSink returns the response writer for incoming source requests.
 func (req *Request) ResponseSink() (*ByteSink, error) {
@@ -124,6 +122,7 @@ func (req *Request) ResponseSink() (*ByteSink, error) {
 	return req.sink, nil
 }
 
+// ResponseSource returns the reader for incoming data of sink or duplex calls.
 func (req *Request) ResponseSource() (*ByteSource, error) {
 	if req.Type != "sink" && req.Type != "duplex" {
 		return nil, ErrWrongStreamType{req.Type}
@@ -186,6 +185,7 @@ func (req *Request) CloseWithError(cerr error) error {
 	return nil
 }
 
+// Close closes the stream with io.EOF
 func (req *Request) Close() error {
 	return req.CloseWithError(io.EOF)
 }
