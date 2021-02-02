@@ -6,10 +6,7 @@ import (
 	"go.cryptoscope.co/muxrpc/v2"
 )
 
-var (
-	_ SourceHandler  = (*SourceFunc)(nil)
-	_ muxrpc.Handler = (*sourceStub)(nil)
-)
+var _ SourceHandler = (*SourceFunc)(nil)
 
 type SourceFunc func(context.Context, *muxrpc.Request, *muxrpc.ByteSink) error
 

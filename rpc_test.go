@@ -902,8 +902,8 @@ type hDuplex struct {
 	failed         chan error
 }
 
-func (h *hDuplex) Handled(m Method, t CallType) bool {
-	return m.String() == "magic" && t == "duplex"
+func (h *hDuplex) Handled(m Method) bool {
+	return m.String() == "magic"
 }
 
 func (h *hDuplex) HandleConnect(ctx context.Context, e Endpoint) {
@@ -914,7 +914,7 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request) {
 	defer close(h.failed)
 
 	if req.Type != "duplex" {
-		req.Endpoint().Terminate()
+		req.CloseWithError(fmt.Errorf("unhandled"))
 		return
 	}
 

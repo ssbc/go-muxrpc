@@ -6,10 +6,7 @@ import (
 	"go.cryptoscope.co/muxrpc/v2"
 )
 
-var (
-	_ SinkHandler    = (*SinkFunc)(nil)
-	_ muxrpc.Handler = (*sinkStub)(nil)
-)
+var _ SinkHandler = (*SinkFunc)(nil)
 
 // SinkFunc is a utility to fulfill SinkHandler just as a function, not a type with the named method
 type SinkFunc func(context.Context, *muxrpc.Request, *muxrpc.ByteSource) error

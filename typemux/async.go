@@ -8,10 +8,7 @@ import (
 	"go.cryptoscope.co/muxrpc/v2"
 )
 
-var (
-	_ AsyncHandler   = (*AsyncFunc)(nil)
-	_ muxrpc.Handler = (*asyncStub)(nil)
-)
+var _ AsyncHandler = (*AsyncFunc)(nil)
 
 type AsyncFunc func(context.Context, *muxrpc.Request) (interface{}, error)
 

@@ -11,17 +11,30 @@ import (
 	"go.cryptoscope.co/muxrpc/v2"
 )
 
+// the handlers passed to typemux are checked bu this muxer and dont need the Handled() function
+type handler interface {
+	muxrpc.CallHandler
+	muxrpc.ConnectHandler
+}
+
 type HandlerMux struct {
 	logger log.Logger
 
-	handlers map[string]muxrpc.Handler
+	handlers map[string]handler
 }
+
+var _ muxrpc.Handler = (*HandlerMux)(nil)
 
 func New(log log.Logger) HandlerMux {
 	return HandlerMux{
-		handlers: make(map[string]muxrpc.Handler),
+		handlers: make(map[string]handler),
 		logger:   log,
 	}
+}
+
+func (hm *HandlerMux) Handled(m muxrpc.Method) bool {
+	_, has := hm.handlers[m.String()]
+	return has
 }
 
 func (hm *HandlerMux) HandleCall(ctx context.Context, req *muxrpc.Request) {
@@ -36,7 +49,6 @@ func (hm *HandlerMux) HandleCall(ctx context.Context, req *muxrpc.Request) {
 	req.CloseWithError(fmt.Errorf("no such command: %v", req.Method))
 }
 
-// HandleConnect does nothing on this mux since it's only intended for function calls, not connect events
 func (hm *HandlerMux) HandleConnect(ctx context.Context, edp muxrpc.Endpoint) {
 	for _, h := range hm.handlers {
 		go h.HandleConnect(ctx, edp)
