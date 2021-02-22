@@ -53,6 +53,12 @@ func rewrap(l log.Logger, p *Packer) *Packer {
 	return NewPacker(debug.Wrap(l, rwc))
 }
 
+func methodChecker(name string) func(Method) bool {
+	return func(m Method) bool {
+		return m.String() == name
+	}
+}
+
 func BuildTestAsync(pkr1, pkr2 *Packer) func(*testing.T) {
 	return func(t *testing.T) {
 		r := require.New(t)
@@ -65,19 +71,19 @@ func BuildTestAsync(pkr1, pkr2 *Packer) func(*testing.T) {
 		errc := make(chan error)
 
 		var fh1 FakeHandler
+		fh1.HandledCalls(methodChecker("whoami"))
 		fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 			t.Log("h1 connected")
 			close(conn1) // I think this _should_ terminate e?
 		})
 
 		var fh2 FakeHandler
+		fh2.HandledCalls(methodChecker("whoami"))
 		fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 			t.Logf("h2 called %+v\n", req)
-			if len(req.Method) == 1 && req.Method[0] == "whoami" {
-				err := req.Return(ctx, "you are a test")
-				if err != nil {
-					errc <- fmt.Errorf("return errored: %w", err)
-				}
+			err := req.Return(ctx, "you are a test")
+			if err != nil {
+				errc <- fmt.Errorf("return errored: %w", err)
 			}
 		})
 
@@ -202,6 +208,7 @@ func TestSourceString(t *testing.T) {
 	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
+	fh1.HandledCalls(methodChecker("srcstring"))
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Log("h1 called")
 		errc <- fmt.Errorf("unexpected call to rpc1: %#v", req)
@@ -212,6 +219,7 @@ func TestSourceString(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
+	fh2.HandledCalls(methodChecker("srcstring"))
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "srcstring" {
@@ -331,20 +339,21 @@ func TestSourceJSON(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
+	fh2.HandledCalls(methodChecker("srcjson"))
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "srcjson" {
-			for _, v := range expRx {
-				err := req.Stream.Pour(ctx, v)
-				if err != nil {
-					ckFatal(fmt.Errorf("h2 pour errored: %w", err))
-				}
-			}
-			err := req.Stream.Close()
+
+		for _, v := range expRx {
+			err := req.Stream.Pour(ctx, v)
 			if err != nil {
-				ckFatal(fmt.Errorf("h2 end pour errored: %w", err))
+				ckFatal(fmt.Errorf("h2 pour errored: %w", err))
 			}
 		}
+		err := req.Stream.Close()
+		if err != nil {
+			ckFatal(fmt.Errorf("h2 end pour errored: %w", err))
+		}
+
 	})
 
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
@@ -443,37 +452,36 @@ func TestSink(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
+	fh2.HandledCalls(methodChecker("sinktest"))
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "sinktest" {
 
-			src, err := req.ResponseSource()
-			ckFatal(err)
+		src, err := req.ResponseSource()
+		ckFatal(err)
 
-			for i, exp := range expRx {
-				t.Log("calling Next()", i)
-				more := src.Next(ctx)
-				if !more {
-					t.Error("expected more from source")
-					ckFatal(src.Err())
-				}
-
-				t.Log("Next()", i, "returned")
-
-				var str string
-				err = src.Reader(func(r io.Reader) error {
-					return json.NewDecoder(r).Decode(&str)
-				})
-				ckFatal(err)
-
-				if str != exp {
-					err = fmt.Errorf("expected value %q, got %q", exp, str)
-					ckFatal(err)
-				}
+		for i, exp := range expRx {
+			t.Log("calling Next()", i)
+			more := src.Next(ctx)
+			if !more {
+				t.Error("expected more from source")
+				ckFatal(src.Err())
 			}
 
-			close(wait)
+			t.Log("Next()", i, "returned")
+
+			var str string
+			err = src.Reader(func(r io.Reader) error {
+				return json.NewDecoder(r).Decode(&str)
+			})
+			ckFatal(err)
+
+			if str != exp {
+				err = fmt.Errorf("expected value %q, got %q", exp, str)
+				ckFatal(err)
+			}
 		}
+
+		close(wait)
 	})
 
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
@@ -706,30 +714,31 @@ func TestDuplexString(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
+	fh2.HandledCalls(methodChecker("testduplex"))
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "testduplex" {
-			for _, v := range expTx {
-				err := req.Stream.Pour(ctx, v)
+
+		for _, v := range expTx {
+			err := req.Stream.Pour(ctx, v)
+			ckFatal(err)
+		}
+
+		for _, exp := range expRx {
+			v, err := req.Stream.Next(ctx)
+			if err != nil {
+				ckFatal(fmt.Errorf("pour errored: %w", err))
+			}
+
+			if v != exp {
+				err = fmt.Errorf("expected value %v, got %v", exp, v)
 				ckFatal(err)
 			}
-
-			for _, exp := range expRx {
-				v, err := req.Stream.Next(ctx)
-				if err != nil {
-					ckFatal(fmt.Errorf("pour errored: %w", err))
-				}
-
-				if v != exp {
-					err = fmt.Errorf("expected value %v, got %v", exp, v)
-					ckFatal(err)
-				}
-			}
-
-			err := req.Stream.Close()
-			ckFatal(err)
-			wg.Done()
 		}
+
+		err := req.Stream.Close()
+		ckFatal(err)
+		wg.Done()
+
 	})
 
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {

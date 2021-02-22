@@ -38,9 +38,7 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 	}
 
 	var fh1 FakeHandler
-	fh1.HandledCalls(func(m Method) bool {
-		return len(m) == 1 && m[0] == "asyncObj"
-	})
+	fh1.HandledCalls(methodChecker("asyncObj"))
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h1 called %+v\n", req)
 		err := req.Return(ctx, testMsg{Foo: "you are a test", Bar: 23})
@@ -52,9 +50,7 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
-	fh2.HandledCalls(func(m Method) bool {
-		return len(m) == 1 && m[0] == "asyncObj"
-	})
+	fh2.HandledCalls(methodChecker("asyncObj"))
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 		err := req.Return(ctx, testMsg{Foo: "you are a test", Bar: 42})
@@ -129,6 +125,10 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 
 		close(call2)
 		<-call1
+		// if both close at the same time, the terminate lock might stop the Server() routine from processing the next packet (EndErr)
+		// this is more a problem of the unbufferd net.Pipe() then the code itself
+		// normalle the write to the (closed) tcp connection will just fail or pass
+		time.Sleep(time.Second)
 		err = rpc2.Terminate()
 		ckFatal(err)
 		close(term2)
@@ -179,12 +179,11 @@ func TestBothwaysAsyncString(t *testing.T) {
 	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
+	fh1.HandledCalls(methodChecker("testasync"))
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h1 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "testasync" {
-			err := req.Return(ctx, "you are a test")
-			ckFatal(err)
-		}
+		err := req.Return(ctx, "you are a test")
+		ckFatal(err)
 	})
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h1 connected")
@@ -192,12 +191,11 @@ func TestBothwaysAsyncString(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
+	fh2.HandledCalls(methodChecker("testasync"))
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "testasync" {
-			err := req.Return(ctx, "you are a test")
-			ckFatal(err)
-		}
+		err := req.Return(ctx, "you are a test")
+		ckFatal(err)
 	})
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h2 connected")
@@ -252,6 +250,10 @@ func TestBothwaysAsyncString(t *testing.T) {
 
 		close(call2)
 		<-call1
+		// if both close at the same time, the terminate lock might stop the Server() routine from processing the next packet (EndErr)
+		// this is more a problem of the unbufferd net.Pipe() then the code itself
+		// normalle the write to the (closed) tcp connection will just fail or pass
+		time.Sleep(time.Second)
 		err = rpc2.Terminate()
 		ckFatal(err)
 		close(term2)
@@ -310,20 +312,18 @@ func TestBothwaysSource(t *testing.T) {
 	ckFatal := mkCheck(errc)
 
 	var fh1 FakeHandler
+	fh1.HandledCalls(methodChecker("whoami"))
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h1 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "whoami" {
-			for i, v := range expRx {
-				err := req.Stream.Pour(ctx, v)
-				if err != nil {
-					ckFatal(fmt.Errorf("test pour %d failed: %w", i, err))
-				}
-			}
-
-			err := req.Stream.Close()
+		for i, v := range expRx {
+			err := req.Stream.Pour(ctx, v)
 			if err != nil {
-				ckFatal(fmt.Errorf("test close failed: %w", err))
+				ckFatal(fmt.Errorf("test pour %d failed: %w", i, err))
 			}
+		}
+		err := req.Stream.Close()
+		if err != nil {
+			ckFatal(fmt.Errorf("test close failed: %w", err))
 		}
 	})
 
@@ -333,20 +333,18 @@ func TestBothwaysSource(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
+	fh2.HandledCalls(methodChecker("whoami"))
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
-		if len(req.Method) == 1 && req.Method[0] == "whoami" {
-			for i, v := range expRx {
-				err := req.Stream.Pour(ctx, v)
-				if err != nil {
-					ckFatal(fmt.Errorf("test pour %d failed: %w", i, err))
-				}
-			}
-
-			err := req.Stream.Close()
+		for i, v := range expRx {
+			err := req.Stream.Pour(ctx, v)
 			if err != nil {
-				ckFatal(fmt.Errorf("test close failed: %w", err))
+				ckFatal(fmt.Errorf("test pour %d failed: %w", i, err))
 			}
+		}
+		err := req.Stream.Close()
+		if err != nil {
+			ckFatal(fmt.Errorf("test close failed: %w", err))
 		}
 	})
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
@@ -526,26 +524,26 @@ func TestBothwaysSink(t *testing.T) {
 	handler := func(name string) func(context.Context, *Request) {
 		return func(ctx context.Context, req *Request) {
 			fmt.Printf("bothwaysSink: %s called %+v\n", name, req)
-			if len(req.Method) == 1 && req.Method[0] == "sinktest" {
-				for i, exp := range expRx {
-					fmt.Printf("bothwaysSink: calling Next() %d\n", i)
-					v, err := req.Stream.Next(ctx)
-					if err != nil {
-						errc <- fmt.Errorf("stream next errored: %w", err)
-						return
-					}
-					fmt.Println("Next()", i, "returned", v)
 
-					if v != exp {
-						errc <- fmt.Errorf("expected value %v, got %v", exp, v)
-						return
-					}
+			for i, exp := range expRx {
+				fmt.Printf("bothwaysSink: calling Next() %d\n", i)
+				v, err := req.Stream.Next(ctx)
+				if err != nil {
+					errc <- fmt.Errorf("stream next errored: %w", err)
+					return
+				}
+				fmt.Println("Next()", i, "returned", v)
+
+				if v != exp {
+					errc <- fmt.Errorf("expected value %v, got %v", exp, v)
+					return
 				}
 			}
 		}
 	}
 
 	var fh1 FakeHandler
+	fh1.HandledCalls(methodChecker("sinktest"))
 	fh1.HandleCallCalls(handler("h1"))
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h1 connected")
@@ -553,6 +551,7 @@ func TestBothwaysSink(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
+	fh2.HandledCalls(methodChecker("sinktest"))
 	fh2.HandleCallCalls(handler("h2"))
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h2 connected")
@@ -603,7 +602,7 @@ func TestBothwaysSink(t *testing.T) {
 	}()
 
 	go func() {
-		sink, err := rpc2.Sink(ctx, TypeString, Method{"whoami"})
+		sink, err := rpc2.Sink(ctx, TypeString, Method{"sinktest"})
 		ckFatal(err)
 
 		for _, v := range expRx {
@@ -650,7 +649,7 @@ func TestBothwaysSink(t *testing.T) {
 	}
 }
 
-func TestBothwayDuplex(t *testing.T) {
+func TestBothwaysDuplex(t *testing.T) {
 	expRx := []string{
 		"you are a test",
 		"you're a test",
@@ -673,38 +672,39 @@ func TestBothwayDuplex(t *testing.T) {
 	ckFatal := mkCheck(errc)
 
 	var wg sync.WaitGroup
-	wg.Add(6)
+	wg.Add(6) // 2 * (handler + connect + client doing the method)
 	handler := func(name string) func(context.Context, *Request) {
 		return func(ctx context.Context, req *Request) {
 			t.Logf("%s called %+v\n", name, req)
-			if req.Method.String() == "test.duplex" {
-				for _, v := range expTx {
-					err := req.Stream.Pour(ctx, v)
-					if err != nil {
-						ckFatal(fmt.Errorf("err pouring to stream: %w", err))
-					}
-				}
-				for _, exp := range expRx {
-					v, err := req.Stream.Next(ctx)
-					if err != nil {
-						ckFatal(fmt.Errorf("err from stream next: %w", err))
-						return
-					}
-					if v != exp {
-						ckFatal(fmt.Errorf("expected value %v, got %v", exp, v))
-					}
-				}
 
-				err := req.Stream.Close()
-				if err != nil && !IsSinkClosed(err) {
-					ckFatal(fmt.Errorf("failed to close stream: %w", err))
+			for _, v := range expTx {
+				err := req.Stream.Pour(ctx, v)
+				if err != nil {
+					ckFatal(fmt.Errorf("err pouring to stream: %w", err))
 				}
-				wg.Done()
 			}
+
+			for _, exp := range expRx {
+				v, err := req.Stream.Next(ctx)
+				if err != nil {
+					ckFatal(fmt.Errorf("err from stream next: %w", err))
+					return
+				}
+				if v != exp {
+					ckFatal(fmt.Errorf("expected value %v, got %v", exp, v))
+				}
+			}
+
+			err := req.Stream.Close()
+			if err != nil && !IsSinkClosed(err) {
+				ckFatal(fmt.Errorf("failed to close stream: %w", err))
+			}
+			wg.Done()
 		}
 	}
 
 	var fh1 FakeHandler
+	fh1.HandledCalls(methodChecker("text.duplex"))
 	fh1.HandleCallCalls(handler("h1"))
 	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h1 connected")
@@ -712,6 +712,7 @@ func TestBothwayDuplex(t *testing.T) {
 	})
 
 	var fh2 FakeHandler
+	fh2.HandledCalls(methodChecker("text.duplex"))
 	fh2.HandleCallCalls(handler("h2"))
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		t.Log("h2 connected")
@@ -730,14 +731,22 @@ func TestBothwayDuplex(t *testing.T) {
 	go serve(ctx, rpc1.(Server), errc)
 	go serve(ctx, rpc2.(Server), errc)
 
+	t.Log("serving")
+
 	go func() {
 		src, sink, err := rpc1.Duplex(ctx, TypeString, Method{"test", "duplex"})
-		ckFatal(err)
+		if err != nil {
+			ckFatal(err)
+			return
+		}
+		t.Log("started request 1")
 
 		for _, v := range expRx {
 			_, err := fmt.Fprint(sink, v)
 			ckFatal(err)
 		}
+
+		t.Log("1: data sent")
 
 		for _, exp := range expTx {
 			has := src.Next(ctx)
@@ -758,20 +767,30 @@ func TestBothwayDuplex(t *testing.T) {
 			}
 		}
 
+		t.Log("1: data received")
+
 		err = sink.Close()
 		ckFatal(err)
+
+		t.Log("1: sink closed")
 
 		wg.Done()
 	}()
 
 	go func() {
-		src, sink, err := rpc2.Duplex(ctx, TypeString, Method{"whoami"})
-		ckFatal(err)
+		src, sink, err := rpc2.Duplex(ctx, TypeString, Method{"test", "duplex"})
+		if err != nil {
+			ckFatal(err)
+			return
+		}
+		t.Log("started request 2")
 
 		for _, v := range expRx {
 			_, err := fmt.Fprint(sink, v)
 			ckFatal(err)
 		}
+
+		t.Log("2: data sent")
 
 		for _, exp := range expTx {
 			has := src.Next(ctx)
@@ -798,8 +817,12 @@ func TestBothwayDuplex(t *testing.T) {
 			}
 		}
 
+		t.Log("2: data received")
+
 		err = sink.Close()
 		ckFatal(err)
+
+		t.Log("2: sink closed")
 
 		wg.Done()
 	}()
