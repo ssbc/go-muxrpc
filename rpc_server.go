@@ -210,6 +210,14 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 	ctx, req.abort = context.WithCancel(ctx)
 
 	if !r.root.Handled(req.Method) {
+		errPkt, err := newEndErrPacket(hdr.Req, hdr.Flag.Get(codec.FlagStream), fmt.Errorf("no such method"))
+		if err != nil {
+			return nil, false, err
+		}
+		err = r.pkr.w.WritePacket(errPkt)
+		if err != nil {
+			return nil, false, err
+		}
 		r.reqsClosed[hdr.Req] = struct{}{}
 		// it is a new call in that there is nothing else to do
 		return nil, true, nil
