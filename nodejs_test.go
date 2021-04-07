@@ -46,6 +46,7 @@ func TestJSGettingCalledSource(t *testing.T) {
 		if req.Type != "source" {
 			ckFatal(fmt.Errorf("request type: %s", req.Type))
 		}
+
 		binSink, err := req.ResponseSink()
 		if err != nil {
 			ckFatal(fmt.Errorf("expected to get sink for replies: %w", err))
@@ -58,7 +59,7 @@ func TestJSGettingCalledSource(t *testing.T) {
 				A int `json:"a"`
 			}{i}
 			err = enc.Encode(v)
-			// err := req.Stream.Pour(ctx, v)
+
 			ckFatal(errors.Wrapf(err, "stream pour(%d) failed", i))
 		}
 		err = binSink.Close()

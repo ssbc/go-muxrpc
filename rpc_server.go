@@ -210,7 +210,7 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 	ctx, req.abort = context.WithCancel(ctx)
 
 	if !r.root.Handled(req.Method) {
-		errPkt, err := newEndErrPacket(hdr.Req, hdr.Flag.Get(codec.FlagStream), fmt.Errorf("no such method"))
+		errPkt, err := newEndErrPacket(hdr.Req, hdr.Flag.Get(codec.FlagStream), fmt.Errorf("muxrpc: method (%s) not handled", req.Method.String()))
 		if err != nil {
 			return nil, false, err
 		}
@@ -449,11 +449,6 @@ func isTrue(data []byte) bool {
 
 func (r *rpc) closeStream(req *Request, streamErr error) {
 	req.source.Cancel(streamErr)
-
-	// req.processedOnce.Do(func() {
-	// 	debug.PrintStack()
-	// 	close(req.processed)
-	// })
 
 	r.rLock.Lock()
 	defer r.rLock.Unlock()

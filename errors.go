@@ -25,7 +25,7 @@ type CallError struct {
 	Stack   string `json:"stack"`
 }
 
-func (e *CallError) Error() string {
+func (e CallError) Error() string {
 	return fmt.Sprintf("muxrpc CallError: %s - %s", e.Name, e.Message)
 }
 

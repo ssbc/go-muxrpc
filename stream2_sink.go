@@ -57,11 +57,10 @@ func (bs *ByteSink) SetEncoding(re RequestEncoding) {
 
 func (bs *ByteSink) Write(b []byte) (int, error) {
 	bs.closedMu.Lock()
+	defer bs.closedMu.Unlock()
 	if bs.closed != nil {
-		bs.closedMu.Unlock()
 		return 0, bs.closed
 	}
-	bs.closedMu.Unlock()
 
 	if bs.pkt.Req == 0 {
 		return -1, fmt.Errorf("req ID not set (Flag: %s)", bs.pkt.Flag)
