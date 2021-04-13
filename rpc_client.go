@@ -44,7 +44,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 
 	if !req.source.Next(ctx) {
 		err := req.source.Err()
-		return fmt.Errorf("muxrpc(%s): did not receive data for request: %v", method, err)
+		return fmt.Errorf("muxrpc(%s): did not receive data for request: %w", method, err)
 	}
 
 	processEntry := func(rd io.Reader) error {
@@ -87,7 +87,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 
 	if err := req.source.Reader(processEntry); err != nil {
 		srcErr := req.source.Err()
-		return fmt.Errorf("muxrpc(%s): async call failed: %w (%v)", method, err, srcErr)
+		return fmt.Errorf("muxrpc(%s): async call failed: %s (%w)", method, err, srcErr)
 	}
 
 	return nil
