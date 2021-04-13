@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"reflect"
 	"testing"
 
@@ -17,7 +16,7 @@ import (
 
 // TestPacker is a crappy golden path test
 func TestPacker(t *testing.T) {
-	c1, c2 := net.Pipe()
+	c1, c2 := loPipe(t)
 
 	pkr1 := NewPacker(c1)
 	pkr2 := NewPacker(c2)

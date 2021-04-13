@@ -9,7 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/muxrpc/v2/codec"
+	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
 func TestSourceBytesFill(t *testing.T) {
@@ -138,7 +140,7 @@ func TestSourceBytesDontReadAll(t *testing.T) {
 // []byte, string, json
 
 func setupSource(t testing.TB, expRx []map[string]interface{}) Endpoint {
-	c1, c2 := net.Pipe()
+	c1, c2 := loPipe(t)
 
 	conn1 := make(chan struct{})
 	conn2 := make(chan struct{})
@@ -160,26 +162,39 @@ func setupSource(t testing.TB, expRx []map[string]interface{}) Endpoint {
 	})
 
 	var fh2 FakeHandler
+	fh2.HandledCalls(methodChecker("srctest"))
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
-		if len(req.Method) == 1 && req.Method[0] == "srctest" {
-			for i, v := range expRx {
-				err := req.Stream.Pour(ctx, v)
-				if err != nil {
-					ckFatal(errors.Wrapf(err, "test pour %d failed", i))
-				}
-			}
 
-			err := req.Stream.Close()
+		sink, err := req.ResponseSink()
+		if err != nil {
+			ckFatal(err)
+			return
+		}
+		sink.SetEncoding(TypeJSON)
+		enc := json.NewEncoder(sink)
+
+		for i, v := range expRx {
+			err := enc.Encode(v)
 			if err != nil {
-				ckFatal(fmt.Errorf("test close failed: %w", err))
+				ckFatal(errors.Wrapf(err, "test pour %d failed", i))
 			}
 		}
+
+		if err := sink.Close(); err != nil {
+			ckFatal(fmt.Errorf("test close failed: %w", err))
+		}
+
 	})
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
 		close(conn2)
 	})
 
-	rpc1 := Handle(NewPacker(c1), &fh1)
+	muxdbgPath := filepath.Join("testrun", t.Name())
+	os.RemoveAll(muxdbgPath)
+	os.MkdirAll(muxdbgPath, 0700)
+	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
+
+	rpc1 := Handle(dbgpacker, &fh1)
 	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	ctx := context.Background()
@@ -258,6 +273,7 @@ func testSourceBytesWithItems(expRx []map[string]interface{}) func(t *testing.T)
 		rpc1 := setupSource(t, expRx)
 
 		ctx := context.Background()
+
 		src, err := rpc1.Source(ctx, TypeJSON, Method{"srctest"})
 		r.NoError(err)
 
@@ -279,50 +295,10 @@ func testSourceBytesWithItems(expRx []map[string]interface{}) func(t *testing.T)
 
 			expIdx++
 		}
-		r.Equal(expIdx, len(expRx), "expected more items")
+		r.Equal(len(expRx), expIdx, "expected more items")
 		r.NoError(src.Err(), "expected no error from source")
 	}
 }
-
-/*
-func testSourceLegacyWithItems(expRx []map[string]interface{}) func(t *testing.T) {
-	return func(t *testing.T) {
-		r := require.New(t)
-
-		rpc := setupSource(t, expRx)
-		ctx := context.Background()
-		src, err := rpc.Source(ctx, TypeJSON, Method{"srctest"})
-		r.NoError(err)
-
-		expIdx := 0
-
-		for {
-			v, err := src.Next(ctx)
-			if err != nil {
-				if luigi.IsEOS(err) {
-					break
-				}
-				r.NoError(err)
-			}
-
-			obj, ok := v.(testType)
-			r.True(ok, "wrong Type:%T", v)
-
-			r.Equal(expIdx, obj.Idx, "wrong idx")
-			r.Equal(expRx[expIdx]["Foo"], obj.Foo, "wrong foo on %d", expIdx)
-
-			expIdx++
-		}
-		r.Equal(expIdx, len(expRx), "expected more items")
-
-	}
-}
-func TestSourceLegacy(t *testing.T) {
-	t.Run("100", testSourceLegacyWithItems(makeTestItems(100)))
-	t.Run("500", testSourceLegacyWithItems(makeTestItems(500)))
-	t.Run("10k", testSourceLegacyWithItems(makeTestItems(10_000)))
-}
-*/
 
 type testType struct {
 	Idx int
@@ -370,42 +346,3 @@ func BenchmarkSourceByte(b *testing.B) {
 		// r.Equal(expIdx, count, "expected more items")
 	}
 }
-
-/*
-func BenchmarkSourceLegacy(b *testing.B) {
-	r := require.New(b)
-
-	count := 512
-	tmsgs := makeTestItems(count)
-
-	rpc := setupSource(b, tmsgs)
-	ctx := context.Background()
-	b.ResetTimer()
-	for bi := 0; bi < b.N; bi++ {
-
-		src, err := rpc.Source(ctx, testType{}, Method{"srctest"})
-		r.NoError(err)
-
-		expIdx := 0
-
-		for {
-			v, err := src.Next(ctx)
-			if err != nil {
-				if luigi.IsEOS(err) {
-					break
-				}
-				r.NoError(err)
-			}
-
-			obj, ok := v.(testType)
-			r.True(ok, "wrong Type:%T", v)
-
-			r.Equal(expIdx, obj.Idx, "wrong idx")
-			r.Equal(tmsgs[expIdx]["Foo"], obj.Foo, "wrong foo on %d", expIdx)
-
-			expIdx++
-		}
-		// r.Equal(expIdx, count, "expected more items")
-	}
-}
-*/

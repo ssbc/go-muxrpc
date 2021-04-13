@@ -465,6 +465,7 @@ func TestJSDuplexToUs(t *testing.T) {
 	r.NoError(err, "nodejs startup")
 
 	var h hDuplex
+	h.encoding = TypeJSON
 	h.failed = make(chan error)
 
 	muxdbg := log.With(jsLog, "u", "pkts")
