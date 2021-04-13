@@ -81,7 +81,12 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 		return nil
 	}
 
-	return req.source.Reader(processEntry)
+	if err := req.source.Reader(processEntry); err != nil {
+		srcErr := req.source.Err()
+		return fmt.Errorf("muxrpc: async call (%s) failed: %w (%v)", method, err, srcErr)
+	}
+
+	return nil
 }
 
 func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, args ...interface{}) (*ByteSource, error) {
@@ -216,26 +221,27 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 		req.sink.pkt.Req = first.Req
 	}()
 	if err != nil {
-		dbg.Log("event", "request create failed", "reqID", req.id, "err", err)
+		dbg.Log("event", "request create failed", "err", err)
 		return err
 	}
+
+	dbg = log.With(dbg, "reqID", req.id)
 
 	err = r.pkr.w.WritePacket(&first)
 	if err != nil {
 		return err
 	}
 
-	dbg.Log("event", "request sent",
-		"reqID", req.id,
-		"flag", first.Flag.String())
+	dbg.Log("event", "request sent", "flag", first.Flag.String())
 
 	// this is pretty bad :-/
 	// if we want to handle _no such method_ as an error from the Source()/Sink() calls, not from the returned streams,
 	// we need to wait for the first packet...
 	// on a valid call however, this first packet might take a very long time...
 	received := make(chan struct{})
+	var gotMore bool
 	go func() {
-		req.source.Next(ctx)
+		gotMore = req.source.Next(ctx)
 		close(received)
 	}()
 
@@ -243,7 +249,7 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 	// arbitrary durration...
 	// could take longer on overloaded peers... very meh
 	// preferably there would be an _okay_ packet when opening a stream
-	case <-time.After(3 * time.Second):
+	case <-time.After(2 * time.Minute):
 
 	case <-received:
 
@@ -251,6 +257,10 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 
 	if err := req.source.Err(); err != nil {
 		return err
+	}
+
+	if !gotMore {
+		return fmt.Errorf("muxrpc: timeout during request creation")
 	}
 
 	return nil
