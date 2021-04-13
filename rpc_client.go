@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -40,42 +39,47 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 	}
 
 	if err := r.start(ctx, req); err != nil {
-		return fmt.Errorf("muxrpc: error sending request: %w", err)
+		return fmt.Errorf("muxrpc(%s): error sending request: %w", method, err)
+	}
+
+	if !req.source.Next(ctx) {
+		err := req.source.Err()
+		return fmt.Errorf("muxrpc(%s): did not receive data for request: %v", method, err)
 	}
 
 	processEntry := func(rd io.Reader) error {
 		switch tv := ret.(type) {
 		case *[]byte:
 			if re != TypeBinary {
-				return fmt.Errorf("muxrpc: unexpected requst encoding, need TypeBinary got %v", re)
+				return fmt.Errorf("unexpected requst encoding, need TypeBinary got %v", re)
 			}
 			var bs []byte
 			bs, err = ioutil.ReadAll(rd)
 			if err != nil {
-				return fmt.Errorf("muxrpc: error decoding json from request source: %w", err)
+				return fmt.Errorf("error decoding json from request source: %w", err)
 			}
 			*tv = bs
 
 		case *string:
 			if re != TypeString {
-				return fmt.Errorf("muxrpc: unexpected requst encoding, need TypeString got %v", re)
+				return fmt.Errorf("unexpected requst encoding, need TypeString got %v", re)
 			}
 			var bs []byte
 			bs, err = ioutil.ReadAll(rd)
 			if err != nil {
-				return fmt.Errorf("muxrpc: error decoding json from request source: %w", err)
+				return fmt.Errorf("error decoding json from request source: %w", err)
 			}
 			level.Debug(r.logger).Log("asynctype", "str", "err", err, "len", len(bs))
 			*tv = string(bs)
 
 		default:
 			if re != TypeJSON {
-				return fmt.Errorf("muxrpc: unexpected requst encoding, need TypeJSON got %v for %T", re, tv)
+				return fmt.Errorf("unexpected requst encoding, need TypeJSON got %v for %T", re, tv)
 			}
 			level.Debug(r.logger).Log("asynctype", "any")
 			err = json.NewDecoder(rd).Decode(ret)
 			if err != nil {
-				return fmt.Errorf("muxrpc: error decoding json from request source: %w", err)
+				return fmt.Errorf("error decoding json from request source: %w", err)
 			}
 		}
 		return nil
@@ -83,7 +87,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 
 	if err := req.source.Reader(processEntry); err != nil {
 		srcErr := req.source.Err()
-		return fmt.Errorf("muxrpc: async call (%s) failed: %w (%v)", method, err, srcErr)
+		return fmt.Errorf("muxrpc(%s): async call failed: %w (%v)", method, err, srcErr)
 	}
 
 	return nil
@@ -233,35 +237,6 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 	}
 
 	dbg.Log("event", "request sent", "flag", first.Flag.String())
-
-	// this is pretty bad :-/
-	// if we want to handle _no such method_ as an error from the Source()/Sink() calls, not from the returned streams,
-	// we need to wait for the first packet...
-	// on a valid call however, this first packet might take a very long time...
-	received := make(chan struct{})
-	var gotMore bool
-	go func() {
-		gotMore = req.source.Next(ctx)
-		close(received)
-	}()
-
-	select {
-	// arbitrary durration...
-	// could take longer on overloaded peers... very meh
-	// preferably there would be an _okay_ packet when opening a stream
-	case <-time.After(2 * time.Minute):
-
-	case <-received:
-
-	}
-
-	if err := req.source.Err(); err != nil {
-		return err
-	}
-
-	if !gotMore {
-		return fmt.Errorf("muxrpc: timeout during request creation")
-	}
 
 	return nil
 }
