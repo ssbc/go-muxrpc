@@ -247,7 +247,7 @@ func TestJSAsyncString(t *testing.T) {
 	var v string
 	err = rpc1.Async(ctx, &v, TypeString, Method{"hello"}, "world", "bob")
 	r.NoError(err, "rcp Async call")
-	r.Equal(v, "hello, world and bob!", "expected call result")
+	r.Equal("hello, world and bob!", v, "expected call result")
 
 	err = rpc1.Async(ctx, &v, TypeString, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")

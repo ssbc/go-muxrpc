@@ -66,13 +66,46 @@ func IsServer(edp Endpoint) bool {
 	return rpc.isServer
 }
 
+// TODO: just a hack - callers to Handle() should always supply a manifest?
+type manifestHandlerWrapper struct {
+	root Handler
+}
+
+func (w manifestHandlerWrapper) Handled(m Method) bool { return true }
+
+func (w manifestHandlerWrapper) HandleConnect(ctx context.Context, edp Endpoint) {
+	w.root.HandleConnect(ctx, edp)
+}
+func (w manifestHandlerWrapper) HandleCall(ctx context.Context, req *Request) {
+	if req.Method[0] == "manifest" {
+		req.Return(ctx, json.RawMessage(`{
+	"finalCall": "async",
+	"version": "sync",
+	"hello": "async",
+	"callme": { // start calling back
+	  "async": "async",
+	  "source": "async",
+	  "magic": "async",
+	  "withAbort": "async"
+	},
+	"object": "async",
+	"stuff": "source",
+	"magic": "duplex",
+	"takeSome": "source"
+  }`))
+		return
+	}
+
+	w.root.HandleCall(ctx, req)
+}
+
 // Handle handles the connection of the packer using the specified handler.
 func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 	r := &rpc{
 		pkr:        pkr,
 		reqs:       make(map[int32]*Request),
 		reqsClosed: make(map[int32]struct{}),
-		root:       handler,
+		root:       manifestHandlerWrapper{root: handler},
 	}
 
 	// apply options
@@ -110,6 +143,9 @@ func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 
 	// we need to be able to cancel in any case
 	r.serveCtx, r.cancel = context.WithCancel(r.serveCtx)
+
+	// only works after Serve() started
+	go r.retreiveManifest()
 
 	go handler.HandleConnect(r.serveCtx, r)
 
@@ -167,6 +203,9 @@ type rpc struct {
 
 	serveCtx context.Context
 	cancel   context.CancelFunc
+
+	manifest   manifestStruct
+	noManifest bool
 }
 
 var errSkip = errors.New("mxurpc: skip packet")

@@ -240,3 +240,141 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 
 	return nil
 }
+
+func (r *rpc) retreiveManifest() {
+
+	var req = Request{
+		Type: "async",
+
+		sink:   newByteSink(r.serveCtx, r.pkr.w),
+		source: newByteSource(r.serveCtx, r.bpool),
+
+		Method:  Method{"manifest"},
+		RawArgs: json.RawMessage(`[]`),
+
+		abort: func() {},
+	}
+
+	var (
+		first codec.Packet
+		err   error
+
+		dbg = log.With(level.Warn(r.logger),
+			"call", "manifest",
+		)
+	)
+
+	func() {
+		r.rLock.Lock()
+		defer r.rLock.Unlock()
+
+		first.Flag = first.Flag.Set(codec.FlagJSON)
+		first.Body = []byte(`{"name":"manifest","args":[],"type":"async"}`)
+
+		r.highest++
+		first.Req = r.highest
+		r.reqs[first.Req] = &req
+
+		req.id = first.Req
+		req.sink.pkt.Req = first.Req
+	}()
+	if err != nil {
+		dbg.Log("event", "request create failed", "err", err)
+		r.noManifest = true
+		return
+	}
+
+	dbg = log.With(dbg, "reqID", req.id)
+
+	err = r.pkr.w.WritePacket(&first)
+	if err != nil {
+		dbg.Log("event", "manifest request failed to send", "err", err)
+		r.noManifest = true
+		return
+	}
+
+	dbg.Log("event", "request sent", "flag", first.Flag.String())
+
+	if !req.source.Next(r.serveCtx) {
+		dbg.Log("event", "manifest request failed to read", "err", req.source.Err())
+		r.noManifest = true
+		return
+	}
+
+	manifestBody, err := req.source.Bytes()
+	if err != nil {
+		dbg.Log("event", "manifest request has no body?", "err", err)
+		r.noManifest = true
+		return
+	}
+
+	err = json.Unmarshal(manifestBody, &r.manifest)
+	if err != nil {
+		dbg.Log("event", "manifest request is invalid json", "err", err)
+		r.noManifest = true
+		return
+	}
+
+}
+
+type manifestMap map[string]string
+
+type manifestStruct struct {
+	methods manifestMap
+}
+
+func (ms manifestStruct) Handled(m Method) (string, bool) {
+	callType, yes := ms.methods[m.String()]
+	return callType, yes
+}
+
+func (ms *manifestStruct) UnmarshalJSON(bin []byte) error {
+	var dullMap map[string]interface{}
+
+	err := json.Unmarshal(bin, &dullMap)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\n========\nFrom JSON:\n========\n%v\n", dullMap)
+
+	methods := make(manifestMap)
+
+	if err := recurseMap(methods, dullMap, nil); err != nil {
+		return err
+	}
+
+	fmt.Printf("\n========\nUnpacked:\n========\n%#v\n", methods)
+
+ 	ms.methods = methods
+	return nil
+}
+
+/* recurseMap iterates over and decends into a muxrpc manifest and creates a flat structure ala
+
+	"plugin.method1": "async",
+	"plugin.method2": "source",
+	"plugin.method3": "sink",
+	...
+
+*/
+func recurseMap(methods manifestMap, jsonMap map[string]interface{}, prefix Method) error {
+	for k, iv := range jsonMap {
+		switch tv := iv.(type) {
+		case string: // string means that's a method
+			m := append(prefix, k).String()
+			// fmt.Printf("method:%s - %s\n", m, tv)
+			methods[m] = tv
+
+		case map[string]interface{}: // map means it's a plugin group
+			err := recurseMap(methods, tv, append(prefix, k))
+			if err != nil {
+				return err
+			}
+
+		default:
+			return fmt.Errorf("unhandled type in map: %T", iv)
+		}
+	}
+
+	return nil
+}
