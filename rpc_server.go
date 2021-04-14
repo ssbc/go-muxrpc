@@ -66,46 +66,13 @@ func IsServer(edp Endpoint) bool {
 	return rpc.isServer
 }
 
-// TODO: just a hack - callers to Handle() should always supply a manifest?
-type manifestHandlerWrapper struct {
-	root Handler
-}
-
-func (w manifestHandlerWrapper) Handled(m Method) bool { return true }
-
-func (w manifestHandlerWrapper) HandleConnect(ctx context.Context, edp Endpoint) {
-	w.root.HandleConnect(ctx, edp)
-}
-func (w manifestHandlerWrapper) HandleCall(ctx context.Context, req *Request) {
-	if req.Method[0] == "manifest" {
-		req.Return(ctx, json.RawMessage(`{
-	"finalCall": "async",
-	"version": "sync",
-	"hello": "async",
-	"callme": { // start calling back
-	  "async": "async",
-	  "source": "async",
-	  "magic": "async",
-	  "withAbort": "async"
-	},
-	"object": "async",
-	"stuff": "source",
-	"magic": "duplex",
-	"takeSome": "source"
-  }`))
-		return
-	}
-
-	w.root.HandleCall(ctx, req)
-}
-
 // Handle handles the connection of the packer using the specified handler.
 func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 	r := &rpc{
 		pkr:        pkr,
 		reqs:       make(map[int32]*Request),
 		reqsClosed: make(map[int32]struct{}),
-		root:       manifestHandlerWrapper{root: handler},
+		root:       handler,
 	}
 
 	// apply options
@@ -144,10 +111,21 @@ func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 	// we need to be able to cancel in any case
 	r.serveCtx, r.cancel = context.WithCancel(r.serveCtx)
 
-	// only works after Serve() started
-	go r.retreiveManifest()
+	manifestDone := make(chan struct{})
+	go func() {
+		r.retreiveManifest()
+		close(manifestDone)
+	}()
 
 	go handler.HandleConnect(r.serveCtx, r)
+
+	// start serving
+	r.serveErrc = make(chan error)
+	go func() {
+		r.serveErrc <- r.serve()
+	}()
+
+	<-manifestDone
 
 	return r
 }
@@ -201,8 +179,9 @@ type rpc struct {
 	terminated bool
 	tLock      sync.Mutex
 
-	serveCtx context.Context
-	cancel   context.CancelFunc
+	serveErrc chan error
+	serveCtx  context.Context
+	cancel    context.CancelFunc
 
 	manifest   manifestStruct
 	noManifest bool
@@ -351,7 +330,11 @@ type Server interface {
 }
 
 // Serve drains the incoming packets and handles the RPC session
-func (r *rpc) Serve() (err error) {
+func (r *rpc) Serve() error {
+	return <-r.serveErrc
+}
+
+func (r *rpc) serve() (err error) {
 	level.Debug(r.logger).Log("event", "serving")
 	defer func() {
 		if isAlreadyClosed(err) {

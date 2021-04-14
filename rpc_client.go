@@ -17,6 +17,11 @@ import (
 
 // Async does an aync call on the remote.
 func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, method Method, args ...interface{}) error {
+	_, ok := r.manifest.Handled(method)
+	if !ok {
+		return fmt.Errorf("muxrpc(%s): method is not on their manifest", method)
+	}
+
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return err
@@ -94,6 +99,11 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 }
 
 func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, args ...interface{}) (*ByteSource, error) {
+	_, ok := r.manifest.Handled(method)
+	if !ok {
+		return nil, fmt.Errorf("muxrpc(%s): method is not on their manifest", method)
+	}
+
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return nil, err
@@ -126,6 +136,11 @@ func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, arg
 
 // Sink does a sink call on the remote.
 func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args ...interface{}) (*ByteSink, error) {
+	_, ok := r.manifest.Handled(method)
+	if !ok {
+		return nil, fmt.Errorf("muxrpc(%s): method is not on their manifest", method)
+	}
+
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return nil, err
@@ -157,6 +172,11 @@ func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args 
 
 // Duplex does a duplex call on the remote.
 func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, args ...interface{}) (*ByteSource, *ByteSink, error) {
+	_, ok := r.manifest.Handled(method)
+	if !ok {
+		return nil, nil, fmt.Errorf("muxrpc(%s): method is not on their manifest", method)
+	}
+
 	argData, err := marshalCallArgs(args)
 	if err != nil {
 		return nil, nil, err
@@ -244,7 +264,7 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 func (r *rpc) retreiveManifest() {
 
 	var req = Request{
-		Type: "async",
+		Type: "sync",
 
 		sink:   newByteSink(r.serveCtx, r.pkr.w),
 		source: newByteSource(r.serveCtx, r.bpool),
@@ -345,16 +365,16 @@ func (ms *manifestStruct) UnmarshalJSON(bin []byte) error {
 
 	fmt.Printf("\n========\nUnpacked:\n========\n%#v\n", methods)
 
- 	ms.methods = methods
+	ms.methods = methods
 	return nil
 }
 
 /* recurseMap iterates over and decends into a muxrpc manifest and creates a flat structure ala
 
-	"plugin.method1": "async",
-	"plugin.method2": "source",
-	"plugin.method3": "sink",
-	...
+"plugin.method1": "async",
+"plugin.method2": "source",
+"plugin.method3": "sink",
+...
 
 */
 func recurseMap(methods manifestMap, jsonMap map[string]interface{}, prefix Method) error {
