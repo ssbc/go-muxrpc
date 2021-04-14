@@ -183,7 +183,7 @@ type rpc struct {
 	serveCtx  context.Context
 	cancel    context.CancelFunc
 
-	manifest   manifestStruct
+	manifest manifestStruct
 }
 
 var errSkip = errors.New("mxurpc: skip packet")

@@ -339,7 +339,7 @@ func (r *rpc) retreiveManifest() {
 type manifestMap map[string]string
 
 type manifestStruct struct {
-	missing missing
+	missing bool
 
 	methods manifestMap
 }
