@@ -25,6 +25,39 @@ import (
 	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
+// TODO: just a hack - callers to Handle() should always supply a manifest?
+type manifestHandlerWrapper struct {
+	root Handler
+}
+
+func (w manifestHandlerWrapper) Handled(m Method) bool { return true }
+
+func (w manifestHandlerWrapper) HandleConnect(ctx context.Context, edp Endpoint) {
+	w.root.HandleConnect(ctx, edp)
+}
+func (w manifestHandlerWrapper) HandleCall(ctx context.Context, req *Request) {
+	if req.Method[0] == "manifest" {
+		req.Return(ctx, json.RawMessage(`{
+	"finalCall": "async",
+	"version": "sync",
+	"hello": "async",
+	"callme": { // start calling back
+	  "async": "async",
+	  "source": "async",
+	  "magic": "async",
+	  "withAbort": "async"
+	},
+	"object": "async",
+	"stuff": "source",
+	"magic": "duplex",
+	"takeSome": "source"
+  }`))
+		return
+	}
+
+	w.root.HandleCall(ctx, req)
+}
+
 func TestJSGettingCalledSource(t *testing.T) {
 	r := require.New(t)
 
@@ -74,7 +107,8 @@ func TestJSGettingCalledSource(t *testing.T) {
 	os.MkdirAll(muxdbgPath, 0700)
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
-	rpc1 := Handle(packer, &fh)
+	handler := manifestHandlerWrapper{root: &fh}
+	rpc1 := Handle(packer, handler)
 
 	ctx := context.Background()
 	go serve(ctx, rpc1.(Server), errc)
@@ -131,7 +165,8 @@ func TestJSGettingCalledAsync(t *testing.T) {
 	os.MkdirAll(muxdbgPath, 0700)
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
-	rpc1 := Handle(packer, &fh)
+	handler := manifestHandlerWrapper{root: &fh}
+	rpc1 := Handle(packer, handler)
 
 	ctx := context.Background()
 	go serve(ctx, rpc1.(Server), errc, done)
@@ -181,7 +216,8 @@ func TestJSSyncString(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var fh FakeHandler
-	rpc1 := Handle(packer, &fh)
+	handler := manifestHandlerWrapper{root: &fh}
+	rpc1 := Handle(packer, handler)
 
 	ctx := context.Background()
 	errc := make(chan error)
@@ -231,7 +267,8 @@ func TestJSAsyncString(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var fh FakeHandler
-	rpc1 := Handle(packer, &fh)
+	handler := manifestHandlerWrapper{root: &fh}
+	rpc1 := Handle(packer, handler)
 
 	errc := make(chan error)
 	done := make(chan struct{})
@@ -247,7 +284,7 @@ func TestJSAsyncString(t *testing.T) {
 	var v string
 	err = rpc1.Async(ctx, &v, TypeString, Method{"hello"}, "world", "bob")
 	r.NoError(err, "rcp Async call")
-	r.Equal(v, "hello, world and bob!", "expected call result")
+	r.Equal("hello, world and bob!", v, "expected call result")
 
 	err = rpc1.Async(ctx, &v, TypeString, Method{"finalCall"}, 1000)
 	r.NoError(err, "rcp shutdown call")
@@ -277,7 +314,8 @@ func TestJSAsyncObject(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var fh FakeHandler
-	rpc1 := Handle(packer, &fh)
+	handler := manifestHandlerWrapper{root: &fh}
+	rpc1 := Handle(packer, handler)
 
 	ctx := context.Background()
 	errc := make(chan error)
@@ -327,7 +365,8 @@ func TestJSSource(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var fh FakeHandler
-	rpc1 := Handle(packer, &fh)
+	handler := manifestHandlerWrapper{root: &fh}
+	rpc1 := Handle(packer, handler)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	errc := make(chan error)
@@ -394,7 +433,8 @@ func TestJSDuplex(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var fh FakeHandler
-	rpc1 := Handle(packer, &fh)
+	handler := manifestHandlerWrapper{root: &fh}
+	rpc1 := Handle(packer, handler)
 
 	ctx := context.Background()
 	errc := make(chan error)

@@ -7,6 +7,7 @@ var toPull = require('stream-to-pull-stream')
 var pushable = require('pull-pushable')
 
 var api = {
+  manifest: "sync",
   finalCall: 'async',
   version: 'sync',
   hello: 'async',
@@ -22,7 +23,18 @@ var api = {
   takeSome: 'source'
 }
 
-var server = MRPC(api, api)({
+var bootstrap = (err, rpc, manifst) => {
+  if (err) {
+    console.error(err)
+    throw err
+  }
+  console.log(manifst)
+}
+
+var server = MRPC(bootstrap, api)({
+  manifest: function() {
+    return api
+  },
   finalCall: function (delay, cb) {
     setTimeout(() => {
       cb(null, 'ty')

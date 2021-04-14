@@ -111,7 +111,21 @@ func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 	// we need to be able to cancel in any case
 	r.serveCtx, r.cancel = context.WithCancel(r.serveCtx)
 
+	manifestDone := make(chan struct{})
+	go func() {
+		r.retreiveManifest()
+		close(manifestDone)
+	}()
+
 	go handler.HandleConnect(r.serveCtx, r)
+
+	// start serving
+	r.serveErrc = make(chan error)
+	go func() {
+		r.serveErrc <- r.serve()
+	}()
+
+	<-manifestDone
 
 	return r
 }
@@ -165,8 +179,11 @@ type rpc struct {
 	terminated bool
 	tLock      sync.Mutex
 
-	serveCtx context.Context
-	cancel   context.CancelFunc
+	serveErrc chan error
+	serveCtx  context.Context
+	cancel    context.CancelFunc
+
+	manifest manifestStruct
 }
 
 var errSkip = errors.New("mxurpc: skip packet")
@@ -312,7 +329,11 @@ type Server interface {
 }
 
 // Serve drains the incoming packets and handles the RPC session
-func (r *rpc) Serve() (err error) {
+func (r *rpc) Serve() error {
+	return <-r.serveErrc
+}
+
+func (r *rpc) serve() (err error) {
 	level.Debug(r.logger).Log("event", "serving")
 	defer func() {
 		if isAlreadyClosed(err) {
