@@ -300,7 +300,7 @@ func (r *rpc) retreiveManifest() {
 	}()
 	if err != nil {
 		dbg.Log("event", "request create failed", "err", err)
-		r.noManifest = true
+		r.manifest.missing = true
 		return
 	}
 
@@ -309,7 +309,7 @@ func (r *rpc) retreiveManifest() {
 	err = r.pkr.w.WritePacket(&first)
 	if err != nil {
 		dbg.Log("event", "manifest request failed to send", "err", err)
-		r.noManifest = true
+		r.manifest.missing = true
 		return
 	}
 
@@ -317,33 +317,38 @@ func (r *rpc) retreiveManifest() {
 
 	if !req.source.Next(r.serveCtx) {
 		dbg.Log("event", "manifest request failed to read", "err", req.source.Err())
-		r.noManifest = true
+		r.manifest.missing = true
 		return
 	}
 
 	manifestBody, err := req.source.Bytes()
 	if err != nil {
 		dbg.Log("event", "manifest request has no body?", "err", err)
-		r.noManifest = true
+		r.manifest.missing = true
 		return
 	}
 
 	err = json.Unmarshal(manifestBody, &r.manifest)
 	if err != nil {
 		dbg.Log("event", "manifest request is invalid json", "err", err)
-		r.noManifest = true
+		r.manifest.missing = true
 		return
 	}
-
 }
 
 type manifestMap map[string]string
 
 type manifestStruct struct {
+	missing missing
+
 	methods manifestMap
 }
 
 func (ms manifestStruct) Handled(m Method) (string, bool) {
+	// if the manifest is missing we assume the method is handled
+	if ms.missing {
+		return "", true
+	}
 	callType, yes := ms.methods[m.String()]
 	return callType, yes
 }

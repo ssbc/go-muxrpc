@@ -184,7 +184,6 @@ type rpc struct {
 	cancel    context.CancelFunc
 
 	manifest   manifestStruct
-	noManifest bool
 }
 
 var errSkip = errors.New("mxurpc: skip packet")
