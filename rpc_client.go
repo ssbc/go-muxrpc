@@ -355,15 +355,12 @@ func (ms *manifestStruct) UnmarshalJSON(bin []byte) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("\n========\nFrom JSON:\n========\n%v\n", dullMap)
 
 	methods := make(manifestMap)
 
 	if err := recurseMap(methods, dullMap, nil); err != nil {
 		return err
 	}
-
-	fmt.Printf("\n========\nUnpacked:\n========\n%#v\n", methods)
 
 	ms.methods = methods
 	return nil
