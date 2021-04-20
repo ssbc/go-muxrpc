@@ -279,7 +279,7 @@ func (r *rpc) retreiveManifest() {
 		first codec.Packet
 		err   error
 
-		dbg = log.With(level.Warn(r.logger),
+		dbg = log.With(level.Debug(r.logger),
 			"call", "manifest",
 		)
 	)
@@ -312,8 +312,6 @@ func (r *rpc) retreiveManifest() {
 		r.manifest.missing = true
 		return
 	}
-
-	dbg.Log("event", "request sent", "flag", first.Flag.String())
 
 	if !req.source.Next(r.serveCtx) {
 		dbg.Log("event", "manifest request failed to read", "err", req.source.Err())
