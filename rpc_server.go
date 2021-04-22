@@ -470,6 +470,7 @@ func isTrue(data []byte) bool {
 
 func (r *rpc) closeStream(req *Request, streamErr error) {
 	req.source.Cancel(streamErr)
+	req.sink.CloseWithError(streamErr)
 
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
