@@ -74,14 +74,12 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 			if err != nil {
 				return fmt.Errorf("error decoding json from request source: %w", err)
 			}
-			level.Debug(r.logger).Log("asynctype", "str", "err", err, "len", len(bs))
 			*tv = string(bs)
 
 		default:
 			if re != TypeJSON {
 				return fmt.Errorf("unexpected requst encoding, need TypeJSON got %v for %T", re, tv)
 			}
-			level.Debug(r.logger).Log("asynctype", "any")
 			err = json.NewDecoder(rd).Decode(ret)
 			if err != nil {
 				return fmt.Errorf("error decoding json from request source: %w", err)
@@ -382,7 +380,6 @@ func recurseMap(methods manifestMap, jsonMap map[string]interface{}, prefix Meth
 		switch tv := iv.(type) {
 		case string: // string means that's a method
 			m := append(prefix, k).String()
-			// fmt.Printf("method:%s - %s\n", m, tv)
 			methods[m] = tv
 
 		case map[string]interface{}: // map means it's a plugin group
