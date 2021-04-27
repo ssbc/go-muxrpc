@@ -117,8 +117,6 @@ func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 		close(manifestDone)
 	}()
 
-	go handler.HandleConnect(r.serveCtx, r)
-
 	// start serving
 	r.serveErrc = make(chan error)
 	go func() {
@@ -126,6 +124,8 @@ func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 	}()
 
 	<-manifestDone
+
+	go handler.HandleConnect(r.serveCtx, r)
 
 	return r
 }
