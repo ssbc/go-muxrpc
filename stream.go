@@ -87,7 +87,7 @@ func newJSONPacket(stream bool, req int32, v interface{}) (*codec.Packet, error)
 
 var trueBytes = []byte{'t', 'r', 'u', 'e'}
 
-func newEndOkayPacket(req int32, stream bool) *codec.Packet {
+func newEndOkayPacket(req int32, stream bool) codec.Packet {
 	pkt := codec.Packet{
 		Req:  req,
 		Flag: codec.FlagJSON | codec.FlagEndErr,
@@ -96,16 +96,16 @@ func newEndOkayPacket(req int32, stream bool) *codec.Packet {
 	if stream {
 		pkt.Flag |= codec.FlagStream
 	}
-	return &pkt
+	return pkt
 }
 
-func newEndErrPacket(req int32, stream bool, err error) (*codec.Packet, error) {
+func newEndErrPacket(req int32, stream bool, err error) (codec.Packet, error) {
 	body, err := json.Marshal(CallError{
 		Message: err.Error(),
 		Name:    "Error",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling value: %w", err)
+		return codec.Packet{}, fmt.Errorf("error marshaling value: %w", err)
 	}
 	pkt := codec.Packet{
 		Req:  req,
@@ -115,5 +115,5 @@ func newEndErrPacket(req int32, stream bool, err error) (*codec.Packet, error) {
 	if stream {
 		pkt.Flag |= codec.FlagStream
 	}
-	return &pkt, nil
+	return pkt, nil
 }

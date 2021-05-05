@@ -19,7 +19,7 @@ type Writer struct {
 func NewWriter(w io.Writer) *Writer { return &Writer{w: w} }
 
 // WritePacket creates an header for the Packet and writes it and the body to the underlying writer
-func (w *Writer) WritePacket(r *Packet) error {
+func (w *Writer) WritePacket(r Packet) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	hdr := Header{

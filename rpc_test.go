@@ -559,7 +559,7 @@ func TestSinkDiscardEarlyData(t *testing.T) {
 	sinkCall.Body, err = json.Marshal(sinkReq)
 	r.NoError(err)
 
-	err = cw.WritePacket(&sinkCall)
+	err = cw.WritePacket(sinkCall)
 	r.NoError(err)
 
 	done := make(chan struct{})
@@ -569,7 +569,7 @@ func TestSinkDiscardEarlyData(t *testing.T) {
 		sinkCall.Body, err = json.Marshal(s)
 		r.NoError(err)
 
-		err = cw.WritePacket(&sinkCall)
+		err = cw.WritePacket(sinkCall)
 		r.NoError(err)
 	}
 

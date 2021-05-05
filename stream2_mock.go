@@ -11,7 +11,7 @@ import (
 func NewTestSink(w io.Writer) *ByteSink {
 	var bs ByteSink
 
-	bs.pkt = &codec.Packet{
+	bs.pkt = codec.Packet{
 		Req: 666,
 	}
 	bs.w = codec.NewWriter(w)

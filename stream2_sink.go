@@ -32,7 +32,7 @@ type ByteSink struct {
 
 	streamCtx context.Context
 
-	pkt *codec.Packet
+	pkt codec.Packet
 }
 
 func newByteSink(ctx context.Context, w *codec.Writer) *ByteSink {
@@ -41,7 +41,7 @@ func newByteSink(ctx context.Context, w *codec.Writer) *ByteSink {
 
 		w: w,
 
-		pkt: &codec.Packet{},
+		pkt: codec.Packet{},
 	}
 }
 
@@ -83,7 +83,7 @@ func (bs *ByteSink) CloseWithError(err error) error {
 		return bs.closed
 	}
 
-	var closePkt *codec.Packet
+	var closePkt codec.Packet
 	var isStream = bs.pkt.Flag.Get(codec.FlagStream)
 	if err == io.EOF || err == nil {
 		closePkt = newEndOkayPacket(bs.pkt.Req, isStream)

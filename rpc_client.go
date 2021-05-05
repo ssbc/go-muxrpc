@@ -249,7 +249,7 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 
 	dbg = log.With(dbg, "reqID", req.id)
 
-	err = r.pkr.w.WritePacket(&first)
+	err = r.pkr.w.WritePacket(first)
 	if err != nil {
 		return err
 	}

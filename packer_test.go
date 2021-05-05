@@ -31,7 +31,7 @@ func TestPacker(t *testing.T) {
 
 	errc := make(chan error)
 	go func() {
-		err := pkr1.w.WritePacket(&pkt)
+		err := pkr1.w.WritePacket(pkt)
 		if err != nil {
 			errc <- fmt.Errorf("failed to send test packet (wat): %w", err)
 		}
@@ -51,7 +51,7 @@ func TestPacker(t *testing.T) {
 	}
 
 	// pkt.Req = -123
-	var pkt_ = &codec.Packet{
+	var pkt_ = codec.Packet{
 		Flag: hdr.Flag,
 		Req:  -hdr.Req,
 		Body: buf.Bytes(),
