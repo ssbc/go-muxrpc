@@ -45,7 +45,9 @@ func (w *Writer) Close() error {
 		return fmt.Errorf("pkt-codec: failed to write Close() packet: %w", err)
 	}
 	if c, ok := w.w.(io.Closer); ok {
-		return fmt.Errorf("pkt-codec: failed to close underlying writer: %w", c.Close())
+		if err := c.Close(); err != nil {
+			return fmt.Errorf("pkt-codec: failed to close underlying writer: %w", err)
+		}
 	}
 	return nil
 }

@@ -28,7 +28,7 @@ func TestSelf(t *testing.T) {
 
 	w := NewWriter(&b)
 	for _, want := range testPkts {
-		err := w.WritePacket(&want)
+		err := w.WritePacket(want)
 		if err != nil {
 			t.Fatal(err)
 		}

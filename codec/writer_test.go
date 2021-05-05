@@ -1,6 +1,6 @@
-// +build interop_nodejs
-
 // SPDX-License-Identifier: MIT
+
+// +build interop_nodejs
 
 package codec
 
@@ -28,7 +28,7 @@ func TestWriter(t *testing.T) {
 
 	// write our packets
 	for _, want := range testPkts {
-		if err := w.WritePacket(&want); err != nil {
+		if err := w.WritePacket(want); err != nil {
 			t.Fatal(err)
 		}
 	}

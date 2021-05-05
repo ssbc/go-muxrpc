@@ -194,13 +194,17 @@ func setupSource(t testing.TB, expRx []map[string]interface{}) Endpoint {
 	os.MkdirAll(muxdbgPath, 0700)
 	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
 
-	rpc1 := Handle(dbgpacker, &fh1)
-	rpc2 := Handle(NewPacker(c2), &fh2)
-
 	ctx := context.Background()
 
+	var rpc2 Endpoint
+	go func() {
+		rpc2 = Handle(NewPacker(c2), &fh2)
+		serve(ctx, rpc2.(Server), errc, serve2)
+	}()
+
+	rpc1 := Handle(dbgpacker, &fh1)
+
 	go serve(ctx, rpc1.(Server), errc, serve1)
-	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	select {
 	case <-conn1:

@@ -26,16 +26,16 @@ import (
 )
 
 // This wrapper supplies the manifest for the javascript side
-type manifestHandlerWrapper struct {
+type jsManifestWrapper struct {
 	root Handler
 }
 
-func (w manifestHandlerWrapper) Handled(m Method) bool { return true }
+func (w jsManifestWrapper) Handled(m Method) bool { return true }
 
-func (w manifestHandlerWrapper) HandleConnect(ctx context.Context, edp Endpoint) {
+func (w jsManifestWrapper) HandleConnect(ctx context.Context, edp Endpoint) {
 	w.root.HandleConnect(ctx, edp)
 }
-func (w manifestHandlerWrapper) HandleCall(ctx context.Context, req *Request) {
+func (w jsManifestWrapper) HandleCall(ctx context.Context, req *Request) {
 	if req.Method[0] == "manifest" {
 		err := req.Return(ctx, json.RawMessage(`{
 	"finalCall": "async",
@@ -110,7 +110,7 @@ func TestJSGettingCalledSource(t *testing.T) {
 	os.MkdirAll(muxdbgPath, 0700)
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
-	handler := manifestHandlerWrapper{root: &fh}
+	handler := jsManifestWrapper{root: &fh}
 	rpc1 := Handle(packer, handler)
 
 	ctx := context.Background()
@@ -168,7 +168,7 @@ func TestJSGettingCalledAsync(t *testing.T) {
 	os.MkdirAll(muxdbgPath, 0700)
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
-	handler := manifestHandlerWrapper{root: &fh}
+	handler := jsManifestWrapper{root: &fh}
 	rpc1 := Handle(packer, handler)
 
 	ctx := context.Background()
@@ -219,7 +219,7 @@ func TestJSSyncString(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var fh FakeHandler
-	handler := manifestHandlerWrapper{root: &fh}
+	handler := jsManifestWrapper{root: &fh}
 	rpc1 := Handle(packer, handler)
 
 	ctx := context.Background()
@@ -270,7 +270,7 @@ func TestJSAsyncString(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var fh FakeHandler
-	handler := manifestHandlerWrapper{root: &fh}
+	handler := jsManifestWrapper{root: &fh}
 	rpc1 := Handle(packer, handler)
 
 	errc := make(chan error)
@@ -317,7 +317,7 @@ func TestJSAsyncObject(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var fh FakeHandler
-	handler := manifestHandlerWrapper{root: &fh}
+	handler := jsManifestWrapper{root: &fh}
 	rpc1 := Handle(packer, handler)
 
 	ctx := context.Background()
@@ -368,7 +368,7 @@ func TestJSSource(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var fh FakeHandler
-	handler := manifestHandlerWrapper{root: &fh}
+	handler := jsManifestWrapper{root: &fh}
 	rpc1 := Handle(packer, handler)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -436,7 +436,7 @@ func TestJSDuplex(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var fh FakeHandler
-	handler := manifestHandlerWrapper{root: &fh}
+	handler := jsManifestWrapper{root: &fh}
 	rpc1 := Handle(packer, handler)
 
 	ctx := context.Background()
@@ -521,7 +521,7 @@ func TestJSDuplexToUs(t *testing.T) {
 	os.MkdirAll(muxdbgPath, 0700)
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
-	mh := manifestHandlerWrapper{root: &h}
+	mh := jsManifestWrapper{root: &h}
 	rpc1 := Handle(packer, mh)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -560,7 +560,7 @@ func TestJSNoSuchMethod(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var h FakeHandler
-	mh := manifestHandlerWrapper{root: &h}
+	mh := jsManifestWrapper{root: &h}
 	rpc1 := Handle(packer, mh)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -637,7 +637,7 @@ func TestJSSupportAbort(t *testing.T) {
 	os.MkdirAll(muxdbgPath, 0700)
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
-	mh := manifestHandlerWrapper{root: &h}
+	mh := jsManifestWrapper{root: &h}
 	rpc1 := Handle(packer, mh, WithContext(ctx))
 
 	errc := make(chan error)

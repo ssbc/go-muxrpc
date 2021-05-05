@@ -1,6 +1,6 @@
-// +build interop_nodejs
-
 // SPDX-License-Identifier: MIT
+
+// +build interop_nodejs
 
 package codec
 

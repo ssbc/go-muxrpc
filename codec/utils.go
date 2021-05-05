@@ -1,9 +1,9 @@
 package codec
 
 import (
+	"errors"
+	"fmt"
 	"io"
-
-	"github.com/pkg/errors"
 )
 
 func ReadAllPackets(rd *Reader) ([]*Packet, error) {
@@ -12,7 +12,7 @@ func ReadAllPackets(rd *Reader) ([]*Packet, error) {
 	for {
 		err := rd.ReadHeader(&hdr)
 		if err != nil {
-			if errors.Cause(err) == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return nil, err
@@ -26,10 +26,10 @@ func ReadAllPackets(rd *Reader) ([]*Packet, error) {
 
 		_, err = io.ReadFull(rd.NextBodyReader(hdr.Len), pkt.Body)
 		if err != nil {
-			if errors.Cause(err) == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, errors.Wrapf(err, "muxrpc: failed to get error body for closing of %d", hdr.Req)
+			return nil, fmt.Errorf("muxrpc: failed to get error body for closing of %d", hdr.Req)
 		}
 		pkts = append(pkts, pkt)
 	}

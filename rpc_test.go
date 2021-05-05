@@ -23,132 +23,121 @@ import (
 	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
-func BuildTestAsync(pkr1, pkr2 *Packer) func(*testing.T) {
-	return func(t *testing.T) {
-		r := require.New(t)
+type testManifestWrapper struct {
+	manifest json.RawMessage
+	root     Handler
+}
 
-		conn2 := make(chan struct{})
-		conn1 := make(chan struct{})
-		serve1 := make(chan struct{})
-		serve2 := make(chan struct{})
-
-		errc := make(chan error)
-
-		var fh1 FakeHandler
-		fh1.HandledCalls(methodChecker("whoami"))
-		fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
-			t.Log("h1 connected")
-			close(conn1) // I think this _should_ terminate e?
-		})
-
-		var fh2 FakeHandler
-		fh2.HandledCalls(methodChecker("whoami"))
-		fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
-			t.Logf("h2 called %+v\n", req)
-			err := req.Return(ctx, "you are a test")
-			if err != nil {
-				errc <- fmt.Errorf("return errored: %w", err)
-			}
-		})
-
-		fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
-			t.Log("h2 connected")
-			close(conn2)
-		})
-
-		rpc1 := Handle(pkr1, &fh1)
-		rpc2 := Handle(pkr2, &fh2)
-
-		ctx := context.Background()
-
-		go serve(ctx, rpc1.(Server), errc, serve1)
-		go serve(ctx, rpc2.(Server), errc, serve2)
-
-		var v string
-		err := rpc1.Async(ctx, &v, TypeString, Method{"whoami"})
-		r.NoError(err)
-		r.Equal("you are a test", v)
-
-		time.Sleep(time.Millisecond)
-
-		err = rpc1.Terminate()
-		t.Log("waiting for closes")
-
-		go func() {
-			for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
-				select {
-				case <-conn1:
-					t.Log("conn1 closed")
-					conn1 = nil
-				case <-conn2:
-					t.Log("conn2 closed")
-					conn2 = nil
-				case <-serve1:
-					t.Log("serve1 closed")
-					serve1 = nil
-				case <-serve2:
-					t.Log("serve2 closed")
-					serve2 = nil
-				}
-			}
-			t.Log("done")
-			close(errc)
-		}()
-
-		for err := range errc {
-			if err != nil {
-				t.Fatalf("from error chan:\n%+v", err)
-			}
-		}
-
-		r.Equal(0, fh1.HandleCallCallCount(), "peer h2 did call unexpectedly")
+func (w testManifestWrapper) Handled(m Method) bool {
+	if m.String() == "manifest" {
+		return true
 	}
+	return w.root.Handled(m)
+}
+
+func (w testManifestWrapper) HandleConnect(ctx context.Context, edp Endpoint) {
+	w.root.HandleConnect(ctx, edp)
+}
+func (w testManifestWrapper) HandleCall(ctx context.Context, req *Request) {
+	if req.Method[0] == "manifest" {
+		fmt.Println("returning manifest")
+		err := req.Return(ctx, w.manifest)
+		if err != nil {
+			fmt.Println("manifest return error:", err)
+		}
+		return
+	}
+
+	w.root.HandleCall(ctx, req)
 }
 
 func TestAsync(t *testing.T) {
-	type duplex struct {
-		luigi.Source
-		luigi.Sink
+	c1, c2 := loPipe(t)
+	tpath := filepath.Join("testrun", t.Name())
+	c1dbg := debug.Dump(tpath, c1)
+	pkr1, pkr2 := NewPacker(c1dbg), NewPacker(c2)
+
+	r := require.New(t)
+
+	conn2 := make(chan struct{})
+	conn1 := make(chan struct{})
+	serve1 := make(chan struct{})
+	serve2 := make(chan struct{})
+
+	errc := make(chan error)
+
+	var fh1 FakeHandler
+	fh1.HandledCalls(methodChecker("whoami"))
+	fh1.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h1 connected")
+		close(conn1) // I think this _should_ terminate e?
+	})
+
+	var fh2 FakeHandler
+	fh2.HandledCalls(methodChecker("whoami"))
+	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
+		t.Logf("h2 called %+v\n", req)
+		err := req.Return(ctx, "you are a test")
+		if err != nil {
+			errc <- fmt.Errorf("return errored: %w", err)
+		}
+	})
+
+	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
+		t.Log("h2 connected")
+		close(conn2)
+	})
+	ctx := context.Background()
+
+	go func() {
+		h2 := testManifestWrapper{manifest: json.RawMessage(`{"whoami":"async"}`), root: &fh2}
+		rpc2 := Handle(pkr2, h2)
+		serve(ctx, rpc2.(Server), errc, serve2)
+	}()
+
+	h1 := testManifestWrapper{manifest: json.RawMessage(`{"whoami":"async"}`), root: &fh1}
+	rpc1 := Handle(pkr1, h1)
+	go serve(ctx, rpc1.(Server), errc, serve1)
+
+	var v string
+	err := rpc1.Async(ctx, &v, TypeString, Method{"whoami"})
+	r.NoError(err)
+	r.Equal("you are a test", v)
+
+	time.Sleep(time.Millisecond)
+
+	err = rpc1.Terminate()
+	t.Log("waiting for closes")
+
+	go func() {
+		for conn1 != nil || conn2 != nil || serve1 != nil || serve2 != nil {
+			select {
+			case <-conn1:
+				t.Log("conn1 closed")
+				conn1 = nil
+			case <-conn2:
+				t.Log("conn2 closed")
+				conn2 = nil
+			case <-serve1:
+				t.Log("serve1 closed")
+				serve1 = nil
+			case <-serve2:
+				t.Log("serve2 closed")
+				serve2 = nil
+			}
+		}
+		t.Log("done")
+		close(errc)
+	}()
+
+	for err := range errc {
+		if err != nil {
+			t.Fatalf("from error chan:\n%+v", err)
+		}
 	}
 
-	// negReqMapFunc := func(ctx context.Context, v interface{}) (interface{}, error) {
-	// 	pkt := v.(*codec.Packet)
-	// 	pkt.Req = -pkt.Req
-	// 	return pkt, nil
-	// }
-	type makerFunc func() (string, *Packer, *Packer)
-	pkrgens := []makerFunc{
-		func() (string, *Packer, *Packer) {
-			c1, c2 := loPipe(t)
-			tpath := filepath.Join("testrun", t.Name())
-			c1dbg := debug.Dump(tpath, c1)
-			p1, p2 := NewPacker(c1dbg), NewPacker(c2)
-			return "NetPipe", p1, p2
-		},
-		// func() (string, Packer, Packer) {
-		// 	rxSrc, rxSink := luigi.NewPipe(luigi.WithBuffer(5))
-		// 	txSrc, txSink := luigi.NewPipe(luigi.WithBuffer(5))
+	r.Equal(0, fh1.HandleCallCallCount(), "peer h2 did call unexpectedly")
 
-		// 	rxSrc = mfr.SourceMap(rxSrc, negReqMapFunc)
-		// 	txSrc = mfr.SourceMap(txSrc, negReqMapFunc)
-
-		// 	return "LuigiPipes (buffered)", duplex{rxSrc, txSink}, duplex{txSrc, rxSink}
-		// },
-		// func() (string, Packer, Packer) {
-		// 	rxSrc, rxSink := luigi.NewPipe()
-		// 	txSrc, txSink := luigi.NewPipe()
-
-		// 	rxSrc = mfr.SourceMap(rxSrc, negReqMapFunc)
-		// 	txSrc = mfr.SourceMap(txSrc, negReqMapFunc)
-
-		// 	return "LuigiPipes (unbuffered)", duplex{rxSrc, txSink}, duplex{txSrc, rxSink}
-		// },
-	}
-
-	for _, pkrgen := range pkrgens {
-		name, pkr1, pkr2 := pkrgen()
-		t.Run(name, BuildTestAsync(pkr1, pkr2))
-	}
 }
 
 func TestSourceString(t *testing.T) {
@@ -205,16 +194,18 @@ func TestSourceString(t *testing.T) {
 		close(conn2)
 	})
 
+	ctx := context.Background()
+
+	go func() {
+		rpc2 := Handle(NewPacker(c2), &fh2)
+		serve(ctx, rpc2.(Server), errc, serve2)
+	}()
+
 	tpath := filepath.Join("testrun", t.Name())
 	c1dbg := debug.Dump(tpath, c1)
 
 	rpc1 := Handle(NewPacker(c1dbg), &fh1)
-	rpc2 := Handle(NewPacker(c2), &fh2)
-
-	ctx := context.Background()
-
 	go serve(ctx, rpc1.(Server), errc, serve1)
-	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	src, err := rpc1.Source(ctx, TypeString, Method{"srcstring"})
 	if err != nil {
@@ -325,16 +316,17 @@ func TestSourceJSON(t *testing.T) {
 		close(conn2)
 	})
 
-	tpath := filepath.Join("testrun", t.Name())
-	c1dbg := debug.Dump(tpath, c1)
-
-	rpc1 := Handle(NewPacker(c1dbg), &fh1)
-	rpc2 := Handle(NewPacker(c2), &fh2)
-
 	ctx := context.Background()
 
+	go func() {
+		rpc2 := Handle(NewPacker(c2), &fh2)
+		serve(ctx, rpc2.(Server), errc, serve2)
+	}()
+
+	tpath := filepath.Join("testrun", t.Name())
+	c1dbg := debug.Dump(tpath, c1)
+	rpc1 := Handle(NewPacker(c1dbg), &fh1)
 	go serve(ctx, rpc1.(Server), errc, serve1)
-	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	src, err := rpc1.Source(ctx, TypeJSON, Method{"srcjson"})
 	if err != nil {
@@ -453,16 +445,18 @@ func TestSink(t *testing.T) {
 		close(conn2)
 	})
 
+	ctx := context.Background()
+
+	go func() {
+		rpc2 := Handle(NewPacker(c2), &fh2)
+		serve(ctx, rpc2.(Server), errc, serve2)
+	}()
+
 	tpath := filepath.Join("testrun", t.Name())
 	c1dbg := debug.Dump(tpath, c1)
 
 	rpc1 := Handle(NewPacker(c1dbg), &fh1)
-	rpc2 := Handle(NewPacker(c2), &fh2)
-
-	ctx := context.Background()
-
 	go serve(ctx, rpc1.(Server), errc, serve1)
-	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	sink, err := rpc1.Sink(ctx, TypeJSON, Method{"sinktest"})
 	r.NoError(err)
@@ -510,6 +504,9 @@ func TestSink(t *testing.T) {
 }
 
 type fakeRWC struct {
+	waitFirst sync.Once
+	onceDo    func()
+
 	closed bool
 	done   chan struct{}
 
@@ -518,6 +515,7 @@ type fakeRWC struct {
 }
 
 func (f *fakeRWC) Read(b []byte) (int, error) {
+	f.waitFirst.Do(f.onceDo)
 	if f.closed {
 		return -1, io.EOF
 	}
@@ -564,6 +562,21 @@ func TestSinkDiscardEarlyData(t *testing.T) {
 
 	done := make(chan struct{})
 	c1.done = done
+
+	c1.onceDo = func() {
+		// wait a moment for the first reply
+		// so that the client can create its manifest call
+		// and we dont send data for it too quickly
+		time.Sleep(time.Second / 4)
+	}
+
+	//
+	var manifestReply codec.Packet
+	manifestReply.Req = -1
+	manifestReply.Flag = sinkCall.Flag.Set(codec.FlagJSON)
+	manifestReply.Body = []byte(`{}`)
+	err = cw.WritePacket(manifestReply)
+	r.NoError(err)
 
 	for _, s := range []string{"hello", "world", "some", "early", "data"} {
 		sinkCall.Body, err = json.Marshal(s)
@@ -617,12 +630,6 @@ func TestSinkDiscardEarlyData(t *testing.T) {
 	}
 
 	r.Equal(0, fh1.HandleCallCallCount())
-	r.Equal(1, fh1.HandleConnectCallCount())
-
-	// ignoredCalls := rpc1.(*rpc).reqsClosed
-	// _, callIgnored := ignoredCalls[-666]
-	// spew.Dump(ignoredCalls)
-	// r.True(callIgnored, "call not ignored, has %d entries", len(ignoredCalls))
 
 	select {
 	case ev := <-errc:
@@ -710,18 +717,20 @@ func TestDuplexString(t *testing.T) {
 		wg.Done()
 	})
 
+	ctx := context.Background()
+
+	go func() {
+		rpc2 := Handle(NewPacker(c2), &fh2)
+		serve(ctx, rpc2.(Server), errc)
+	}()
+
 	muxdbgPath := filepath.Join("testrun", t.Name())
 	os.RemoveAll(muxdbgPath)
 	os.MkdirAll(muxdbgPath, 0700)
 	packer := NewPacker(debug.Dump(muxdbgPath, c1))
 
 	rpc1 := Handle(packer, &fh1)
-	rpc2 := Handle(NewPacker(c2), &fh2)
-
-	ctx := context.Background()
-
 	go serve(ctx, rpc1.(Server), errc)
-	go serve(ctx, rpc2.(Server), errc)
 
 	src, sink, err := rpc1.Duplex(ctx, TypeString, Method{"testduplex"})
 	r.NoError(err)
@@ -1148,13 +1157,16 @@ func TestDuplexHandlerJSON(t *testing.T) {
 		wg.Done()
 	}()
 
-	rpc1 := Handle(NewPacker(debug.Wrap(dbg, c1)), &fh1)
-	rpc2 := Handle(NewPacker(c2), &h2)
-
 	ctx := context.Background()
 
+	go func() {
+		rpc2 := Handle(NewPacker(c2), &h2)
+		serve(ctx, rpc2.(Server), errc)
+	}()
+
+	rpc1 := Handle(NewPacker(debug.Wrap(dbg, c1)), &fh1)
+
 	go serve(ctx, rpc1.(Server), errc)
-	go serve(ctx, rpc2.(Server), errc)
 
 	src, sink, err := rpc1.Duplex(ctx, TypeJSON, Method{"magic"})
 	r.NoError(err)
@@ -1201,5 +1213,4 @@ func TestDuplexHandlerJSON(t *testing.T) {
 	}
 
 	r.Equal(0, fh1.HandleCallCallCount(), "peer h1 did call unexpectedly")
-
 }

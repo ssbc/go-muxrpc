@@ -50,20 +50,19 @@ func TestPacker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// pkt.Req = -123
-	var pkt_ = codec.Packet{
+	var want = codec.Packet{
 		Flag: hdr.Flag,
 		Req:  -hdr.Req,
 		Body: buf.Bytes(),
 	}
 
-	if !reflect.DeepEqual(pkt_, &pkt) {
-		t.Log("Req matches:", reflect.DeepEqual(pkt.Req, pkt_.Req))
-		t.Log("Flag matches:", reflect.DeepEqual(pkt.Flag, pkt_.Flag))
-		t.Log("Body matches:", reflect.DeepEqual(pkt.Body, pkt_.Body))
-		t.Log("Packet matches:", reflect.DeepEqual(&pkt, pkt_))
+	if !reflect.DeepEqual(want, pkt) {
+		t.Log("Req matches:", reflect.DeepEqual(pkt.Req, want.Req))
+		t.Log("Flag matches:", reflect.DeepEqual(pkt.Flag, want.Flag))
+		t.Log("Body matches:", reflect.DeepEqual(pkt.Body, want.Body))
+		t.Log("Packet matches:", reflect.DeepEqual(&pkt, want))
 		t.Logf("expected packet %#v", &pkt)
-		t.Logf("got %#v", pkt_)
+		t.Logf("got %#v", want)
 		t.Fatal("packet mismatch")
 	}
 
@@ -72,14 +71,12 @@ func TestPacker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// hdr, err := pkr2.NextHeader(ctx)
-
 	err = pkr2.NextHeader(ctx, &hdr)
 	if !errors.Is(err, io.EOF) {
 		t.Fatal("expected EOF, got:", err)
 	}
 
-	err = pkr1.w.WritePacket(pkt_)
+	err = pkr1.w.WritePacket(want)
 	if err == nil {
 		t.Fatal("expected write-to-close-conn error, got nil")
 	}

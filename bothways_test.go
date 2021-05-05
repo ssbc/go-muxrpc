@@ -59,17 +59,23 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 		t.Log("h2 connected")
 		close(conn2)
 	})
+	ctx := context.Background()
+
+	var rpc2 Endpoint
+	rpc2started := make(chan struct{})
+	go func() {
+		rpc2 = Handle(NewPacker(c2), &fh2)
+		close(rpc2started)
+		serve(ctx, rpc2.(Server), errc, serve2)
+	}()
+
 	muxdbgPath := filepath.Join("testrun", t.Name())
 	os.RemoveAll(muxdbgPath)
 	os.MkdirAll(muxdbgPath, 0700)
 	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
+
 	rpc1 := Handle(dbgpacker, &fh1)
-	rpc2 := Handle(NewPacker(c2), &fh2)
-
-	ctx := context.Background()
-
 	go serve(ctx, rpc1.(Server), errc, serve1)
-	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	go func() {
 		var v testMsg
@@ -101,6 +107,7 @@ func TestBothwaysAsyncJSON(t *testing.T) {
 	}()
 
 	go func() {
+		<-rpc2started
 		var v testMsg
 		err := rpc2.Async(ctx, &v, TypeJSON, Method{"asyncObj"})
 		if err != nil {
@@ -200,17 +207,24 @@ func TestBothwaysAsyncString(t *testing.T) {
 		t.Log("h2 connected")
 		close(conn2)
 	})
+
+	ctx := context.Background()
+
+	var rpc2 Endpoint
+	rpc2started := make(chan struct{})
+	go func() {
+		rpc2 = Handle(NewPacker(c2), &fh2)
+		close(rpc2started)
+		serve(ctx, rpc2.(Server), errc, serve2)
+	}()
+
 	muxdbgPath := filepath.Join("testrun", t.Name())
 	os.RemoveAll(muxdbgPath)
 	os.MkdirAll(muxdbgPath, 0700)
 	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
+
 	rpc1 := Handle(dbgpacker, &fh1)
-	rpc2 := Handle(NewPacker(c2), &fh2)
-
-	ctx := context.Background()
-
 	go serve(ctx, rpc1.(Server), errc, serve1)
-	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	go func() {
 		var v string
@@ -234,6 +248,7 @@ func TestBothwaysAsyncString(t *testing.T) {
 	}()
 
 	go func() {
+		<-rpc2started
 		var v string
 		err := rpc2.Async(ctx, &v, TypeString, Method{"testasync"})
 		ckFatal(err)
@@ -351,18 +366,21 @@ func TestBothwaysSource(t *testing.T) {
 		close(conn2)
 	})
 
+	ctx := context.Background()
+
+	var rpc2 Endpoint
+	go func() {
+		rpc2 = Handle(NewPacker(c2), &fh2)
+		serve(ctx, rpc2.(Server), errc, serve2)
+	}()
+
 	muxdbgPath := filepath.Join("testrun", t.Name())
 	os.RemoveAll(muxdbgPath)
 	os.MkdirAll(muxdbgPath, 0700)
 	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
 
 	rpc1 := Handle(dbgpacker, &fh1)
-	rpc2 := Handle(NewPacker(c2), &fh2)
-
-	ctx := context.Background()
-
 	go serve(ctx, rpc1.(Server), errc, serve1)
-	go serve(ctx, rpc2.(Server), errc, serve2)
 
 	go func() {
 		src, err := rpc1.Source(ctx, TypeString, Method{"whoami"})
@@ -517,6 +535,9 @@ func TestBothwaysSink(t *testing.T) {
 	term1 := make(chan struct{})
 	term2 := make(chan struct{})
 
+	var drained sync.WaitGroup
+	drained.Add(2)
+
 	errc := make(chan error)
 	ckFatal := mkCheck(errc)
 
@@ -528,7 +549,7 @@ func TestBothwaysSink(t *testing.T) {
 				fmt.Printf("bothwaysSink: calling Next() %d\n", i)
 				v, err := req.Stream.Next(ctx)
 				if err != nil {
-					errc <- fmt.Errorf("stream next errored: %w", err)
+					errc <- fmt.Errorf("stream(%s) next errored: %w", name, err)
 					return
 				}
 				fmt.Println("Next()", i, "returned", v)
@@ -538,6 +559,7 @@ func TestBothwaysSink(t *testing.T) {
 					return
 				}
 			}
+			drained.Done()
 		}
 	}
 
@@ -557,12 +579,23 @@ func TestBothwaysSink(t *testing.T) {
 		close(conn2)
 	})
 
+	var rpc2 Endpoint
+	rpc2started := make(chan struct{})
+	go func() {
+		rpc2 = Handle(NewPacker(c2), &fh2)
+		close(rpc2started)
+		err := rpc2.(*rpc).Serve()
+		if err != nil {
+			ckFatal(fmt.Errorf("rpc2 serve exited: %w", err))
+		}
+		close(serve2)
+	}()
+
 	muxdbgPath := filepath.Join("testrun", t.Name())
 	os.RemoveAll(muxdbgPath)
 	os.MkdirAll(muxdbgPath, 0700)
 	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
 	rpc1 := Handle(dbgpacker, &fh1)
-	rpc2 := Handle(NewPacker(c2), &fh2)
 
 	go func() {
 		err := rpc1.(*rpc).Serve()
@@ -570,14 +603,6 @@ func TestBothwaysSink(t *testing.T) {
 			ckFatal(fmt.Errorf("rpc1 serve exited: %w", err))
 		}
 		close(serve1)
-	}()
-
-	go func() {
-		err := rpc2.(*rpc).Serve()
-		if err != nil {
-			ckFatal(fmt.Errorf("rpc2 serve exited: %w", err))
-		}
-		close(serve2)
 	}()
 
 	ctx := context.Background()
@@ -595,12 +620,14 @@ func TestBothwaysSink(t *testing.T) {
 
 		close(call1)
 		<-call2
+		drained.Wait()
 		err = rpc1.Terminate()
 		ckFatal(err)
 		close(term1)
 	}()
 
 	go func() {
+		<-rpc2started
 		sink, err := rpc2.Sink(ctx, TypeString, Method{"sinktest"})
 		ckFatal(err)
 
@@ -614,6 +641,7 @@ func TestBothwaysSink(t *testing.T) {
 
 		close(call2)
 		<-call1
+		drained.Wait()
 		err = rpc2.Terminate()
 		ckFatal(err)
 		close(term2)
