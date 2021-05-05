@@ -111,6 +111,9 @@ func Handle(pkr *Packer, handler Handler, opts ...HandleOption) Endpoint {
 	// we need to be able to cancel in any case
 	r.serveCtx, r.cancel = context.WithCancel(r.serveCtx)
 
+	// assume we dont have a manifest
+	r.manifest.mu = new(sync.Mutex)
+	r.manifest.missing = true
 	manifestDone := make(chan struct{})
 	go func() {
 		r.retreiveManifest()
