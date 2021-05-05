@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// !build interop_nodejs
+// +build interop_nodejs
 
 package muxrpc
 
@@ -628,15 +628,14 @@ func TestJSSupportAbort(t *testing.T) {
 	r.NoError(err, "nodejs startup")
 
 	var h hAbortMe
-	h.want = 20
+	h.want = 5
 	h.t = t
 	h.logger = jsLog
 
-	// muxdbgPath := filepath.Join("testrun", t.Name())
-	// os.RemoveAll(muxdbgPath)
-	// os.MkdirAll(muxdbgPath, 0700)
-	// packer := NewPacker(debug.Dump(muxdbgPath, serv))
-	packer := NewPacker(serv)
+	muxdbgPath := filepath.Join("testrun", t.Name())
+	os.RemoveAll(muxdbgPath)
+	os.MkdirAll(muxdbgPath, 0700)
+	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	mh := manifestHandlerWrapper{root: &h}
 	rpc1 := Handle(packer, mh, WithContext(ctx))
@@ -696,7 +695,7 @@ func (h *hAbortMe) HandleCall(ctx context.Context, req *Request) {
 			if errors.Cause(err) == context.Canceled || stderr.Is(err, io.EOF) {
 				break
 			}
-			require.NoError(h.t, err)
+			require.NoError(h.t, err, "should end with canceled or eof")
 			break
 		}
 		h.logger.Log("evt", "sent", "i", i)

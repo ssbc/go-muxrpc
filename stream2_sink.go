@@ -62,6 +62,15 @@ func (bs *ByteSink) Write(b []byte) (int, error) {
 		return 0, bs.closed
 	}
 
+	// check if the sink was closed since the last write
+	select {
+	case <-bs.streamCtx.Done():
+		bs.closed = bs.streamCtx.Err()
+		return 0, bs.closed
+	default:
+		// no? go on and write!
+	}
+
 	if bs.pkt.Req == 0 {
 		return -1, fmt.Errorf("req ID not set (Flag: %s)", bs.pkt.Flag)
 	}

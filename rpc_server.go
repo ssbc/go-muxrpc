@@ -212,7 +212,7 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 
 	r.rLock.RLock()
 
-	// get request from map, otherwise make new one
+	// get request from the map of active requests, otherwise make new one
 	req, exists := r.reqs[hdr.Req]
 	if exists {
 		r.rLock.RUnlock()
@@ -223,14 +223,14 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
 
-	req, err = r.parseNewRequest(hdr)
+	ctx, req, err = r.parseNewRequest(hdr, ctx)
 	if err != nil {
 		return nil, false, err
 	}
-	ctx, req.abort = context.WithCancel(ctx)
 
+	// check if we handle the method and if not, mark the request as closed for potentially incoming data for that request
 	if !r.root.Handled(req.Method) {
-		errPkt, err := newEndErrPacket(hdr.Req, hdr.Flag.Get(codec.FlagStream), fmt.Errorf("muxrpc: method (%s) not handled", req.Method.String()))
+		errPkt, err := newEndErrPacket(hdr.Req, hdr.Flag.Get(codec.FlagStream), ErrNoSuchMethod{req.Method})
 		if err != nil {
 			return nil, false, err
 		}
@@ -243,6 +243,7 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 		return nil, true, nil
 	}
 
+	// add the request to the map of active requests
 	r.reqs[hdr.Req] = req
 
 	// TODO:
@@ -258,46 +259,43 @@ func (r *rpc) fetchRequest(ctx context.Context, hdr *codec.Header) (*Request, bo
 }
 
 // parseNewRequest parses the first packet of a stream and parses the contained request
-func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
+func (r *rpc) parseNewRequest(pkt *codec.Header, sessionCtx context.Context) (context.Context, *Request, error) {
 	if pkt.Req >= 0 {
 		// request numbers should have been inverted by now
-		return nil, fmt.Errorf("new request %d: expected negative request id", pkt.Req)
+		return nil, nil, fmt.Errorf("new request %d: expected negative request id", pkt.Req)
 	}
 
+	// the description of a call (what methods and args) is always JSON
 	if !pkt.Flag.Get(codec.FlagJSON) {
-		return nil, fmt.Errorf("new request %d: expected JSON flag for new call, got %s", pkt.Req, pkt.Flag)
+		return nil, nil, fmt.Errorf("new request %d: expected JSON flag for new call, got %s", pkt.Req, pkt.Flag)
 	}
 
-	buf := r.bpool.Get()
-
+	// decode the json body of the new request
 	rd := r.pkr.r.NextBodyReader(pkt.Len)
-	_, err := buf.ReadFrom(rd)
-	if err != nil {
-		return nil, fmt.Errorf("new request %d: error copying request body: %w", pkt.Req, err)
-	}
 
 	var req Request
-	err = json.NewDecoder(buf).Decode(&req)
+	err := json.NewDecoder(rd).Decode(&req)
 	if err != nil {
-		return nil, fmt.Errorf("new request %d: error decoding packet: %w", pkt.Req, err)
+		return nil, nil, fmt.Errorf("new request %d: error decoding packet: %w", pkt.Req, err)
 	}
 
+	// initialize the other fields of the request
 	req.remoteAddr = r.remote
 	req.endpoint = r
 
-	r.bpool.Put(buf)
+	req.id = pkt.Req // copy the request id
 
-	req.id = pkt.Req
+	// prepare for shutting it down
+	reqCtx, reqCancel := context.WithCancel(sessionCtx)
+	req.abort = reqCancel
 
-	// the capabailitys are nice guard rails but in the end
-	// we still need to be able to error on a source
-	// ie write to something which is supposed to be read-only.
-
-	req.sink = newByteSink(r.serveCtx, r.pkr.w)
+	// initialize sending and receiving sides of the stream
+	req.sink = newByteSink(reqCtx, r.pkr.w)
 	req.sink.pkt.Req = req.id
 
-	req.source = newByteSource(r.serveCtx, r.bpool)
+	req.source = newByteSource(reqCtx, r.bpool)
 
+	// legacy streams (TODO: remove these)
 	if pkt.Flag.Get(codec.FlagStream) {
 		req.sink.pkt.Flag = req.sink.pkt.Flag.Set(codec.FlagStream)
 		switch req.Type {
@@ -308,21 +306,21 @@ func (r *rpc) parseNewRequest(pkt *codec.Header) (*Request, error) {
 		case "sink":
 			req.Stream = req.source.AsStream()
 		default:
-			return nil, fmt.Errorf("new request %d: unhandled request type: %q", req.id, req.Type)
+			return nil, nil, fmt.Errorf("new request %d: unhandled request type: %q", req.id, req.Type)
 		}
 	} else {
 		if req.Type == "" {
 			req.Type = "async"
 		}
 		if req.Type != "async" {
-			return nil, fmt.Errorf("new request %d: unhandled request type: %q", req.id, req.Type)
+			return nil, nil, fmt.Errorf("new request %d: unhandled request type: %q", req.id, req.Type)
 		}
 		req.Stream = req.sink.AsStream()
 	}
 
 	level.Debug(r.logger).Log("event", "got request", "reqID", req.id, "method", req.Method, "type", req.Type)
 
-	return &req, nil
+	return reqCtx, &req, nil
 }
 
 // Server can handle packets to and from a remote party
@@ -390,6 +388,7 @@ func (r *rpc) serve() (err error) {
 				return r, ok
 			}
 
+			// get the request for this new packet
 			req, ok := getReq(hdr.Req)
 			if !ok {
 				err = r.maybeDiscardPacket(hdr)
@@ -403,7 +402,6 @@ func (r *rpc) serve() (err error) {
 				continue
 			}
 
-			var streamErr error
 			req.abort()
 
 			buf := r.bpool.Get()
@@ -416,6 +414,7 @@ func (r *rpc) serve() (err error) {
 			body := buf.Bytes()
 			r.bpool.Put(buf)
 
+			var streamErr error
 			if !isTrue(body) {
 				streamErr, err = parseError(body)
 				if err != nil {

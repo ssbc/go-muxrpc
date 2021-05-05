@@ -121,7 +121,10 @@ var server = MRPC(bootstrap, api)({
         pull.collect((err, val) => {
           if (err) return cb(err)
           if (val.length !== count) return cb(new Error('wrong item count:' + val.length))
-          cb(null, 'thanks!')
+          setTimeout(() => {
+            // wait a moment (to make sure the other side stops)
+            cb(null, 'thanks!')
+          }, 1000)
         })
       )
     }

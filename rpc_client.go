@@ -27,8 +27,12 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 		return err
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+
 	req := &Request{
 		Type: "async",
+
+		abort: cancel,
 
 		source: newByteSource(ctx, r.bpool),
 		sink:   newByteSink(ctx, r.pkr.w),
@@ -112,8 +116,12 @@ func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, arg
 		return nil, err
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+
 	req := &Request{
 		Type: "source",
+
+		abort: cancel,
 
 		source: newByteSource(ctx, r.bpool),
 		sink:   newByteSink(ctx, r.pkr.w),
@@ -149,9 +157,12 @@ func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args 
 		return nil, err
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+
 	req := &Request{
 		Type: "sink",
 
+		abort:  cancel,
 		sink:   newByteSink(ctx, r.pkr.w),
 		source: newByteSource(ctx, r.bpool),
 
@@ -185,6 +196,8 @@ func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, arg
 		return nil, nil, err
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+
 	bSrc := newByteSource(ctx, r.bpool)
 	bSink := newByteSink(ctx, r.pkr.w)
 	bSink.pkt.Flag = bSink.pkt.Flag.Set(encFlag).Set(codec.FlagStream)
@@ -194,6 +207,8 @@ func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, arg
 
 		source: bSrc,
 		sink:   bSink,
+
+		abort: cancel,
 
 		Method:  method,
 		RawArgs: argData,
@@ -227,7 +242,7 @@ func (r *rpc) start(ctx context.Context, req *Request) error {
 			"method", req.Method.String())
 	)
 
-	func() {
+	func() { // localize locking
 		r.rLock.Lock()
 		defer r.rLock.Unlock()
 
