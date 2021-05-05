@@ -18,6 +18,14 @@ var ErrSessionTerminated = errors.New("muxrpc: session terminated")
 
 var errSinkClosed = stderr.New("muxrpc: pour to closed sink")
 
+type ErrNoSuchMethod struct {
+	Method Method
+}
+
+func (e ErrNoSuchMethod) Error() string {
+	return fmt.Sprintf("muxrpc: no such command: %s", e.Method)
+}
+
 // CallError is returned when a call fails
 type CallError struct {
 	Name    string `json:"name"`

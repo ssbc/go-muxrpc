@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-// +build interop_nodejs
+// !build interop_nodejs
 
 package muxrpc
 
@@ -25,7 +25,7 @@ import (
 	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
-// TODO: just a hack - callers to Handle() should always supply a manifest?
+// This wrapper supplies the manifest for the javascript side
 type manifestHandlerWrapper struct {
 	root Handler
 }
@@ -37,11 +37,11 @@ func (w manifestHandlerWrapper) HandleConnect(ctx context.Context, edp Endpoint)
 }
 func (w manifestHandlerWrapper) HandleCall(ctx context.Context, req *Request) {
 	if req.Method[0] == "manifest" {
-		req.Return(ctx, json.RawMessage(`{
+		err := req.Return(ctx, json.RawMessage(`{
 	"finalCall": "async",
 	"version": "sync",
 	"hello": "async",
-	"callme": { // start calling back
+	"callme": {
 	  "async": "async",
 	  "source": "async",
 	  "magic": "async",
@@ -52,6 +52,9 @@ func (w manifestHandlerWrapper) HandleCall(ctx context.Context, req *Request) {
 	"magic": "duplex",
 	"takeSome": "source"
   }`))
+		if err != nil {
+			fmt.Println("manifest return error:", err)
+		}
 		return
 	}
 
@@ -518,7 +521,8 @@ func TestJSDuplexToUs(t *testing.T) {
 	os.MkdirAll(muxdbgPath, 0700)
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
-	rpc1 := Handle(packer, &h)
+	mh := manifestHandlerWrapper{root: &h}
+	rpc1 := Handle(packer, mh)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	errc := make(chan error)
@@ -544,7 +548,7 @@ func TestJSDuplexToUs(t *testing.T) {
 	}
 }
 
-func TestJSNoSuchCommand(t *testing.T) {
+func TestJSNoSuchMethod(t *testing.T) {
 	r := require.New(t)
 
 	serv, err := proc.StartStdioProcess("node", os.Stderr, "nodejs_test.js")
@@ -556,7 +560,8 @@ func TestJSNoSuchCommand(t *testing.T) {
 	packer := NewPacker(debug.Dump(muxdbgPath, serv))
 
 	var h FakeHandler
-	rpc1 := Handle(packer, &h)
+	mh := manifestHandlerWrapper{root: &h}
+	rpc1 := Handle(packer, mh)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	errc := make(chan error)
@@ -569,42 +574,30 @@ func TestJSNoSuchCommand(t *testing.T) {
 	r.Error(err, "call executed - async")
 	r.EqualValues("", ret)
 
-	var ce *CallError
+	var ce ErrNoSuchMethod
 	r.True(stderr.As(err, &ce), "wrong error: %s", err)
-	r.Equal("Error", ce.Name)
-	r.Equal("no async:nosuch,async", ce.Message)
+	r.Equal("nosuch.async", ce.Method.String())
 
 	// source
 	src, err := rpc1.Source(ctx, TypeString, Method{"nosuch", "source"})
-	r.NoError(err, "call executed - source")
-	r.False(src.Next(ctx), "should have no elements")
-	err = src.Err()
-
-	ce = nil
-	r.True(stderr.As(err, &ce), "got wrong error: %s", err)
-	r.Equal("Error", ce.Name)
-	r.Equal("no source:nosuch,source", ce.Message)
+	r.True(stderr.As(err, &ce), "wrong error: %s", err)
+	r.Equal("nosuch.source", ce.Method.String())
+	r.Nil(src, "source should be nil")
 
 	// TODO: refactor these to rpc1.OnManifest(method) == false
 	// sink
-	// snk, err := rpc1.Sink(ctx, TypeString, Method{"nosuch", "sink"})
-	// r.Error(err, "call executed - sink")
-	// r.Nil(snk)
+	snk, err := rpc1.Sink(ctx, TypeString, Method{"nosuch", "sink"})
+	r.Nil(snk)
+	r.Error(err, "call executed - sink")
+	r.True(stderr.As(err, &ce), "wrong error: %s", err)
+	r.Equal("nosuch.sink", ce.Method.String())
 
-	// ce = nil
-	// r.True(stderr.As(err, &ce))
-	// r.Equal("Error", ce.Name)
-	// r.Equal("no sink:nosuch,sink", ce.Message)
-
-	// // duplex
-	// src, snk, err = rpc1.Duplex(ctx, TypeString, Method{"nosuch", "duplex"})
-	// r.Error(err, "call executed - duplex")
-	// r.Nil(snk)
-
-	// ce = nil
-	// r.True(stderr.As(err, &ce))
-	// r.Equal("Error", ce.Name)
-	// r.Equal("no duplex:nosuch,duplex", ce.Message)
+	// duplex
+	src, snk, err = rpc1.Duplex(ctx, TypeString, Method{"nosuch", "duplex"})
+	r.Error(err, "call executed - duplex")
+	r.Nil(snk)
+	r.True(stderr.As(err, &ce), "wrong error: %s", err)
+	r.Equal("nosuch.duplex", ce.Method.String())
 
 	// cleanup
 	err = rpc1.Async(ctx, &ret, TypeString, Method{"finalCall"}, 2000)
@@ -644,7 +637,9 @@ func TestJSSupportAbort(t *testing.T) {
 	// os.MkdirAll(muxdbgPath, 0700)
 	// packer := NewPacker(debug.Dump(muxdbgPath, serv))
 	packer := NewPacker(serv)
-	rpc1 := Handle(packer, &h, WithContext(ctx))
+
+	mh := manifestHandlerWrapper{root: &h}
+	rpc1 := Handle(packer, mh, WithContext(ctx))
 
 	errc := make(chan error)
 	go serve(ctx, rpc1.(Server), errc)

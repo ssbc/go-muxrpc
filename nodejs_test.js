@@ -7,7 +7,7 @@ var toPull = require('stream-to-pull-stream')
 var pushable = require('pull-pushable')
 
 var api = {
-  manifest: "sync",
+  manifest: 'sync',
   finalCall: 'async',
   version: 'sync',
   hello: 'async',
@@ -28,11 +28,11 @@ var bootstrap = (err, rpc, manifst) => {
     console.error(err)
     throw err
   }
-  console.log(manifst)
+  // console.warn("got manifest:", manifst)
 }
 
 var server = MRPC(bootstrap, api)({
-  manifest: function() {
+  manifest: () => {
     return api
   },
   finalCall: function (delay, cb) {
@@ -77,7 +77,7 @@ var server = MRPC(bootstrap, api)({
         cb(null, 'call done')
       }))
     },
-    async: function (cb) {
+    async: (cb) => {
       server.hello(function (err, greet) {
         if (err) {
           console.error('callme:async:not okay')
@@ -88,7 +88,7 @@ var server = MRPC(bootstrap, api)({
         cb(err, 'call done')
       })
     },
-    magic: function (cb) {
+    magic: (cb) => {
       console.error('callme:magic:starting')
       var p = pushable()
       var i = 0
@@ -114,19 +114,19 @@ var server = MRPC(bootstrap, api)({
         })
       )
     },
-    withAbort: function(count, cb) {
+    withAbort: (count, cb) => {
       pull(
         server.takeSome(),
         pull.take(count),
-        pull.collect(function(err, val) {
+        pull.collect((err, val) => {
           if (err) return cb(err)
           if (val.length !== count) return cb(new Error('wrong item count:' + val.length))
-          cb(null, "thanks!")
+          cb(null, 'thanks!')
         })
       )
     }
   },
-  object: function (cb) {
+  object: (cb) => {
     console.error('object:ok')
     cb(null, { with: 'fields!' })
   },

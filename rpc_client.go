@@ -19,7 +19,7 @@ import (
 func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, method Method, args ...interface{}) error {
 	_, ok := r.manifest.Handled(method)
 	if !ok {
-		return fmt.Errorf("muxrpc(%s): method is not on their manifest", method)
+		return ErrNoSuchMethod{Method: method}
 	}
 
 	argData, err := marshalCallArgs(args)
@@ -99,7 +99,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, args ...interface{}) (*ByteSource, error) {
 	_, ok := r.manifest.Handled(method)
 	if !ok {
-		return nil, fmt.Errorf("muxrpc(%s): method is not on their manifest", method)
+		return nil, ErrNoSuchMethod{Method: method}
 	}
 
 	argData, err := marshalCallArgs(args)
@@ -136,7 +136,7 @@ func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, arg
 func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args ...interface{}) (*ByteSink, error) {
 	_, ok := r.manifest.Handled(method)
 	if !ok {
-		return nil, fmt.Errorf("muxrpc(%s): method is not on their manifest", method)
+		return nil, ErrNoSuchMethod{Method: method}
 	}
 
 	argData, err := marshalCallArgs(args)
@@ -172,7 +172,7 @@ func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args 
 func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, args ...interface{}) (*ByteSource, *ByteSink, error) {
 	_, ok := r.manifest.Handled(method)
 	if !ok {
-		return nil, nil, fmt.Errorf("muxrpc(%s): method is not on their manifest", method)
+		return nil, nil, ErrNoSuchMethod{Method: method}
 	}
 
 	argData, err := marshalCallArgs(args)
