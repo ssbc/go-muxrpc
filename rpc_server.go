@@ -402,8 +402,6 @@ func (r *rpc) serve() (err error) {
 				continue
 			}
 
-			req.abort()
-
 			buf := r.bpool.Get()
 
 			err = r.pkr.r.ReadBodyInto(buf, hdr.Len)
@@ -473,6 +471,7 @@ func isTrue(data []byte) bool {
 func (r *rpc) closeStream(req *Request, streamErr error) {
 	req.source.Cancel(streamErr)
 	req.sink.CloseWithError(streamErr)
+	req.abort()
 
 	r.rLock.Lock()
 	defer r.rLock.Unlock()
