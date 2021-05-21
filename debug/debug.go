@@ -8,9 +8,9 @@ import (
 	"net"
 	"sync"
 
-	"github.com/go-kit/kit/log"
 	multierror "github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
+	"go.mindeco.de/log"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )

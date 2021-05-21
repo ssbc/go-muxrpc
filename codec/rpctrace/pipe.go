@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/cryptix/go/logging"
-	"github.com/cryptix/go/proc"
+	"go.mindeco.de/logging"
+	"go.mindeco.de/proc"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )

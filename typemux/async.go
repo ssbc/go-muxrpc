@@ -3,9 +3,9 @@ package typemux
 import (
 	"context"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"go.cryptoscope.co/muxrpc/v2"
+	"go.mindeco.de/log"
+	"go.mindeco.de/log/level"
 )
 
 var _ AsyncHandler = (*AsyncFunc)(nil)

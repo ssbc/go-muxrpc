@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cryptix/go/proc"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
+	"go.mindeco.de/log"
+	"go.mindeco.de/log/level"
+	"go.mindeco.de/proc"
 
 	"go.cryptoscope.co/muxrpc/v2/debug"
 )

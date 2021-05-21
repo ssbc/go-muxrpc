@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/cryptix/go/logging/logtest"
+	"go.mindeco.de/logging/logtest"
 )
 
 // checks if node can run fine (hint: npm install if they dont)

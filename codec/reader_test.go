@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/cryptix/go/logging/logtest"
+	"go.mindeco.de/logging/logtest"
 )
 
 func TestReader(t *testing.T) {

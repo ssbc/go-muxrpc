@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/go-kit/kit/log"
 	"go.cryptoscope.co/muxrpc/v2"
+	"go.mindeco.de/log"
 )
 
 // the handlers passed to typemux are checked bu this muxer and dont need the Handled() function

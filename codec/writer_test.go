@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/cryptix/go/logging/logtest"
+	"go.mindeco.de/logging/logtest"
 )
 
 func TestWriter(t *testing.T) {

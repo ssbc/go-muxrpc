@@ -8,9 +8,9 @@ import (
 	"net"
 	"testing"
 
-	"github.com/go-kit/kit/log"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/muxrpc/v2/debug"
+	"go.mindeco.de/log"
 )
 
 // for some reason you can't use t.Fatal // t.Error in goroutines... :-/

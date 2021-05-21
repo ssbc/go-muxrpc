@@ -6,9 +6,9 @@ import (
 	"io"
 	"sync"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"go.cryptoscope.co/muxrpc/v2/codec"
+	"go.mindeco.de/log"
+	"go.mindeco.de/log/level"
 )
 
 // ask the remote for their sets of supported methods (the manifest) and store it in the rpc session

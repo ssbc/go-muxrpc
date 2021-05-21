@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cryptix/go/logging"
+	"go.mindeco.de/logging"
 )
 
 // Dump decodes every packet that passes through it and logs it

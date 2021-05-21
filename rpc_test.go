@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
 	"github.com/stretchr/testify/require"
 	"go.cryptoscope.co/luigi"
+	"go.mindeco.de/log"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 	"go.cryptoscope.co/muxrpc/v2/debug"
