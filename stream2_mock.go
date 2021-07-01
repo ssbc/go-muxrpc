@@ -10,6 +10,7 @@ import (
 
 func NewTestSink(w io.Writer) *ByteSink {
 	var bs ByteSink
+	bs.streamCtx = context.TODO()
 
 	bs.pkt = codec.Packet{
 		Req: 666,

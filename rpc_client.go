@@ -53,7 +53,10 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 
 	if !req.source.Next(ctx) {
 		err := req.source.Err()
-		return fmt.Errorf("muxrpc(%s): did not receive data for request: %w", method, err)
+		if err == nil {
+			return fmt.Errorf("muxrpc(%s): did not receive data for request", method)
+		}
+		return fmt.Errorf("muxrpc(%s): data source errored: %w", method, err)
 	}
 
 	processEntry := func(rd io.Reader) error {
