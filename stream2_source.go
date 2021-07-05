@@ -64,7 +64,6 @@ func newByteSource(ctx context.Context, pool bufpool.FreeList) *ByteSource {
 func (bs *ByteSource) Cancel(err error) {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
-	// fmt.Println("muxrpc: byte source canceled with", err)
 
 	if bs.failed != nil {
 		return

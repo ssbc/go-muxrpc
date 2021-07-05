@@ -1,23 +1,30 @@
 package muxrpc
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 	"go.mindeco.de/log"
 	"go.mindeco.de/log/level"
 )
 
+const manifestTimeout = 1 * time.Minute
+
 // ask the remote for their sets of supported methods (the manifest) and store it in the rpc session
 func (r *rpc) retreiveManifest() {
+	ctx, cancel := context.WithTimeout(r.serveCtx, manifestTimeout)
+	defer cancel()
+
 	var req = Request{
 		Type: "sync",
 
-		sink:   newByteSink(r.serveCtx, r.pkr.w),
-		source: newByteSource(r.serveCtx, r.bpool),
+		sink:   newByteSink(ctx, r.pkr.w),
+		source: newByteSource(ctx, r.bpool),
 
 		Method:  Method{"manifest"},
 		RawArgs: json.RawMessage(`[]`),
@@ -59,7 +66,7 @@ func (r *rpc) retreiveManifest() {
 		return
 	}
 
-	if !req.source.Next(r.serveCtx) {
+	if !req.source.Next(ctx) {
 		dbg.Log("event", "manifest request failed to read", "err", req.source.Err())
 		return
 	}

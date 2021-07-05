@@ -4,11 +4,11 @@ package muxrpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
-
-	"github.com/pkg/errors"
+	"time"
 
 	"go.cryptoscope.co/muxrpc/v2/codec"
 )
@@ -100,17 +100,27 @@ func (bs *ByteSink) CloseWithError(err error) error {
 		var epkt error
 		closePkt, epkt = newEndErrPacket(bs.pkt.Req, isStream, err)
 		if epkt != nil {
-			return errors.Wrapf(epkt, "close bytesink: error building error packet for %s", err)
+			return fmt.Errorf("close bytesink: error building error packet for %s: %w", err, epkt)
 		}
-	}
-
-	if werr := bs.w.WritePacket(closePkt); werr != nil {
-		bs.closed = werr
-		return werr
 	}
 	bs.closed = err
 
-	return nil
+	// tollerate timeout in writing closed packets
+	var errc = make(chan error)
+	go func() {
+		errc <- bs.w.WritePacket(closePkt)
+	}()
+
+	select {
+	case werr := <-errc:
+		if werr != nil {
+			bs.closed = werr
+		}
+	case <-time.After(10 * time.Second):
+		bs.closed = errors.New("muxrpc: close timeout exceeded")
+	}
+
+	return bs.closed
 }
 
 func (bs *ByteSink) Close() error {
