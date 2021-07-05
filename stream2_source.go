@@ -176,11 +176,14 @@ func (bs *ByteSource) consume(pktLen uint32, flag codec.Flag, r io.Reader) error
 }
 
 // utils
-// framebuffer stores muxrpc body packets with their length prefix
+
+// frame buffer: a buffer frames and a frame is length+body.
+// it stores muxrpc body packets with their length as one contiguous stream in a bytes.Buffer
 type frameBuffer struct {
 	mu    sync.Mutex
 	store *bytes.Buffer
 
+	// TODO[weird-chans]: why exactly do you need a list of channels here
 	waiting []chan<- struct{}
 
 	// how much of the current frame has been read
@@ -193,18 +196,18 @@ type frameBuffer struct {
 	lenBuf [4]byte
 }
 
-func (fw *frameBuffer) Frames() uint32 {
-	return atomic.LoadUint32(&fw.frames)
+func (fb *frameBuffer) Frames() uint32 {
+	return atomic.LoadUint32(&fb.frames)
 }
 
-func (fw *frameBuffer) copyBody(pktLen uint32, rd io.Reader) error {
-	fw.mu.Lock()
-	defer fw.mu.Unlock()
+func (fb *frameBuffer) copyBody(pktLen uint32, rd io.Reader) error {
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
 
-	binary.LittleEndian.PutUint32(fw.lenBuf[:], uint32(pktLen))
-	fw.store.Write(fw.lenBuf[:])
+	binary.LittleEndian.PutUint32(fb.lenBuf[:], uint32(pktLen))
+	fb.store.Write(fb.lenBuf[:])
 
-	copied, err := io.Copy(fw.store, rd)
+	copied, err := io.Copy(fb.store, rd)
 	if err != nil {
 		return err
 	}
@@ -213,61 +216,63 @@ func (fw *frameBuffer) copyBody(pktLen uint32, rd io.Reader) error {
 		return errors.New("frameBuffer: failed to consume whole body")
 	}
 
-	atomic.AddUint32(&fw.frames, 1)
+	atomic.AddUint32(&fb.frames, 1)
 
-	if n := len(fw.waiting); n > 0 {
-		for _, ch := range fw.waiting {
+	// TODO[weird-chans]: why exactly do you need a list of channels here
+	if n := len(fb.waiting); n > 0 {
+		for _, ch := range fb.waiting {
 			close(ch)
 		}
-		fw.waiting = make([]chan<- struct{}, 0)
+		fb.waiting = make([]chan<- struct{}, 0)
 	}
 	return nil
 }
 
-func (fw *frameBuffer) waitForMore() <-chan struct{} {
-	fw.mu.Lock()
-	defer fw.mu.Unlock()
+func (fb *frameBuffer) waitForMore() <-chan struct{} {
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
 
 	// TODO: maybe retrn nil to signal this instead of allocating channels that are immediatly closed?
 	ch := make(chan struct{})
-	if fw.frames > 0 {
+	if fb.frames > 0 {
 		close(ch)
 		return ch
 	}
 
-	fw.waiting = append(fw.waiting, ch)
+	// TODO[weird-chans]: why exactly do you need a list of channels here
+	fb.waiting = append(fb.waiting, ch)
 	return ch
 }
 
-func (fw *frameBuffer) getNextFrameReader() (uint32, io.Reader, error) {
-	fw.mu.Lock()
-	defer fw.mu.Unlock()
+func (fb *frameBuffer) getNextFrameReader() (uint32, io.Reader, error) {
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
 
-	if fw.currentFrameTotal != 0 {
+	if fb.currentFrameTotal != 0 {
 		// if the last frame hasn't been fully read
-		diff := int64(fw.currentFrameTotal - fw.currentFrameRead)
+		diff := int64(fb.currentFrameTotal - fb.currentFrameRead)
 		if diff > 0 {
 			// seek it into /dev/null
-			io.Copy(ioutil.Discard, io.LimitReader(fw.store, diff))
+			io.Copy(ioutil.Discard, io.LimitReader(fb.store, diff))
 		}
 	}
 
-	_, err := fw.store.Read(fw.lenBuf[:])
+	_, err := fb.store.Read(fb.lenBuf[:])
 	if err != nil {
-		return 0, nil, fmt.Errorf("muxrpc: didnt get length of next body (frames:%d): %w", fw.frames, err)
+		return 0, nil, fmt.Errorf("muxrpc: didnt get length of next body (frames:%d): %w", fb.frames, err)
 	}
-	pktLen := binary.LittleEndian.Uint32(fw.lenBuf[:])
+	pktLen := binary.LittleEndian.Uint32(fb.lenBuf[:])
 
-	fw.currentFrameRead = 0
-	fw.currentFrameTotal = pktLen
+	fb.currentFrameRead = 0
+	fb.currentFrameTotal = pktLen
 
 	rd := &countingReader{
-		rd:   io.LimitReader(fw.store, int64(pktLen)),
-		read: &fw.currentFrameRead,
+		rd:   io.LimitReader(fb.store, int64(pktLen)),
+		read: &fb.currentFrameRead,
 	}
 
-	// fw.frames--
-	atomic.AddUint32(&fw.frames, ^uint32(0))
+	// fb.frames--
+	atomic.AddUint32(&fb.frames, ^uint32(0))
 	return pktLen, rd, nil
 }
 
