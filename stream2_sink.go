@@ -102,8 +102,8 @@ func (bs *ByteSink) CloseWithError(err error) error {
 		if epkt != nil {
 			return fmt.Errorf("close bytesink: error building error packet for %s: %w", err, epkt)
 		}
+		bs.closed = err
 	}
-	bs.closed = err
 
 	// tollerate timeout in writing closed packets
 	var errc = make(chan error)
@@ -116,11 +116,14 @@ func (bs *ByteSink) CloseWithError(err error) error {
 		if werr != nil {
 			bs.closed = werr
 		}
+		return werr
 	case <-time.After(10 * time.Second):
 		bs.closed = errors.New("muxrpc: close timeout exceeded")
+		return bs.closed
 	}
 
-	return bs.closed
+	bs.closed = err
+	return nil
 }
 
 func (bs *ByteSink) Close() error {
