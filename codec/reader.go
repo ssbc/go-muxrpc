@@ -32,6 +32,9 @@ func (r Reader) ReadPacket() (*Packet, error) {
 
 	_, err = io.ReadFull(r.r, p.Body)
 	if err != nil {
+		if errors.Is(err, os.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("pkt-codec: read body failed: %w", err)
 	}
 
@@ -41,9 +44,10 @@ func (r Reader) ReadPacket() (*Packet, error) {
 // ReadHeader only reads the header packet data (flag, len, req id). Use the exposed io.Reader to read the body.
 func (r Reader) ReadHeader(hdr *Header) error {
 	err := binary.Read(r.r, binary.BigEndian, hdr)
-	if errors.Is(err, os.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
-		return io.EOF
-	} else if err != nil {
+	if err != nil {
+		if errors.Is(err, os.ErrClosed) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
+			return io.EOF
+		}
 		return fmt.Errorf("pkt-codec: header read failed: %w", err)
 	}
 
@@ -59,7 +63,7 @@ func (r Reader) NextBodyReader(pktLen uint32) io.Reader {
 }
 
 func (r Reader) ReadBodyInto(w io.Writer, pktLen uint32) error {
-	n, err := io.Copy(w, io.LimitReader(r.r, int64(pktLen)))
+	n, err := io.Copy(w, r.NextBodyReader(pktLen))
 	if err != nil {
 		return fmt.Errorf("pkt-codec: failed to read full body: %w", err)
 	}
