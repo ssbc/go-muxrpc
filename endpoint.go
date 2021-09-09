@@ -4,6 +4,7 @@ package muxrpc
 
 import (
 	"context"
+	"log"
 	"net"
 )
 
@@ -23,4 +24,16 @@ type Endpoint interface {
 
 	// Remote returns the network address of the remote
 	Remote() net.Addr
+}
+
+// HasMethod returns true if an endpoint supports a specific method
+func HasMethod(edp Endpoint, m Method) bool {
+	rpc, ok := edp.(*rpc)
+	if !ok {
+		log.Printf("warning: %T is not a *rpc", edp)
+		return false
+	}
+
+	_, doesHandle := rpc.manifest.Handled(m)
+	return doesHandle
 }
