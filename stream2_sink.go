@@ -52,6 +52,9 @@ func (bs *ByteSink) SetEncoding(re RequestEncoding) {
 	if err != nil {
 		panic(err)
 	}
+	if re == TypeBinary {
+		bs.pkt.Flag = bs.pkt.Flag.Clear(codec.FlagJSON)
+	}
 	bs.pkt.Flag = bs.pkt.Flag.Set(encFlag)
 }
 
