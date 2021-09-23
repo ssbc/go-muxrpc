@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 
-// +build interop_nodejs
-
 package codec
 
 import (
+	"bytes"
+	"math"
 	"os/exec"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.mindeco.de/logging/logtest"
 )
 
@@ -42,5 +43,20 @@ func TestWriter(t *testing.T) {
 	if err := cmd.Wait(); err != nil {
 		t.Fatal(err)
 	}
+}
 
+func TestWriteTooLarge(t *testing.T) {
+	r := require.New(t)
+
+	in := new(bytes.Buffer)
+	w := NewWriter(in)
+
+	large := Packet{
+		Body: bytes.Repeat([]byte{0}, math.MaxUint32+1),
+	}
+
+	err := w.WritePacket(large)
+	r.Error(err, "expected to refuse the packet")
+
+	r.Equal(0, in.Len(), "expected no bytes written")
 }
