@@ -19,6 +19,8 @@ type ByteSinker interface {
 	// sometimes we want to close a query early before it is drained
 	// (this sends a EndErr packet back )
 	CloseWithError(error) error
+
+	SetEncoding(re RequestEncoding)
 }
 
 var _ ByteSinker = (*ByteSink)(nil)
