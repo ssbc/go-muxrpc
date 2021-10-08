@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Henry Bubert
+//
+// SPDX-License-Identifier: MIT
+
 // +build ignore
 
 // added as a helper to test against dumps of connections

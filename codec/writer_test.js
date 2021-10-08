@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2021 Henry Bubert
+//
 // SPDX-License-Identifier: MIT
 
 // reades packets from stdin to test the writer implementation

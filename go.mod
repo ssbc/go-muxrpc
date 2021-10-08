@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Henry Bubert
+//
+// SPDX-License-Identifier: Unlicense
+
 module go.cryptoscope.co/muxrpc/v2
 
 go 1.15

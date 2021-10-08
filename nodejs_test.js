@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2021 Henry Bubert
+//
 // SPDX-License-Identifier: MIT
 
 // a simple RPC server for client tests

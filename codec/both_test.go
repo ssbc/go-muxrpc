@@ -1,5 +1,7 @@
 // +build interop_nodejs
 
+// SPDX-FileCopyrightText: 2021 Henry Bubert
+//
 // SPDX-License-Identifier: MIT
 
 package codec

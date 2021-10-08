@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2021 Henry Bubert
+//
+// SPDX-License-Identifier: MIT
+
 package codec
 
 import (

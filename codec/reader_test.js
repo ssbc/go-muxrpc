@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2021 Henry Bubert
+//
 // SPDX-License-Identifier: MIT
 
 // writes some packets to stdout to test the reader implementation
