@@ -14,8 +14,8 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"go.cryptoscope.co/luigi"
-	"go.cryptoscope.co/muxrpc/v2/codec"
+	"github.com/ssbc/go-luigi"
+	"github.com/ssbc/go-muxrpc/v2/codec"
 )
 
 // RequestEncoding hides the specifics of codec.Flag

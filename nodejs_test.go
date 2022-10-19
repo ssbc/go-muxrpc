@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
+//go:build interop_nodejs
 // +build interop_nodejs
 
 package muxrpc
@@ -18,13 +19,13 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/ssbc/go-luigi"
 	"github.com/stretchr/testify/require"
-	"go.cryptoscope.co/luigi"
 	"go.mindeco.de/log"
 	"go.mindeco.de/log/level"
 	"go.mindeco.de/proc"
 
-	"go.cryptoscope.co/muxrpc/v2/debug"
+	"github.com/ssbc/go-muxrpc/v2/debug"
 )
 
 // This wrapper supplies the manifest for the javascript side

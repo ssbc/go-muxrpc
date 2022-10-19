@@ -19,10 +19,10 @@ import (
 
 	"github.com/karrick/bufpool"
 	"github.com/pkg/errors"
+	"github.com/ssbc/go-muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v2/debug"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.cryptoscope.co/muxrpc/v2/codec"
-	"go.cryptoscope.co/muxrpc/v2/debug"
 )
 
 func TestSourceBytesFill(t *testing.T) {

@@ -24,7 +24,7 @@ import (
 	"strings"
 	"text/template"
 
-	"go.cryptoscope.co/muxrpc/v2"
+	"github.com/ssbc/go-muxrpc/v2"
 
 	"github.com/pkg/errors"
 )

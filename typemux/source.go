@@ -7,7 +7,7 @@ package typemux
 import (
 	"context"
 
-	"go.cryptoscope.co/muxrpc/v2"
+	"github.com/ssbc/go-muxrpc/v2"
 )
 
 var _ SourceHandler = (*SourceFunc)(nil)

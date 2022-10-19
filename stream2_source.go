@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 
 	"github.com/karrick/bufpool"
-	"go.cryptoscope.co/muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v2/codec"
 )
 
 // ReadFn is what a ByteSource needs for it's ReadFn. The passed reader is only valid during the call to it.
