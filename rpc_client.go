@@ -14,7 +14,7 @@ import (
 	"go.mindeco.de/log"
 	"go.mindeco.de/log/level"
 
-	"go.cryptoscope.co/muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v2/codec"
 )
 
 // Async does an aync call on the remote.

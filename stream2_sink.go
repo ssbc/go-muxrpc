@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"go.cryptoscope.co/muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v2/codec"
 )
 
 type ByteSinker interface {

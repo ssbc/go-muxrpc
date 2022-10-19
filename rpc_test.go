@@ -17,12 +17,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ssbc/go-luigi"
 	"github.com/stretchr/testify/require"
-	"go.cryptoscope.co/luigi"
 	"go.mindeco.de/log"
 
-	"go.cryptoscope.co/muxrpc/v2/codec"
-	"go.cryptoscope.co/muxrpc/v2/debug"
+	"github.com/ssbc/go-muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v2/debug"
 )
 
 type testManifestWrapper struct {

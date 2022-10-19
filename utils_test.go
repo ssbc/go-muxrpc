@@ -12,8 +12,8 @@ import (
 	"net"
 	"testing"
 
+	"github.com/ssbc/go-muxrpc/v2/debug"
 	"github.com/stretchr/testify/require"
-	"go.cryptoscope.co/muxrpc/v2/debug"
 	"go.mindeco.de/log"
 )
 

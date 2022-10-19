@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"go.cryptoscope.co/muxrpc/v2/debug"
+	"github.com/ssbc/go-muxrpc/v2/debug"
 )
 
 func TestBothwaysAsyncJSON(t *testing.T) {

@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
+//go:build ignore
 // +build ignore
 
 package main
@@ -10,7 +11,7 @@ import (
 	"log"
 	"os"
 
-	"go.cryptoscope.co/muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v2/codec"
 )
 
 func main() {

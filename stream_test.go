@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
+//go:build ignore
 // +build ignore
 
 package muxrpc
@@ -10,14 +11,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"fmt"
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/ssbc/go-luigi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.cryptoscope.co/luigi"
 
-	"go.cryptoscope.co/muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v2/codec"
 )
 
 func TestStreamDuplex(t *testing.T) {

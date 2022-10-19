@@ -11,7 +11,7 @@ import (
 	"go.mindeco.de/logging"
 	"go.mindeco.de/proc"
 
-	"go.cryptoscope.co/muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v2/codec"
 )
 
 func main() {

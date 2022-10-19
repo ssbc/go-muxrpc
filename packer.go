@@ -11,7 +11,7 @@ import (
 	"io"
 	"sync"
 
-	"go.cryptoscope.co/muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v2/codec"
 )
 
 // NewPacker takes an io.ReadWriteCloser and returns a Packer.

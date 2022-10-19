@@ -12,9 +12,9 @@ import (
 	"io"
 	"reflect"
 
-	"go.cryptoscope.co/luigi"
+	"github.com/ssbc/go-luigi"
 
-	"go.cryptoscope.co/muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v2/codec"
 )
 
 // AsStream returns a legacy stream adapter for luigi code

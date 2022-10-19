@@ -14,7 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"go.mindeco.de/log"
 
-	"go.cryptoscope.co/muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v2/codec"
 )
 
 func newLogWriter(l log.Logger) *logWriter {
