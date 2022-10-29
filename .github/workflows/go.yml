@@ -22,8 +22,18 @@ jobs:
       with:
         go-version: 1.18
 
+    - name: Set up Node for interop testing
+      uses: actions/setup-node@v3
+      with:
+        node-version: 12.x
+        cache: 'npm'
+        cache-dependency-path: '**/package-lock.json'
+
     - name: Build
       run: go build -v ./...
+
+    - name: Install node ssb-stack
+      run: npm ci --prefer-offline --no-audit
 
     - name: Test
       run: go test -v ./...
