@@ -7,8 +7,4 @@
 
 package codec
 
-import (
-	"math"
-)
-
-const maxBufferSize = math.MaxInt
+const maxBufferSize = 1 << 30

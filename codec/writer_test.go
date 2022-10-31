@@ -6,7 +6,6 @@ package codec
 
 import (
 	"bytes"
-	"math"
 	"os/exec"
 	"testing"
 
@@ -54,7 +53,7 @@ func TestWriteTooLarge(t *testing.T) {
 	w := NewWriter(in)
 
 	large := Packet{
-		Body: bytes.Repeat([]byte{0}, math.MaxUint32+1),
+		Body: bytes.Repeat([]byte{0}, maxBufferSize+1),
 	}
 
 	err := w.WritePacket(large)
