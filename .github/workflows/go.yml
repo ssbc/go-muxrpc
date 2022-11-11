@@ -29,8 +29,11 @@ jobs:
         cache: 'npm'
         cache-dependency-path: '**/package-lock.json'
 
-    - name: Build
+    - name: Build smoke test
       run: go build -v ./...
+
+    - name: Build arm smoke test
+      run: GOARCH=arm go build -v ./...
 
     - name: Install node ssb-stack
       run: npm ci --prefer-offline --no-audit
