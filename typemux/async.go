@@ -7,7 +7,7 @@ package typemux
 import (
 	"context"
 
-	"github.com/ssbc/go-muxrpc/v2"
+	"github.com/ssbc/go-muxrpc/v3"
 	"go.mindeco.de/log"
 	"go.mindeco.de/log/level"
 )

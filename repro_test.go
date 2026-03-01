@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
+//go:build ignore
 // +build ignore
 
 // added as a helper to test against dumps of connections

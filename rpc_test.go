@@ -17,12 +17,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ssbc/go-luigi"
 	"github.com/stretchr/testify/require"
 	"go.mindeco.de/log"
 
-	"github.com/ssbc/go-muxrpc/v2/codec"
-	"github.com/ssbc/go-muxrpc/v2/debug"
+	"github.com/ssbc/go-muxrpc/v3/codec"
+	"github.com/ssbc/go-muxrpc/v3/debug"
 )
 
 type testManifestWrapper struct {
@@ -178,15 +177,20 @@ func TestSourceString(t *testing.T) {
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 		if len(req.Method) == 1 && req.Method[0] == "srcstring" {
+			sink, err := req.ResponseSink()
+			if err != nil {
+				ckFatal(err)
+				return
+			}
+			sink.SetEncoding(TypeString)
 			for _, v := range expRx {
-				err := req.Stream.Pour(ctx, v)
+				_, err := fmt.Fprint(sink, v)
 				if err != nil {
-					ckFatal(fmt.Errorf("h2 pour errored: %w", err))
+					ckFatal(fmt.Errorf("h2 write errored: %w", err))
 				}
 			}
-			err := req.Stream.Close()
-			if err != nil {
-				ckFatal(fmt.Errorf("h2 end pour errored: %w", err))
+			if err := sink.Close(); err != nil {
+				ckFatal(fmt.Errorf("h2 close errored: %w", err))
 			}
 		}
 	})
@@ -214,27 +218,12 @@ func TestSourceString(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var buf []byte
-	for i, exp := range expRx {
-		more := src.Next(ctx)
-		r.True(more, "%d: expected more", i)
-
-		buf = make([]byte, len(exp))
-		err := src.Reader(func(rd io.Reader) error {
-			n, err := rd.Read(buf)
-			r.Equal(len(exp), n, "%d expected different count", i)
-			if !errors.Is(err, io.EOF) {
-				return err
-			}
-			return nil
-		})
-		r.NoError(err)
-
-		r.Equal(exp, string(buf), "%d expected different value", i)
+	i := 0
+	for buf := range src.Iter(ctx) {
+		r.Equal(expRx[i], string(buf), "%d expected different value", i)
+		i++
 	}
-
-	more := src.Next(ctx)
-	r.False(more, "expected no more")
+	r.Equal(len(expRx), i, "expected all items")
 	r.NoError(src.Err(), "error from clean source")
 
 	time.Sleep(time.Millisecond)
@@ -300,17 +289,21 @@ func TestSourceJSON(t *testing.T) {
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 
+		sink, err := req.ResponseSink()
+		if err != nil {
+			ckFatal(err)
+			return
+		}
+		sink.SetEncoding(TypeJSON)
+		enc := json.NewEncoder(sink)
 		for _, v := range expRx {
-			err := req.Stream.Pour(ctx, v)
-			if err != nil {
-				ckFatal(fmt.Errorf("h2 pour errored: %w", err))
+			if err := enc.Encode(v); err != nil {
+				ckFatal(fmt.Errorf("h2 encode errored: %w", err))
 			}
 		}
-		err := req.Stream.Close()
-		if err != nil {
-			ckFatal(fmt.Errorf("h2 end pour errored: %w", err))
+		if err := sink.Close(); err != nil {
+			ckFatal(fmt.Errorf("h2 close errored: %w", err))
 		}
-
 	})
 
 	fh2.HandleConnectCalls(func(ctx context.Context, e Endpoint) {
@@ -335,23 +328,14 @@ func TestSourceJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for i, exp := range expRx {
-		more := src.Next(ctx)
-		r.True(more, "%d: expected more", i)
-
-		var got testType
-		err := src.Reader(func(r io.Reader) error {
-			return json.NewDecoder(r).Decode(&got)
-		})
-		r.NoError(err)
-
+	i := 0
+	for got := range SourceAs[testType](ctx, src) {
 		r.Equal(i, got.Idx, "%d had wrong index")
-		r.Equal(exp.Foo, got.Foo, "%d expected different value", i)
+		r.Equal(expRx[i].Foo, got.Foo, "%d expected different value", i)
 		t.Log("okay:", i)
+		i++
 	}
-
-	more := src.Next(ctx)
-	r.False(more, "expected no more")
+	r.Equal(len(expRx), i, "expected all items")
 	r.NoError(src.Err(), "error from clean source")
 
 	time.Sleep(time.Millisecond)
@@ -416,29 +400,18 @@ func TestSink(t *testing.T) {
 
 		src, err := req.ResponseSource()
 		ckFatal(err)
-
-		for i, exp := range expRx {
-			t.Log("calling Next()", i)
-			more := src.Next(ctx)
-			if !more {
-				t.Error("expected more from source")
-				ckFatal(src.Err())
-			}
-
+		i := 0
+		for str := range SourceAs[string](ctx, src) {
 			t.Log("Next()", i, "returned")
-
-			var str string
-			err = src.Reader(func(r io.Reader) error {
-				return json.NewDecoder(r).Decode(&str)
-			})
-			ckFatal(err)
-
-			if str != exp {
-				err = fmt.Errorf("expected value %q, got %q", exp, str)
+			if str != expRx[i] {
+				err = fmt.Errorf("expected value %q, got %q", expRx[i], str)
 				ckFatal(err)
 			}
+			i++
+			if i == len(expRx) {
+				break
+			}
 		}
-
 		close(wait)
 	})
 
@@ -691,24 +664,34 @@ func TestDuplexString(t *testing.T) {
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
 
+		sink, err := req.ResponseSink()
+		if err != nil {
+			ckFatal(err)
+			return
+		}
+		sink.SetEncoding(TypeString)
 		for _, v := range expTx {
-			err := req.Stream.Pour(ctx, v)
+			_, err := fmt.Fprint(sink, v)
 			ckFatal(err)
 		}
 
-		for _, exp := range expRx {
-			v, err := req.Stream.Next(ctx)
-			if err != nil {
-				ckFatal(fmt.Errorf("pour errored: %w", err))
+		src, err := req.ResponseSource()
+		if err != nil {
+			ckFatal(err)
+			return
+		}
+		i := 0
+		for buf := range src.Iter(ctx) {
+			if string(buf) != expRx[i] {
+				ckFatal(fmt.Errorf("expected value %v, got %v", expRx[i], string(buf)))
 			}
-
-			if v != exp {
-				err = fmt.Errorf("expected value %v, got %v", exp, v)
-				ckFatal(err)
+			i++
+			if i == len(expRx) {
+				break
 			}
 		}
 
-		err := req.Stream.Close()
+		err = sink.Close()
 		ckFatal(err)
 		wg.Done()
 
@@ -744,20 +727,16 @@ func TestDuplexString(t *testing.T) {
 		t.Log("sent", i)
 	}
 
-	for i, exp := range expTx {
-		has := src.Next(ctx)
-		r.True(has, "expected more from source")
-
-		buf := make([]byte, len(exp))
-		err := src.Reader(func(r io.Reader) error {
-			_, err := r.Read(buf)
-			return err
-		})
-		r.NoError(err)
-
-		r.Equal(exp, string(buf), "wrong value from source")
+	i := 0
+	for buf := range src.Iter(ctx) {
+		r.Equal(expTx[i], string(buf), "wrong value from source")
 		t.Log("received", i)
+		i++
+		if i == len(expTx) {
+			break
+		}
 	}
+	r.Equal(len(expTx), i, "expected all items from source")
 
 	err = sink.Close()
 	r.NoError(err, "error closing stream")
@@ -959,42 +938,29 @@ func (h *hDuplex) HandleCall(ctx context.Context, req *Request) {
 		return
 	}
 
-	j := 0
-	for src.Next(ctx) {
-
-		err := src.Reader(func(rd io.Reader) error {
-			var v interface{}
-			err := json.NewDecoder(rd).Decode(&v)
-			if err != nil {
-				h.logger.Log("src-decode-err", err)
-				return err
-			}
-
-			switch rv := v.(type) {
-			case float64:
-				h.rxvals = append(h.rxvals, rv)
-			case string:
-				h.rxvals = append(h.rxvals, rv)
-			case map[string]interface{}:
-				var v testStruct
-				v.A = int(rv["A"].(float64))
-				v.N = int(rv["N"].(float64))
-				v.Str = rv["Str"].(string)
-				h.rxvals = append(h.rxvals, v)
-			default:
-				return fmt.Errorf("got unhandled duplex msg type: %T", v)
-			}
-			return nil
-		})
+	for buf := range src.Iter(ctx) {
+		var v interface{}
+		err := json.Unmarshal(buf, &v)
 		if err != nil {
-			if luigi.IsEOS(err) {
-				break
-			}
+			h.logger.Log("src-decode-err", err)
 			h.failed <- fmt.Errorf("drined input stream: %w", err)
 			return
 		}
-
-		j++
+		switch rv := v.(type) {
+		case float64:
+			h.rxvals = append(h.rxvals, rv)
+		case string:
+			h.rxvals = append(h.rxvals, rv)
+		case map[string]interface{}:
+			var v testStruct
+			v.A = int(rv["A"].(float64))
+			v.N = int(rv["N"].(float64))
+			v.Str = rv["Str"].(string)
+			h.rxvals = append(h.rxvals, v)
+		default:
+			h.failed <- fmt.Errorf("got unhandled duplex msg type: %T", v)
+			return
+		}
 	}
 	// req.Stream.Close()
 }
@@ -1068,18 +1034,13 @@ func XTestDuplexHandlerStr(t *testing.T) {
 		r.NoError(err)
 	}
 
-	for _, exp := range expTx {
-		has := src.Next(ctx)
-		r.True(has, "expected more from source")
-
-		buf := make([]byte, len(exp))
-		err := src.Reader(func(r io.Reader) error {
-			_, err := r.Read(buf)
-			return err
-		})
-		r.NoError(err)
-
-		r.Equal(exp, string(buf), "wrong value from source")
+	i := 0
+	for buf := range src.Iter(ctx) {
+		r.Equal(expTx[i], string(buf[:len(expTx[i])]), "wrong value from source")
+		i++
+		if i == len(expTx) {
+			break
+		}
 	}
 
 	err = sink.Close()
@@ -1184,18 +1145,15 @@ func TestDuplexHandlerJSON(t *testing.T) {
 		r.NoError(err)
 	}
 
-	for _, exp := range expTx {
-		has := src.Next(ctx)
-		r.True(has, "expected more from source")
-
-		var ret testStruct
-		err := src.Reader(func(r io.Reader) error {
-			return json.NewDecoder(r).Decode(&ret)
-		})
-		r.NoError(err)
-
-		r.EqualValues(exp, ret.Str, "wrong value from source")
+	i := 0
+	for ret := range SourceAs[testStruct](ctx, src) {
+		r.EqualValues(expTx[i], ret.Str, "wrong value from source")
+		i++
+		if i == len(expTx) {
+			break
+		}
 	}
+	r.Equal(len(expTx), i, "expected all items from source")
 
 	err = sink.Close()
 	r.NoError(err, "error closing stream")

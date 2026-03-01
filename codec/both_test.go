@@ -1,3 +1,4 @@
+//go:build interop_nodejs
 // +build interop_nodejs
 
 // SPDX-FileCopyrightText: 2021 Henry Bubert

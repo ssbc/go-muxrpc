@@ -7,7 +7,7 @@ package typemux
 import (
 	"context"
 
-	"github.com/ssbc/go-muxrpc/v2"
+	"github.com/ssbc/go-muxrpc/v3"
 )
 
 // DuplexHandler initiates a 'duplex' call. The handler receives data from the peer through the passed source

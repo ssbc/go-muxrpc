@@ -20,7 +20,7 @@ import (
 	"go.mindeco.de/log"
 	"go.mindeco.de/log/level"
 
-	"github.com/ssbc/go-muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v3/codec"
 )
 
 // HandleOption are used to configure rpc handler instances
@@ -297,16 +297,11 @@ func (r *rpc) parseNewRequest(pkt *codec.Header, sessionCtx context.Context) (co
 
 	req.source = newByteSource(reqCtx, r.bpool)
 
-	// legacy streams (TODO: remove these)
 	if pkt.Flag.Get(codec.FlagStream) {
 		req.sink.pkt.Flag = req.sink.pkt.Flag.Set(codec.FlagStream)
 		switch req.Type {
-		case "duplex":
-			req.Stream = &streamDuplex{src: req.source.AsStream(), snk: req.sink.AsStream()}
-		case "source":
-			req.Stream = req.sink.AsStream()
-		case "sink":
-			req.Stream = req.source.AsStream()
+		case "duplex", "source", "sink":
+			// valid stream types
 		default:
 			return nil, nil, fmt.Errorf("new request %d: unhandled request type: %q", req.id, req.Type)
 		}
@@ -317,7 +312,6 @@ func (r *rpc) parseNewRequest(pkt *codec.Header, sessionCtx context.Context) (co
 		if req.Type != "async" {
 			return nil, nil, fmt.Errorf("new request %d: unhandled request type: %q", req.id, req.Type)
 		}
-		req.Stream = req.sink.AsStream()
 	}
 
 	level.Debug(r.logger).Log("event", "got request", "reqID", req.id, "method", req.Method, "type", req.Type)

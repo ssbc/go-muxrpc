@@ -14,7 +14,7 @@ import (
 	"go.mindeco.de/log"
 	"go.mindeco.de/log/level"
 
-	"github.com/ssbc/go-muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v3/codec"
 )
 
 // Async does an aync call on the remote.
@@ -42,8 +42,6 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 		Method:  method,
 		RawArgs: argData,
 	}
-	req.Stream = req.source.AsStream()
-
 	req.sink.pkt.Flag, err = re.asCodecFlag()
 	if err != nil {
 		return err
@@ -53,7 +51,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 		return fmt.Errorf("muxrpc(%s): error sending request: %w", method, err)
 	}
 
-	if !req.source.Next(ctx) {
+	if !req.source.next(ctx) {
 		err := req.source.Err()
 		if err == nil {
 			return fmt.Errorf("muxrpc(%s): did not receive data for request", method)
@@ -97,7 +95,7 @@ func (r *rpc) Async(ctx context.Context, ret interface{}, re RequestEncoding, me
 		return nil
 	}
 
-	if err := req.source.Reader(processEntry); err != nil {
+	if err := req.source.reader(processEntry); err != nil {
 		srcErr := req.source.Err()
 		return fmt.Errorf("muxrpc(%s): async call failed: %s (%w)", method, err, srcErr)
 	}
@@ -136,8 +134,6 @@ func (r *rpc) Source(ctx context.Context, re RequestEncoding, method Method, arg
 	}
 	req.sink.pkt.Flag = req.sink.pkt.Flag.Set(encFlag)
 
-	req.Stream = req.source.AsStream()
-
 	if err := r.start(ctx, req); err != nil {
 		return nil, fmt.Errorf("error sending request: %w", err)
 	}
@@ -175,7 +171,6 @@ func (r *rpc) Sink(ctx context.Context, re RequestEncoding, method Method, args 
 		RawArgs: argData,
 	}
 	req.sink.pkt.Flag = req.sink.pkt.Flag.Set(encFlag).Set(codec.FlagStream)
-	req.Stream = req.sink.AsStream()
 
 	if err := r.start(ctx, req); err != nil {
 		return nil, fmt.Errorf("error sending request: %w", err)
@@ -218,8 +213,6 @@ func (r *rpc) Duplex(ctx context.Context, re RequestEncoding, method Method, arg
 		Method:  method,
 		RawArgs: argData,
 	}
-
-	req.Stream = &streamDuplex{bSrc.AsStream(), bSink.AsStream()}
 
 	if err := r.start(ctx, req); err != nil {
 		return nil, nil, fmt.Errorf("error sending request: %w", err)

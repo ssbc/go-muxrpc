@@ -8,14 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/ssbc/go-muxrpc/v2/debug"
+	"github.com/ssbc/go-muxrpc/v3/debug"
 )
 
 func TestBothwaysAsyncJSON(t *testing.T) {
@@ -331,14 +330,19 @@ func TestBothwaysSource(t *testing.T) {
 	fh1.HandledCalls(methodChecker("whoami"))
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h1 called %+v\n", req)
+		sink, err := req.ResponseSink()
+		if err != nil {
+			ckFatal(err)
+			return
+		}
+		sink.SetEncoding(TypeString)
 		for i, v := range expRx {
-			err := req.Stream.Pour(ctx, v)
+			_, err := fmt.Fprint(sink, v)
 			if err != nil {
-				ckFatal(fmt.Errorf("test pour %d failed: %w", i, err))
+				ckFatal(fmt.Errorf("test write %d failed: %w", i, err))
 			}
 		}
-		err := req.Stream.Close()
-		if err != nil {
+		if err := sink.Close(); err != nil {
 			ckFatal(fmt.Errorf("test close failed: %w", err))
 		}
 	})
@@ -352,14 +356,19 @@ func TestBothwaysSource(t *testing.T) {
 	fh2.HandledCalls(methodChecker("whoami"))
 	fh2.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Logf("h2 called %+v\n", req)
+		sink, err := req.ResponseSink()
+		if err != nil {
+			ckFatal(err)
+			return
+		}
+		sink.SetEncoding(TypeString)
 		for i, v := range expRx {
-			err := req.Stream.Pour(ctx, v)
+			_, err := fmt.Fprint(sink, v)
 			if err != nil {
-				ckFatal(fmt.Errorf("test pour %d failed: %w", i, err))
+				ckFatal(fmt.Errorf("test write %d failed: %w", i, err))
 			}
 		}
-		err := req.Stream.Close()
-		if err != nil {
+		if err := sink.Close(); err != nil {
 			ckFatal(fmt.Errorf("test close failed: %w", err))
 		}
 	})
@@ -371,8 +380,10 @@ func TestBothwaysSource(t *testing.T) {
 	ctx := context.Background()
 
 	var rpc2 Endpoint
+	rpc2started := make(chan struct{})
 	go func() {
 		rpc2 = Handle(NewPacker(c2), &fh2)
+		close(rpc2started)
 		serve(ctx, rpc2.(Server), errc, serve2)
 	}()
 
@@ -384,44 +395,26 @@ func TestBothwaysSource(t *testing.T) {
 	rpc1 := Handle(dbgpacker, &fh1)
 	go serve(ctx, rpc1.(Server), errc, serve1)
 
+	<-rpc2started
+
 	go func() {
 		src, err := rpc1.Source(ctx, TypeString, Method{"whoami"})
 		ckFatal(err)
 
-		var buf []byte
-		for _, exp := range expRx {
-			more := src.Next(ctx)
-			if !more {
-				ckFatal(errors.New("expected more"))
-			}
-
-			buf = make([]byte, len(exp))
-			err := src.Reader(func(r io.Reader) error {
-				_, err := r.Read(buf)
-				return err
-			})
-			if err != nil {
-				ckFatal(err)
+		i := 0
+		for buf := range src.Iter(ctx) {
+			if i >= len(expRx) {
+				ckFatal(errors.New("expected no more"))
 				return
 			}
-
-			if v := string(buf); v != exp {
-				err = fmt.Errorf("unexpected response message %q, expected %v", v, exp)
+			if v := string(buf); v != expRx[i] {
+				err = fmt.Errorf("unexpected response message %q, expected %v", v, expRx[i])
 				ckFatal(err)
 			}
-		}
-
-		more := src.Next(ctx)
-		if more {
-			ckFatal(errors.New("expected no more"))
+			i++
 		}
 		if err := src.Err(); err != nil {
-			b, bodyErr := src.Bytes()
-			if bodyErr != nil {
-				panic(err)
-			}
-			val := string(b)
-			err = fmt.Errorf("expected end of stream, got value %v and error %+v", val, err)
+			err = fmt.Errorf("expected end of stream, got error %+v", err)
 			ckFatal(err)
 		}
 
@@ -436,46 +429,20 @@ func TestBothwaysSource(t *testing.T) {
 		src, err := rpc2.Source(ctx, TypeString, Method{"whoami"})
 		ckFatal(err)
 
-		var buf []byte
-		for _, exp := range expRx {
-			more := src.Next(ctx)
-			if !more {
-				ckFatal(errors.New("expected more"))
-			}
-
-			buf = make([]byte, len(exp))
-			err := src.Reader(func(r io.Reader) error {
-				n, err := r.Read(buf)
-				if err != nil {
-					return err
-				}
-				if n != len(exp) {
-					return fmt.Errorf("expected %d bytes but got %d", n, len(exp))
-				}
-				return nil
-			})
-			if err != nil {
-				ckFatal(err)
+		i := 0
+		for buf := range src.Iter(ctx) {
+			if i >= len(expRx) {
+				ckFatal(errors.New("expected no more"))
 				return
 			}
-
-			if v := string(buf); v != exp {
-				err = fmt.Errorf("unexpected response message %q, expected %v", v, exp)
+			if v := string(buf); v != expRx[i] {
+				err = fmt.Errorf("unexpected response message %q, expected %v", v, expRx[i])
 				ckFatal(err)
 			}
-		}
-
-		more := src.Next(ctx)
-		if more {
-			ckFatal(errors.New("expected no more"))
+			i++
 		}
 		if err := src.Err(); err != nil {
-			b, bodyErr := src.Bytes()
-			if bodyErr != nil {
-				panic(err)
-			}
-			val := string(b)
-			err = fmt.Errorf("expected end of stream, got value %v and error %+v", val, err)
+			err = fmt.Errorf("expected end of stream, got error %+v", err)
 			ckFatal(err)
 		}
 
@@ -547,19 +514,25 @@ func TestBothwaysSink(t *testing.T) {
 		return func(ctx context.Context, req *Request) {
 			fmt.Printf("bothwaysSink: %s called %+v\n", name, req)
 
-			for i, exp := range expRx {
-				fmt.Printf("bothwaysSink: calling Next() %d\n", i)
-				v, err := req.Stream.Next(ctx)
-				if err != nil {
-					errc <- fmt.Errorf("stream(%s) next errored: %w", name, err)
-					return
-				}
-				fmt.Println("Next()", i, "returned", v)
+			src, err := req.ResponseSource()
+			if err != nil {
+				errc <- fmt.Errorf("stream(%s) get source errored: %w", name, err)
+				return
+			}
 
-				if v != exp {
-					errc <- fmt.Errorf("expected value %v, got %v", exp, v)
+			i := 0
+			for buf := range src.Iter(ctx) {
+				if i >= len(expRx) {
+					errc <- fmt.Errorf("stream(%s) expected no more at %d", name, i)
 					return
 				}
+				v := string(buf)
+				fmt.Println("Next()", i, "returned", v)
+				if v != expRx[i] {
+					errc <- fmt.Errorf("expected value %v, got %v", expRx[i], v)
+					return
+				}
+				i++
 			}
 			drained.Done()
 		}
@@ -678,7 +651,7 @@ func TestBothwaysSink(t *testing.T) {
 	}
 }
 
-func XTestBothwaysDuplex(t *testing.T) {
+func TestBothwaysDuplex(t *testing.T) {
 	var (
 		ctx = context.Background()
 
@@ -712,28 +685,43 @@ func XTestBothwaysDuplex(t *testing.T) {
 
 			t.Logf("%s called %+v\n", name, req)
 
+			sink, err := req.ResponseSink()
+			if err != nil {
+				ckFatal(err)
+				return
+			}
+			sink.SetEncoding(TypeString)
 			for _, v := range expTx {
-				err := req.Stream.Pour(ctx, v)
+				_, err := fmt.Fprint(sink, v)
 				if err != nil {
-					ckFatal(fmt.Errorf("err pouring to stream: %w", err))
+					ckFatal(fmt.Errorf("err writing to sink: %w", err))
 					return
 				}
 			}
 
-			for _, exp := range expRx {
-				v, err := req.Stream.Next(ctx)
-				if err != nil {
-					ckFatal(fmt.Errorf("err from stream next: %w", err))
+			src, err := req.ResponseSource()
+			if err != nil {
+				ckFatal(err)
+				return
+			}
+			i := 0
+			for buf := range src.Iter(ctx) {
+				if i >= len(expRx) {
+					ckFatal(fmt.Errorf("expected no more from source"))
 					return
 				}
-				if v != exp {
-					ckFatal(fmt.Errorf("expected value %v, got %v", exp, v))
+				if string(buf) != expRx[i] {
+					ckFatal(fmt.Errorf("expected value %v, got %v", expRx[i], string(buf)))
+				}
+				i++
+				if i == len(expRx) {
+					break
 				}
 			}
 
-			err := req.Stream.Close()
+			err = sink.Close()
 			if err != nil && !IsSinkClosed(err) {
-				ckFatal(fmt.Errorf("failed to close stream: %w", err))
+				ckFatal(fmt.Errorf("failed to close sink: %w", err))
 			}
 		}
 	}
@@ -760,18 +748,25 @@ func XTestBothwaysDuplex(t *testing.T) {
 
 	dbgpacker := NewPacker(debug.Dump(muxdbgPath, c1))
 
-	rpc1 := Handle(dbgpacker, &fh1)
-	rpc2 := Handle(NewPacker(c2), &fh2)
+	var rpc2 Endpoint
+	rpc2started := make(chan struct{})
+	go func() {
+		rpc2 = Handle(NewPacker(c2), &fh2)
+		close(rpc2started)
+		go serve(ctx, rpc2.(Server), errc)
+	}()
 
+	rpc1 := Handle(dbgpacker, &fh1)
 	go serve(ctx, rpc1.(Server), errc)
-	go serve(ctx, rpc2.(Server), errc)
+
+	<-rpc2started
 
 	t.Log("serving")
 
 	go func() {
 		defer wg.Done()
 
-		src, sink, err := rpc1.Duplex(ctx, TypeString, Method{"test", "duplex"})
+		src, sink, err := rpc1.Duplex(ctx, TypeString, Method{"text", "duplex"})
 		if err != nil {
 			ckFatal(err)
 			return
@@ -786,22 +781,18 @@ func XTestBothwaysDuplex(t *testing.T) {
 
 		t.Log("1: data sent")
 
-		for i, exp := range expTx {
-			has := src.Next(ctx)
-			if !has {
-				ckFatal(fmt.Errorf("1: expected more from source (idx:%d)", i))
+		i := 0
+		for buf := range src.Iter(ctx) {
+			if i >= len(expTx) {
+				ckFatal(fmt.Errorf("expected no more from source"))
 				return
 			}
-
-			var buf = make([]byte, len(exp))
-			err := src.Reader(func(r io.Reader) error {
-				_, err := r.Read(buf)
-				return err
-			})
-			ckFatal(err)
-
-			if exp != string(buf) {
-				ckFatal(fmt.Errorf("wrong value from source (exp: %q - got %q", exp, string(buf)))
+			if string(buf) != expTx[i] {
+				ckFatal(fmt.Errorf("wrong value from source (exp: %q - got %q", expTx[i], string(buf)))
+			}
+			i++
+			if i == len(expTx) {
+				break
 			}
 		}
 
@@ -817,7 +808,7 @@ func XTestBothwaysDuplex(t *testing.T) {
 	go func() {
 		defer wg.Done()
 
-		src, sink, err := rpc2.Duplex(ctx, TypeString, Method{"test", "duplex"})
+		src, sink, err := rpc2.Duplex(ctx, TypeString, Method{"text", "duplex"})
 		if err != nil {
 			ckFatal(err)
 			return
@@ -832,29 +823,18 @@ func XTestBothwaysDuplex(t *testing.T) {
 
 		t.Log("2: data sent")
 
-		for i, exp := range expTx {
-			has := src.Next(ctx)
-			if !has {
-				ckFatal(fmt.Errorf("2: expected more from source (idx:%d)", i))
+		i := 0
+		for buf := range src.Iter(ctx) {
+			if i >= len(expTx) {
+				ckFatal(fmt.Errorf("expected no more from source"))
 				return
 			}
-			t.Logf("2: received%d: %s", i, exp)
-
-			buf := make([]byte, len(exp))
-			err := src.Reader(func(r io.Reader) error {
-				_, err := r.Read(buf)
-				return err
-			})
-			if err != nil {
-				ckFatal(err)
-				return
+			if string(buf) != expTx[i] {
+				ckFatal(fmt.Errorf("wrong value from source (exp: %q - got %q", expTx[i], string(buf)))
 			}
-
-			v := string(buf)
-			if v != exp {
-				err = fmt.Errorf("2: expected %v, got %v", exp, v)
-				ckFatal(err)
-				return
+			i++
+			if i == len(expTx) {
+				break
 			}
 		}
 

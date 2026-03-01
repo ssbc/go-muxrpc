@@ -11,7 +11,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/ssbc/go-muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v3/codec"
 )
 
 func main() {

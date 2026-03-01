@@ -9,7 +9,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/ssbc/go-muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v3/codec"
 )
 
 func NewTestSink(w io.Writer) *ByteSink {

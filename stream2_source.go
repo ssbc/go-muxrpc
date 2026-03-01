@@ -12,28 +12,18 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"iter"
 	"sync"
 	"sync/atomic"
 
 	"github.com/karrick/bufpool"
-	"github.com/ssbc/go-muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v3/codec"
 )
 
-// ReadFn is what a ByteSource needs for it's ReadFn. The passed reader is only valid during the call to it.
-type ReadFn func(r io.Reader) error
+// readFn is a callback that receives a reader for one frame. The reader is only valid during the call.
+type readFn func(r io.Reader) error
 
-type ByteSourcer interface {
-	Next(context.Context) bool
-	Reader(ReadFn) error
-
-	// sometimes we want to close a query early before it is drained
-	// (this sends a EndErr packet back )
-	Cancel(error)
-}
-
-var _ ByteSourcer = (*ByteSource)(nil)
-
-// ByteSource is inspired by sql.Rows but without the Scan(), it just reads plain []bytes, one per muxrpc packet.
+// ByteSource is a stream of muxrpc frames. Use Iter() to range over raw bytes or SourceAs[T]() for typed iteration.
 type ByteSource struct {
 	bpool bufpool.FreeList
 	buf   *frameBuffer
@@ -91,8 +81,8 @@ func (bs *ByteSource) Err() error {
 	return bs.failed
 }
 
-// Next blocks until there are new muxrpc frames for this stream
-func (bs *ByteSource) Next(ctx context.Context) bool {
+// next blocks until there are new muxrpc frames for this stream
+func (bs *ByteSource) next(ctx context.Context) bool {
 	bs.mu.Lock()
 	if bs.failed != nil && bs.buf.frames == 0 {
 		// don't return buffer before stream is empty
@@ -132,9 +122,9 @@ func (bs *ByteSource) Next(ctx context.Context) bool {
 	}
 }
 
-// Reader passes a (limited) reader for the next segment to the passed .
-// Since the stream can't be written while it's read, the reader is only valid during the call to the passed function.
-func (bs *ByteSource) Reader(fn ReadFn) error {
+// reader passes a (limited) reader for the next segment to the passed function.
+// Since the stream can't be written while it's read, the reader is only valid during the call.
+func (bs *ByteSource) reader(fn readFn) error {
 	_, rd, err := bs.buf.getNextFrameReader()
 	if err != nil {
 		return err
@@ -146,8 +136,8 @@ func (bs *ByteSource) Reader(fn ReadFn) error {
 	return err
 }
 
-// Bytes returns the full slice of bytes from the next frame.
-func (bs *ByteSource) Bytes() ([]byte, error) {
+// bytes returns the full slice of bytes from the next frame.
+func (bs *ByteSource) bytes() ([]byte, error) {
 	_, rd, err := bs.buf.getNextFrameReader()
 	if err != nil {
 		return nil, err
@@ -156,6 +146,22 @@ func (bs *ByteSource) Bytes() ([]byte, error) {
 	b, err := ioutil.ReadAll(rd)
 	bs.buf.mu.Unlock()
 	return b, err
+}
+
+// Iter returns a Go 1.23 iterator over raw byte frames from this source.
+// Check Err() after the loop completes to see if iteration stopped due to an error.
+func (bs *ByteSource) Iter(ctx context.Context) iter.Seq[[]byte] {
+	return func(yield func([]byte) bool) {
+		for bs.next(ctx) {
+			b, err := bs.bytes()
+			if err != nil {
+				return
+			}
+			if !yield(b) {
+				return
+			}
+		}
+	}
 }
 
 func (bs *ByteSource) consume(pktLen uint32, flag codec.Flag, r io.Reader) error {

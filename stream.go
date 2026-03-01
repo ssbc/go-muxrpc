@@ -8,30 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/pkg/errors"
-	"github.com/ssbc/go-luigi"
-
-	"github.com/ssbc/go-muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v3/codec"
 )
-
-var (
-	ErrStreamNotReadable = errors.New("muxrpc: this stream can not be read from")
-	ErrStreamNotWritable = errors.New("muxrpc: this stream can not be written to")
-	ErrStreamNotClosable = errors.New("muxrpc: this stream can not be closed")
-)
-
-// Stream is a muxrpc stream for the general duplex case.
-type Stream interface {
-	luigi.Source
-	luigi.Sink
-	luigi.ErrorCloser
-
-	// WithType tells the stream in what type JSON data should be unmarshalled into
-	WithType(tipe interface{})
-
-	// WithReq tells the stream what request number should be used for sent messages
-	WithReq(req int32)
-}
 
 // newRawPacket crafts a packet with a byte slice as payload
 func newRawPacket(stream bool, req int32, body []byte) *codec.Packet {

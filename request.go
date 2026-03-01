@@ -14,8 +14,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/ssbc/go-luigi"
-	"github.com/ssbc/go-muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v3/codec"
 )
 
 // RequestEncoding hides the specifics of codec.Flag
@@ -83,9 +82,6 @@ func (m Method) String() string {
 
 // Request assembles the state of an RPC call
 type Request struct {
-	// Stream is a legacy adapter for luigi-powered streams
-	Stream Stream `json:"-"`
-
 	// Method is the name of the called function
 	Method Method `json:"name"`
 
@@ -95,7 +91,6 @@ type Request struct {
 	// Type is the type of the call, i.e. async, sink, source or duplex
 	Type CallType `json:"type"`
 
-	// luigi-less iterators
 	sink   *ByteSink
 	source *ByteSource
 
@@ -175,7 +170,7 @@ func (req *Request) Return(ctx context.Context, v interface{}) error {
 // CloseWithError is used to close an ongoing request. Ie instruct the remote to stop sending data
 // or notify it that a stream couldn't be fully filled because of an error
 func (req *Request) CloseWithError(cerr error) error {
-	if cerr == nil || errors.Is(cerr, io.EOF) || errors.Is(cerr, luigi.EOS{}) {
+	if cerr == nil || errors.Is(cerr, io.EOF) {
 		req.source.Cancel(nil)
 		req.sink.Close()
 	} else {

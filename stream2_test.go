@@ -19,8 +19,8 @@ import (
 
 	"github.com/karrick/bufpool"
 	"github.com/pkg/errors"
-	"github.com/ssbc/go-muxrpc/v2/codec"
-	"github.com/ssbc/go-muxrpc/v2/debug"
+	"github.com/ssbc/go-muxrpc/v3/codec"
+	"github.com/ssbc/go-muxrpc/v3/debug"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,10 +50,10 @@ func TestSourceBytesFill(t *testing.T) {
 
 	buf := make([]byte, 3)
 	for i := 0; i < len(exp); i++ {
-		has := bs.Next(ctx)
+		has := bs.next(ctx)
 		r.True(has, "expected more from source")
 
-		err := bs.Reader(func(rd io.Reader) error {
+		err := bs.reader(func(rd io.Reader) error {
 			n, err := rd.Read(buf)
 			r.NoError(err)
 			r.Equal(3, n)
@@ -85,7 +85,7 @@ func TestSourceBytesOneByOne(t *testing.T) {
 		err := bs.consume(uint32(len(exp[i])), codec.FlagStream, bytes.NewReader(exp[i]))
 		r.NoError(err, "failed to consume %d", i)
 
-		err = bs.Reader(func(rd io.Reader) error {
+		err = bs.reader(func(rd io.Reader) error {
 			n, err := rd.Read(buf)
 			r.NoError(err)
 			r.Equal(3, n)
@@ -123,10 +123,10 @@ func TestSourceBytesDontReadAll(t *testing.T) {
 
 	buf := make([]byte, 1)
 	for i := 0; i < len(exp); i++ {
-		has := bs.Next(ctx)
+		has := bs.next(ctx)
 		r.True(has, "expected more from source")
 
-		err = bs.Reader(func(rd io.Reader) error {
+		err = bs.reader(func(rd io.Reader) error {
 			n, err := rd.Read(buf)
 			r.NoError(err)
 			r.Equal(1, n)
@@ -155,7 +155,7 @@ func setupSource(t testing.TB, expRx []map[string]interface{}) Endpoint {
 	var fh1 FakeHandler
 	fh1.HandleCallCalls(func(ctx context.Context, req *Request) {
 		t.Errorf("h1 called %+v!\n", req)
-		err := req.Stream.Close()
+		err := req.Close()
 		ckFatal(fmt.Errorf("test close failed: %w", err))
 	})
 
@@ -199,14 +199,18 @@ func setupSource(t testing.TB, expRx []map[string]interface{}) Endpoint {
 	ctx := context.Background()
 
 	var rpc2 Endpoint
+	rpc2started := make(chan struct{})
 	go func() {
 		rpc2 = Handle(NewPacker(c2), &fh2)
+		close(rpc2started)
 		serve(ctx, rpc2.(Server), errc, serve2)
 	}()
 
 	rpc1 := Handle(dbgpacker, &fh1)
 
 	go serve(ctx, rpc1.(Server), errc, serve1)
+
+	<-rpc2started
 
 	select {
 	case <-conn1:
@@ -284,21 +288,15 @@ func testSourceBytesWithItems(expRx []map[string]interface{}) func(t *testing.T)
 		r.NoError(err)
 
 		expIdx := 0
-
-		for src.Next(ctx) {
-			buf, err := src.Bytes()
-			r.NoError(err)
-
+		for buf := range src.Iter(ctx) {
 			var obj testType
-			err = json.Unmarshal(buf, &obj)
+			err := json.Unmarshal(buf, &obj)
 			if err != nil {
 				t.Log("\n", hex.Dump(buf))
 			}
 			r.NoError(err, "failed to unmarshal bytes: %q", string(buf))
-
 			r.Equal(expIdx, obj.Idx)
 			r.Equal(expRx[expIdx]["Foo"], obj.Foo)
-
 			expIdx++
 		}
 		r.Equal(len(expRx), expIdx, "expected more items")
@@ -326,9 +324,9 @@ func BenchmarkSourceByte(b *testing.B) {
 		r.NoError(err)
 
 		expIdx := 0
-		for src.Next(ctx) {
+		for src.next(ctx) {
 
-			err = src.Reader(func(rd io.Reader) error {
+			err = src.reader(func(rd io.Reader) error {
 				n, err := rd.Read(buf)
 				r.NoError(err)
 				r.Equal(3, n)

@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: MIT
 
+//go:build interop_nodejs
 // +build interop_nodejs
 
 package codec

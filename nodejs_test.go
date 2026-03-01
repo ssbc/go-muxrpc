@@ -19,13 +19,12 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/ssbc/go-luigi"
 	"github.com/stretchr/testify/require"
 	"go.mindeco.de/log"
 	"go.mindeco.de/log/level"
 	"go.mindeco.de/proc"
 
-	"github.com/ssbc/go-muxrpc/v2/debug"
+	"github.com/ssbc/go-muxrpc/v3/debug"
 )
 
 // This wrapper supplies the manifest for the javascript side
@@ -197,7 +196,8 @@ func TestJSGettingCalledAsync(t *testing.T) {
 	// r.NoError(packer.Close())
 }
 
-/*see that we can do sync as async calls
+/*
+see that we can do sync as async calls
 
 this feature is just usefull in JSland
 
@@ -206,9 +206,9 @@ ver = sbot.version()
 
 vs
 
-sbot.whoami((err, who) => {
-  who..
-})
+	sbot.whoami((err, who) => {
+	  who..
+	})
 */
 func TestJSSyncString(t *testing.T) {
 	r := require.New(t)
@@ -392,21 +392,12 @@ func TestJSSource(t *testing.T) {
 	src, err := rpc1.Source(ctx, TypeJSON, Method{"stuff"})
 	r.NoError(err, "rcp Async call")
 
-	for i := 1; i < 5; i++ {
-		more := src.Next(ctx)
-		r.True(more, "src.Next %d", i)
-
-		var v obj
-		err := src.Reader(func(r io.Reader) error {
-			return json.NewDecoder(r).Decode(&v)
-		})
-		r.NoError(err, "decode: %d", i)
-
+	i := 1
+	for v := range SourceAs[obj](ctx, src) {
 		r.Equal(i, v.A, "result value: %d", i)
+		i++
 	}
-
-	more := src.Next(ctx)
-	r.False(more, "src.Next no more")
+	r.Equal(5, i, "expected 4 items")
 	r.NoError(src.Err())
 
 	var str string
@@ -456,44 +447,22 @@ func TestJSDuplex(t *testing.T) {
 	src, snk, err := rpc1.Duplex(ctx, TypeJSON, Method{"magic"})
 	r.NoError(err, "rcp Async call")
 	fmt.Println("command started")
-	i := 0
 	var str = []string{"a", "b", "c", "d", "e"}
-	send := luigi.FuncSource(func(_ context.Context) (interface{}, error) {
-		defer func() { i++ }()
-		if i < len(str) {
-			// fmt.Println("to snk", str[i])
-			time.Sleep(time.Second * 1)
-			return str[i], nil
-
-		}
-		r.NoError(snk.Close())
-		return nil, luigi.EOS{}
-	})
 
 	enc := json.NewEncoder(snk)
-	luigiSnk := luigi.FuncSink(func(_ context.Context, v interface{}, err error) error {
-		if err != nil {
-			if luigi.IsEOS(err) {
-				return err
-			}
-		}
-		err = enc.Encode(v)
-		if err != nil {
-			return err
-		}
-		return err
-	})
-
-	r.NoError(luigi.Pump(ctx, luigiSnk, send))
+	for _, s := range str {
+		time.Sleep(time.Second * 1)
+		err := enc.Encode(s)
+		r.NoError(err)
+	}
+	r.NoError(snk.Close())
 	fmt.Println("filled sink")
 
-	print := luigi.FuncSink(func(_ context.Context, v interface{}, err error) error {
-		fmt.Println("from src:", v, err)
-		return err
-	})
-
-	r.NoError(luigi.Pump(ctx, print, src.AsStream()))
-	fmt.Println("draind src")
+	for frame := range src.Iter(ctx) {
+		fmt.Println("from src:", string(frame))
+	}
+	r.NoError(src.Err())
+	fmt.Println("drained src")
 	// r.NoError(packer.Close())
 	// close(errc)
 	// for err := range errc {
@@ -683,7 +652,7 @@ func (h *hAbortMe) HandleCall(ctx context.Context, req *Request) {
 	snk, err := req.ResponseSink()
 	if err != nil {
 		require.NoError(h.t, err)
-		req.Stream.CloseWithError(err)
+		req.CloseWithError(err)
 		return
 	}
 

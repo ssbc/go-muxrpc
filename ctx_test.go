@@ -7,11 +7,10 @@ package muxrpc
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/ssbc/go-luigi"
 )
 
 func TestCloseContext(t *testing.T) {
@@ -23,7 +22,7 @@ func TestCloseContext(t *testing.T) {
 	tcs := []testcase{
 		{
 			closes: []string{"cls"},
-			expErr: luigi.EOS{},
+			expErr: io.EOF,
 		},
 		{
 			closes: []string{"cancel"},
@@ -31,7 +30,7 @@ func TestCloseContext(t *testing.T) {
 		},
 		{
 			closes: []string{"cls", "cancel"},
-			expErr: luigi.EOS{},
+			expErr: io.EOF,
 		},
 		{
 			closes: []string{"cancel", "cls"},
@@ -47,7 +46,7 @@ func TestCloseContext(t *testing.T) {
 			ctx := context.Background()
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			ctx, cls := withError(ctx, luigi.EOS{})
+			ctx, cls := withError(ctx, io.EOF)
 			defer cls()
 
 			for _, op := range tc.closes {

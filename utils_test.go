@@ -12,7 +12,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/ssbc/go-muxrpc/v2/debug"
+	"github.com/ssbc/go-muxrpc/v3/debug"
 	"github.com/stretchr/testify/require"
 	"go.mindeco.de/log"
 )

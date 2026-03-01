@@ -61,7 +61,7 @@ func (wst ErrWrongStreamType) Error() string {
 	return fmt.Sprintf("muxrpc: wrong stream type: %s", wst.ct)
 }
 
-// IsSinkClosed should be moved to luigi to gether with the error
+// IsSinkClosed checks if the error indicates a closed sink
 func IsSinkClosed(err error) bool {
 	if err == nil {
 		return false
@@ -96,17 +96,19 @@ func isAlreadyClosed(err error) bool {
 		return true
 	}
 
-	if sysErr, ok := (err).(*os.PathError); ok {
+	var sysErr *os.PathError
+	if stderr.As(err, &sysErr) {
 		if sysErr.Err == os.ErrClosed {
-			// fmt.Printf("debug: found syscall err: %T) %s\n", err, err)
 			return true
 		}
 	}
 
-	if opErr, ok := err.(*net.OpError); ok {
-		if syscallErr, ok := opErr.Err.(*os.SyscallError); ok {
+	var opErr *net.OpError
+	if stderr.As(err, &opErr) {
+		var syscallErr *os.SyscallError
+		if stderr.As(opErr.Err, &syscallErr) {
 			if errNo, ok := syscallErr.Err.(syscall.Errno); ok {
-				if errNo == syscall.EPIPE {
+				if errNo == syscall.EPIPE || errNo == syscall.ECONNRESET {
 					return true
 				}
 			}

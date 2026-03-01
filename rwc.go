@@ -67,7 +67,7 @@ func (r *srcReader) Read(data []byte) (int, error) {
 		return n, nil
 	}
 
-	more := r.src.Next(r.src.streamCtx)
+	more := r.src.next(r.src.streamCtx)
 	if !more {
 		err := r.src.Err()
 		if err == nil || errors.Is(err, io.EOF) {
@@ -78,7 +78,7 @@ func (r *srcReader) Read(data []byte) (int, error) {
 	}
 
 	var err error
-	r.buf, err = r.src.Bytes()
+	r.buf, err = r.src.bytes()
 	if err != nil {
 		return 0, err
 	}

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ssbc/go-muxrpc/v2/codec"
+	"github.com/ssbc/go-muxrpc/v3/codec"
 	"go.mindeco.de/log"
 	"go.mindeco.de/log/level"
 )
@@ -70,14 +70,14 @@ func (r *rpc) retreiveManifest() {
 		return
 	}
 
-	if !req.source.Next(ctx) {
+	if !req.source.next(ctx) {
 		dbg.Log("event", "manifest request failed to read", "err", req.source.Err())
 		return
 	}
 
 	r.manifest.mu.Lock()
 	defer r.manifest.mu.Unlock()
-	err = req.source.Reader(func(rd io.Reader) error {
+	err = req.source.reader(func(rd io.Reader) error {
 		return json.NewDecoder(rd).Decode(&r.manifest.methods)
 	})
 	if err != nil {
@@ -125,13 +125,13 @@ func (ms *manifestMap) UnmarshalJSON(bin []byte) error {
 	return nil
 }
 
-/* recurseMap iterates over and decends into a muxrpc manifest and creates a flat structure ala
+/*
+	recurseMap iterates over and decends into a muxrpc manifest and creates a flat structure ala
 
 "plugin.method1": "async",
 "plugin.method2": "source",
 "plugin.method3": "sink",
 ...
-
 */
 func recurseMap(methods manifestMap, jsonMap map[string]interface{}, prefix Method) error {
 	for k, iv := range jsonMap {
