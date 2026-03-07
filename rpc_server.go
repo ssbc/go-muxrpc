@@ -333,8 +333,9 @@ func (r *rpc) Serve() error {
 func (r *rpc) serve() (err error) {
 	level.Debug(r.logger).Log("event", "serving")
 	defer func() {
-		level.Warn(r.logger).Log("event", "serve-exit", "err", err)
+		level.Info(r.logger).Log("event", "serve-exit", "err", err)
 		if isAlreadyClosed(err) {
+			level.Debug(r.logger).Log("event", "serve-exit", "was-already-closed:", err)
 			err = nil
 		}
 		cerr := r.Terminate()
@@ -353,6 +354,7 @@ func (r *rpc) serve() (err error) {
 		doRet := func() bool {
 			err = r.pkr.NextHeader(r.serveCtx, &hdr)
 			if isAlreadyClosed(err) {
+				level.Debug(r.logger).Log("event", "next-header-already-closed", "err", err, "remote:", r.Remote())
 				err = nil
 				return true
 			}
