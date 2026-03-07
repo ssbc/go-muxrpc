@@ -122,15 +122,14 @@ func (bs *ByteSink) CloseWithError(err error) error {
 	case werr := <-errc:
 		if werr != nil {
 			bs.closed = werr
+			return werr
 		}
-		return werr
+		bs.closed = err
+		return nil
 	case <-time.After(10 * time.Second):
 		bs.closed = errors.New("muxrpc: close timeout exceeded")
 		return bs.closed
 	}
-
-	bs.closed = err
-	return nil
 }
 
 func (bs *ByteSink) Close() error {

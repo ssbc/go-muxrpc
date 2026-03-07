@@ -92,7 +92,7 @@ func isAlreadyClosed(err error) bool {
 		return false
 	}
 
-	if stderr.Is(err, io.EOF) || stderr.Is(err, os.ErrClosed) || stderr.Is(err, io.ErrClosedPipe) {
+	if stderr.Is(err, io.EOF) || stderr.Is(err, os.ErrClosed) || stderr.Is(err, io.ErrClosedPipe) || stderr.Is(err, net.ErrClosed) {
 		return true
 	}
 

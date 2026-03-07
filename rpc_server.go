@@ -333,6 +333,7 @@ func (r *rpc) Serve() error {
 func (r *rpc) serve() (err error) {
 	level.Debug(r.logger).Log("event", "serving")
 	defer func() {
+		level.Warn(r.logger).Log("event", "serve-exit", "err", err)
 		if isAlreadyClosed(err) {
 			err = nil
 		}
@@ -402,6 +403,10 @@ func (r *rpc) serve() (err error) {
 
 			err = r.pkr.r.ReadBodyInto(buf, hdr.Len)
 			if err != nil {
+				if isAlreadyClosed(err) {
+					r.closeStream(req, err)
+					continue
+				}
 				return fmt.Errorf("muxrpc: failed to get error body for closing of req: %d (len:%d): %w", hdr.Req, hdr.Len, err)
 			}
 
